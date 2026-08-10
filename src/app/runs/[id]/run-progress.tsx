@@ -160,6 +160,14 @@ export function RunProgress({ initial }: { initial: RunView }) {
 
       {terminal && (
         <div className="mt-8 flex flex-wrap gap-3">
+          {view.run.status === 'succeeded' && (
+            <Link
+              href={`/review/${view.run.id}`}
+              className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong"
+            >
+              Revoir les propositions
+            </Link>
+          )}
           <Link
             href={`/chapitres/${view.run.chapterId}`}
             className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
@@ -168,7 +176,7 @@ export function RunProgress({ initial }: { initial: RunView }) {
           </Link>
           <Link
             href="/import"
-            className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong"
+            className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
           >
             Importer le suivant
           </Link>

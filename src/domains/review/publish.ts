@@ -1,0 +1,574 @@
+import 'server-only'
+import { and, eq, sql } from 'drizzle-orm'
+import { withIngest } from '@/db/boundary.ts'
+import { chapters } from '@/db/schema/documents.ts'
+import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
+import {
+  assertions,
+  auditLog,
+  entities,
+  entityLabels,
+  events,
+  evidence,
+  mysteries,
+} from '@/db/schema/knowledge.ts'
+import { PROMPT_VERSION } from '@/domains/ai/prompts.ts'
+import type {
+  CandidateAssertion,
+  CandidateEntity,
+  CandidateEvent,
+  CandidateMystery,
+  EvidenceRef,
+} from '@/domains/ai/schemas.ts'
+import { normalizeText } from '@/domains/knowledge/normalize.ts'
+import { PIPELINE_VERSION } from '@/domains/ingestion/import.ts'
+import { rebuildRefTable } from '@/domains/pipeline/rebuild-refs.ts'
+import { resolveRef, type RefTable } from '@/domains/pipeline/refs.ts'
+
+/**
+ * Turn accepted proposals into graph rows, in one transaction.
+ *
+ * This is the only place anything becomes canon, and it is the narrowest part of
+ * the system on purpose. Everything upstream produces candidates; this function
+ * is the door, and it is locked from the outside — nothing here reads a model,
+ * infers a fact, or resolves an ambiguity. It writes what a human said yes to.
+ *
+ * Four properties it has to hold, each with a failure it prevents:
+ *
+ *   Atomic. Half a published delta is a graph where an assertion references an
+ *   entity that does not exist, and there is no way to tell which half ran.
+ *
+ *   Idempotent. Publishing twice — a double-clicked button, a retried request —
+ *   must not double the graph. Keyed on the review item's own state, so a second
+ *   pass finds nothing left to publish.
+ *
+ *   Dated by revelation, not by import. `knowledge_from_chapter` is the chapter
+ *   whose pages carry the evidence, never "now". Importing chapter 3 after
+ *   chapter 40 must still date chapter 3's facts to 3, or the boundary slider
+ *   shows the wrong past.
+ *
+ *   Recorded. Every decision is written to `review_decisions` keyed by
+ *   fingerprint, which is what makes it survive a re-import, and to `audit_log`,
+ *   which is what makes it explicable six months later.
+ */
+
+export type DecisionKind = 'accept' | 'reject' | 'correct' | 'merge' | 'split' | 'defer'
+
+export interface Decision {
+  reviewItemId: string
+  decision: DecisionKind
+  /** Present for 'correct': the payload as the user edited it. */
+  correctedPayload?: unknown
+  comment?: string
+}
+
+export interface PublishResult {
+  entitiesCreated: number
+  assertionsCreated: number
+  eventsCreated: number
+  mysteriesCreated: number
+  labelsCreated: number
+  rejected: number
+  deferred: number
+  /** Items whose decision could not be applied, with the reason. */
+  failures: Array<{ reviewItemId: string; reason: string }>
+}
+
+export async function publishDecisions(
+  userId: string,
+  runId: string,
+  decisions: Decision[],
+  refTable?: RefTable,
+): Promise<PublishResult> {
+  const result: PublishResult = {
+    entitiesCreated: 0,
+    assertionsCreated: 0,
+    eventsCreated: 0,
+    mysteriesCreated: 0,
+    labelsCreated: 0,
+    rejected: 0,
+    deferred: 0,
+    failures: [],
+  }
+
+  if (decisions.length === 0) return result
+
+  await withIngest(async (db) => {
+    const [run] = await db
+      .select({
+        chapterId: reviewItems.chapterId,
+        workId: chapters.workId,
+        chapterNumber: chapters.number,
+      })
+      .from(reviewItems)
+      .innerJoin(chapters, eq(chapters.id, reviewItems.chapterId))
+      .where(and(eq(reviewItems.runId, runId), eq(reviewItems.userId, userId)))
+      .limit(1)
+
+    if (!run) throw new Error(`Aucune proposition pour le run ${runId}.`)
+
+    /*
+     * Rebuild the ref table rather than requiring the caller to carry it.
+     *
+     * Publication runs in a different request from extraction, so the run's
+     * in-memory table is gone. Refs are deterministic, so they can be recomputed
+     * from the same rows — and they must be, because a database trigger refuses
+     * an evidence row carrying an excerpt without its source block. An
+     * unresolvable ref therefore fails loudly here instead of being stored as
+     * unsourced evidence, which is the right outcome for a system whose claim is
+     * that everything in it is traceable.
+     */
+    const table = refTable ?? (await rebuildRefTable(userId, run.chapterId))
+
+    const byId = new Map(decisions.map((d) => [d.reviewItemId, d]))
+
+    const items = await db
+      .select({
+        id: reviewItems.id,
+        category: reviewItems.category,
+        payload: reviewItems.payload,
+        fingerprint: reviewItems.proposalFingerprint,
+        confidence: reviewItems.confidence,
+        status: reviewItems.status,
+      })
+      .from(reviewItems)
+      .where(and(eq(reviewItems.runId, runId), eq(reviewItems.userId, userId)))
+
+    /*
+     * Local ids from the extraction response map to real entity ids as this
+     * loop creates them. Entities are published before assertions for exactly
+     * this reason — an assertion naming `syn-3` needs `syn-3` to exist.
+     */
+    const localToEntity = new Map<string, string>()
+
+    // Entities first.
+    for (const item of items) {
+      if (item.category !== 'entity') continue
+      const decision = byId.get(item.id)
+      if (!decision) continue
+
+      // Idempotency: an item already decided is not decided again. A second
+      // publish therefore writes nothing rather than doubling the graph.
+      if (item.status !== 'proposed') continue
+
+      if (decision.decision === 'reject') {
+        await recordDecision(db, userId, run.workId, item, decision)
+        await db
+          .update(reviewItems)
+          .set({ status: 'rejected' })
+          .where(eq(reviewItems.id, item.id))
+        result.rejected++
+        continue
+      }
+
+      if (decision.decision === 'defer') {
+        await db
+          .update(reviewItems)
+          .set({ status: 'deferred' })
+          .where(eq(reviewItems.id, item.id))
+        result.deferred++
+        continue
+      }
+
+      const candidate = (decision.correctedPayload ?? item.payload) as CandidateEntity
+
+      const [entity] = await db
+        .insert(entities)
+        .values({
+          workId: run.workId,
+          userId,
+          nodeType: candidate.node_type,
+          firstSeenChapter: run.chapterNumber,
+          reviewStatus: 'accepted',
+        })
+        .returning({ id: entities.id })
+
+      if (!entity) {
+        result.failures.push({ reviewItemId: item.id, reason: "Création d'entité échouée." })
+        continue
+      }
+
+      localToEntity.set(candidate.local_id, entity.id)
+
+      await db.insert(entityLabels).values({
+        entityId: entity.id,
+        userId,
+        label: candidate.label,
+        normalizedLabel: normalizeText(candidate.label),
+        kind: candidate.label_kind,
+        // The chapter that revealed this name, not the chapter being imported
+        // now. Importing out of order must not change when a name became known.
+        revealedInChapter: run.chapterNumber,
+        precedence: precedenceFor(candidate.label_kind),
+      })
+
+      result.entitiesCreated++
+      result.labelsCreated++
+
+      await recordDecision(db, userId, run.workId, item, decision)
+      await db
+        .update(reviewItems)
+        .set({ status: 'accepted' })
+        .where(eq(reviewItems.id, item.id))
+    }
+
+    // Then assertions, which may reference the entities just created.
+    for (const item of items) {
+      if (item.category !== 'assertion') continue
+      const decision = byId.get(item.id)
+      if (!decision || item.status !== 'proposed') continue
+
+      if (decision.decision === 'reject') {
+        await recordDecision(db, userId, run.workId, item, decision)
+        await db
+          .update(reviewItems)
+          .set({ status: 'rejected' })
+          .where(eq(reviewItems.id, item.id))
+        result.rejected++
+        continue
+      }
+
+      if (decision.decision === 'defer') {
+        await db
+          .update(reviewItems)
+          .set({ status: 'deferred' })
+          .where(eq(reviewItems.id, item.id))
+        result.deferred++
+        continue
+      }
+
+      const candidate = (decision.correctedPayload ?? item.payload) as CandidateAssertion
+
+      const subjectId = localToEntity.get(candidate.subject) ?? candidate.subject
+      const objectId = candidate.object
+        ? (localToEntity.get(candidate.object) ?? candidate.object)
+        : null
+
+      if (!isUuid(subjectId)) {
+        // The subject's own entity was rejected or deferred. Publishing the
+        // assertion anyway would leave a dangling reference; saying so lets the
+        // user go back and accept the entity first.
+        result.failures.push({
+          reviewItemId: item.id,
+          reason:
+            `Le sujet « ${candidate.subject} » n'existe pas dans le graphe : ` +
+            `son entité a été rejetée ou reportée. Acceptez-la d'abord.`,
+        })
+        continue
+      }
+
+      if (objectId !== null && !isUuid(objectId)) {
+        result.failures.push({
+          reviewItemId: item.id,
+          reason: `L'objet « ${candidate.object} » n'existe pas dans le graphe.`,
+        })
+        continue
+      }
+
+      const [assertion] = await db
+        .insert(assertions)
+        .values({
+          workId: run.workId,
+          userId,
+          subjectEntityId: subjectId,
+          predicate: candidate.predicate,
+          objectEntityId: objectId,
+          objectValue:
+            candidate.object_value === null ? null : { value: candidate.object_value },
+          knowledgeFromChapter: run.chapterNumber,
+          observedInChapter: run.chapterNumber,
+          confidence: candidate.confidence,
+          epistemicStatus:
+            decision.decision === 'correct' ? 'user_validated' : candidate.epistemic_status,
+          reviewStatus: 'accepted',
+          // A corrected assertion is the user's, not the model's, and it is
+          // locked: a later run must never supersede a human's own words.
+          proposedBy: decision.decision === 'correct' ? 'user' : 'ai',
+          locked: decision.decision === 'correct',
+          pipelineVersion: PIPELINE_VERSION,
+          promptVersion: PROMPT_VERSION,
+          runId,
+          proposalFingerprint: item.fingerprint,
+        })
+        .returning({ id: assertions.id })
+
+      if (!assertion) {
+        result.failures.push({ reviewItemId: item.id, reason: 'Insertion échouée.' })
+        continue
+      }
+
+      await insertEvidence(db, {
+        assertionId: assertion.id,
+        userId,
+        chapterId: run.chapterId,
+        refs: candidate.evidence,
+        refTable: table,
+      })
+
+      result.assertionsCreated++
+      await recordDecision(db, userId, run.workId, item, decision)
+      await db
+        .update(reviewItems)
+        .set({ status: 'accepted' })
+        .where(eq(reviewItems.id, item.id))
+    }
+
+    // Events and mysteries are entities with a side table, per the schema.
+    for (const item of items) {
+      if (item.category !== 'event' && item.category !== 'mystery') continue
+      const decision = byId.get(item.id)
+      if (!decision || item.status !== 'proposed') continue
+
+      if (decision.decision === 'reject' || decision.decision === 'defer') {
+        if (decision.decision === 'reject') {
+          await recordDecision(db, userId, run.workId, item, decision)
+          result.rejected++
+        } else {
+          result.deferred++
+        }
+        await db
+          .update(reviewItems)
+          .set({ status: decision.decision === 'reject' ? 'rejected' : 'deferred' })
+          .where(eq(reviewItems.id, item.id))
+        continue
+      }
+
+      const nodeType = item.category === 'event' ? 'event' : 'mystery'
+      const [entity] = await db
+        .insert(entities)
+        .values({
+          workId: run.workId,
+          userId,
+          nodeType,
+          firstSeenChapter: run.chapterNumber,
+          reviewStatus: 'accepted',
+        })
+        .returning({ id: entities.id })
+
+      if (!entity) {
+        result.failures.push({ reviewItemId: item.id, reason: 'Création échouée.' })
+        continue
+      }
+
+      if (item.category === 'event') {
+        const candidate = (decision.correctedPayload ?? item.payload) as CandidateEvent
+        await db.insert(events).values({
+          entityId: entity.id,
+          userId,
+          workId: run.workId,
+          summary: candidate.summary,
+          isFlashback: candidate.is_flashback,
+          /*
+           * Shown and told are recorded separately and neither is inferred. A
+           * flashback is *shown* in this chapter while happening earlier in the
+           * story; collapsing the two axes is exactly the mistake that makes a
+           * timeline lie.
+           */
+          shownInChapter: run.chapterNumber,
+          toldInChapter: candidate.is_flashback ? run.chapterNumber : null,
+        })
+        await db.insert(entityLabels).values({
+          entityId: entity.id,
+          userId,
+          label: candidate.summary.slice(0, 200),
+          normalizedLabel: normalizeText(candidate.summary.slice(0, 200)),
+          kind: 'alias',
+          revealedInChapter: run.chapterNumber,
+          precedence: 10,
+        })
+        result.eventsCreated++
+        result.labelsCreated++
+      } else {
+        const candidate = (decision.correctedPayload ?? item.payload) as CandidateMystery
+        await db.insert(mysteries).values({
+          entityId: entity.id,
+          userId,
+          workId: run.workId,
+          question: candidate.question,
+          openedInChapter: run.chapterNumber,
+          state: 'open',
+        })
+        await db.insert(entityLabels).values({
+          entityId: entity.id,
+          userId,
+          label: candidate.question.slice(0, 200),
+          normalizedLabel: normalizeText(candidate.question.slice(0, 200)),
+          kind: 'alias',
+          revealedInChapter: run.chapterNumber,
+          precedence: 10,
+        })
+        result.mysteriesCreated++
+        result.labelsCreated++
+      }
+
+      await recordDecision(db, userId, run.workId, item, decision)
+      await db
+        .update(reviewItems)
+        .set({ status: 'accepted' })
+        .where(eq(reviewItems.id, item.id))
+    }
+
+    await db.insert(auditLog).values({
+      userId,
+      action: 'publish_delta',
+      subjectKind: 'ingestion_run',
+      subjectId: runId,
+      detail: {
+        chapterNumber: run.chapterNumber,
+        ...result,
+      },
+    })
+  })
+
+  return result
+}
+
+/**
+ * Record the decision against its fingerprint.
+ *
+ * This is the row that makes a correction survive a re-import: the next run
+ * fingerprints the same proposal, finds this decision, and does not ask again.
+ * Keyed on `(user, work, fingerprint)` rather than on the review item, because
+ * the review item is per-run and would not match anything on the next pass.
+ */
+async function recordDecision(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  userId: string,
+  workId: string,
+  item: { fingerprint: string },
+  decision: Decision,
+): Promise<void> {
+  await db
+    .insert(reviewDecisions)
+    .values({
+      userId,
+      workId,
+      proposalFingerprint: item.fingerprint,
+      decision: decision.decision,
+      correctedPayload: (decision.correctedPayload ?? null) as object | null,
+      comment: decision.comment ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [
+        reviewDecisions.userId,
+        reviewDecisions.workId,
+        reviewDecisions.proposalFingerprint,
+      ],
+      set: {
+        decision: decision.decision,
+        correctedPayload: (decision.correctedPayload ?? null) as object | null,
+        comment: decision.comment ?? null,
+        decidedAt: new Date(),
+      },
+    })
+}
+
+/**
+ * Store the evidence behind an assertion.
+ *
+ * Refs are translated back to real ids where a table is available. Without one —
+ * publishing from a stored payload in a later session, after the run's in-memory
+ * table is gone — the excerpt and chapter are still recorded, because an excerpt
+ * with no panel id is weaker evidence but is not *no* evidence, and dropping it
+ * would leave an assertion looking unsourced.
+ */
+async function insertEvidence(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    assertionId: string
+    userId: string
+    chapterId: string
+    refs: EvidenceRef[]
+    refTable: RefTable
+  },
+): Promise<void> {
+  if (input.refs.length === 0) return
+
+  const rows = input.refs.map((ref) => {
+    const resolved = resolveRef(input.refTable, ref.ref)
+    if (!resolved) {
+      /*
+       * A ref that no longer resolves means the pages moved under the proposal
+       * — a re-cut panel, a reordered page. Failing here is correct: the
+       * alternative is an assertion in the graph whose citation points at
+       * nothing, which looks sourced and is not.
+       */
+      throw new Error(
+        `La preuve « ${ref.ref} » ne correspond plus à aucune case ou bloc de ce chapitre. ` +
+          `Relancez le traitement avant de publier.`,
+      )
+    }
+    return {
+        assertionId: input.assertionId,
+        userId: input.userId,
+        chapterId: input.chapterId,
+        panelId: resolved.kind === 'panel' ? resolved.id : null,
+        textBlockId: resolved.kind === 'block' ? resolved.id : null,
+        /*
+         * 'dialogue' for a text citation, 'image' for a visual one.
+         *
+         * The enum distinguishes where the evidence lives on the page, not which
+         * pipeline produced it: a quote is dialogue whether it came from a PDF
+         * text layer, tesseract or a model, and how it was read is recorded on
+         * the text block instead.
+         */
+        kind: ref.kind === 'text' ? ('dialogue' as const) : ('image' as const),
+        excerpt: ref.excerpt,
+      }
+  })
+
+  await db.insert(evidence).values(rows)
+}
+
+/**
+ * Which label wins when several are visible.
+ *
+ * A true name outranks an epithet outranks an alias outranks a placeholder. The
+ * placeholder is the floor precisely so that it disappears from the display the
+ * moment anything better is revealed — while remaining in the table, because at
+ * an earlier boundary it is still the only thing the reader knew.
+ */
+function precedenceFor(kind: string): number {
+  switch (kind) {
+    case 'true_name':
+      return 100
+    case 'epithet':
+      return 70
+    case 'alias':
+      return 50
+    case 'translation':
+      return 40
+    default:
+      return 10
+  }
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function isUuid(value: string): boolean {
+  return UUID_RE.test(value)
+}
+
+/** Counts for the "narrative delta" summary shown after publishing. */
+export async function deltaSummary(
+  userId: string,
+  runId: string,
+): Promise<{ pending: number; accepted: number; rejected: number; deferred: number }> {
+  return withIngest(async (db) => {
+    const rows = await db.execute<{ status: string; count: number }>(sql`
+      SELECT status, count(*)::int AS count
+      FROM review_items
+      WHERE run_id = ${runId} AND user_id = ${userId}
+      GROUP BY status
+    `)
+
+    const by = new Map(rows.map((row) => [row.status, Number(row.count)]))
+    return {
+      pending: by.get('proposed') ?? 0,
+      accepted: by.get('accepted') ?? 0,
+      rejected: by.get('rejected') ?? 0,
+      deferred: by.get('deferred') ?? 0,
+    }
+  })
+}
