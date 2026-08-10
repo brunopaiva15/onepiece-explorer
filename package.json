@@ -12,7 +12,7 @@
     "start": "next start",
     "worker": "tsx watch src/worker/index.ts",
     "worker:once": "tsx src/worker/index.ts",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:push": "tsx scripts/db-push.ts",
@@ -53,6 +53,7 @@
     "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "sharp": "^0.35.3",
     "sigma": "^3.0.3",
     "tesseract.js": "^7.0.0",
@@ -60,7 +61,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.6",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.2.0",

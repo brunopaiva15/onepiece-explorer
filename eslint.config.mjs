@@ -1,18 +1,24 @@
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { FlatCompat } from '@eslint/eslintrc'
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
+import nextTypescript from 'eslint-config-next/typescript'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-const compat = new FlatCompat({ baseDirectory: __dirname })
-
+// eslint-config-next 16 ships native flat configs; the FlatCompat bridge is
+// no longer needed (and breaks under ESLint 10).
 const config = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  ...(Array.isArray(nextCoreWebVitals) ? nextCoreWebVitals : [nextCoreWebVitals]),
+  ...(Array.isArray(nextTypescript) ? nextTypescript : [nextTypescript]),
   {
-    ignores: ['.next/**', 'node_modules/**', 'var/**', 'fixtures/generated/**'],
+    ignores: [
+      '.next/**',
+      'node_modules/**',
+      'var/**',
+      'fixtures/generated/**',
+      'drizzle/**',
+    ],
   },
   {
+    // Pin the React version explicitly. eslint-plugin-react's auto-detection
+    // calls context.getFilename(), removed in ESLint 10, and crashes the run.
+    settings: { react: { version: '19.2' } },
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',
@@ -24,8 +30,10 @@ const config = [
     // The chapter boundary is enforced by a per-transaction session variable,
     // so every knowledge read must go through withBoundary(). Importing the
     // raw pool anywhere else would silently bypass row-level security.
+    // tests/antispoiler/boundary-guards.test.ts asserts the same thing, so
+    // disabling this rule inline is not enough to get past CI.
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/db/client.ts', 'src/db/boundary.ts', 'src/worker/**'],
+    ignores: ['src/db/client.ts', 'src/db/boundary.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -33,7 +41,7 @@ const config = [
           paths: [
             {
               name: '@/db/client',
-              importNames: ['appPool', 'ingestPool'],
+              importNames: ['appSql', 'ingestSql', 'appDb', 'ingestDb'],
               message:
                 'Accès direct au pool interdit : passez par withBoundary() (src/db/boundary.ts) pour que la frontière de chapitre soit appliquée.',
             },
