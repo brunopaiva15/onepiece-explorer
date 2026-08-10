@@ -1,0 +1,305 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import {
+  buildAnchorSources,
+  filterExtraction,
+  type OntologyView,
+} from '@/domains/ai/anchoring.ts'
+import { costCents, PRICING } from '@/domains/ai/provider.ts'
+import { cassetteKey, ReplayProvider } from '@/domains/ai/replay.ts'
+import { properNouns, SyntheticProvider } from '@/domains/ai/synthetic.ts'
+import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
+import type { ExtractRequest, ModelProvider } from '@/domains/ai/provider.ts'
+
+const ONTOLOGY: OntologyView = {
+  nodeTypes: new Set(NODE_TYPES.map((t) => t.key)),
+  predicates: new Set(PREDICATES.map((p) => p.key)),
+}
+
+const directories: string[] = []
+
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((d) => rm(d, { recursive: true, force: true })))
+})
+
+async function scratch(): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ope-cassette-'))
+  directories.push(dir)
+  return dir
+}
+
+describe('the synthetic provider only rearranges what it was given', () => {
+  const request: ExtractRequest = {
+    chapterNumber: 3,
+    ontology: 'character, place',
+    knownEntities: [],
+    descriptions: [],
+    textBlocks: [
+      {
+        ref: 'b1',
+        panelRef: 'p1c1',
+        text: "Le capitaine Aldren a promis à Maren de revenir au port de Sarn.",
+      },
+      { ref: 'b2', panelRef: 'p1c2', text: 'Personne ne connaît son nom ici.' },
+    ],
+    allowedRefs: ['b1', 'b2', 'p1c1', 'p1c2'],
+  }
+
+  it('produces proposals that all pass anchoring', async () => {
+    /*
+     * The property that makes this provider usable rather than decorative: it
+     * cites real text, so its output survives the same guard a real model's
+     * output has to survive. If it did not, the no-key path would produce a
+     * quarantine full of its own output and nothing else.
+     */
+    const provider = new SyntheticProvider()
+    const result = await provider.extract(request)
+
+    const sources = buildAnchorSources({
+      textBlocks: request.textBlocks.map((b) => ({ ref: b.ref, text: b.text })),
+      descriptions: [],
+      allowedRefs: request.allowedRefs,
+    })
+
+    const filtered = filterExtraction(result.value, sources, ONTOLOGY, new Set())
+
+    expect(result.value.entities.length).toBeGreaterThan(0)
+    expect(filtered.quarantined).toEqual([])
+    expect(filtered.accepted.entities).toHaveLength(result.value.entities.length)
+  })
+
+  it('never claims a name is the true name', async () => {
+    // All it knows is that the page uses this word. Whether it is a name, a
+    // nickname or a place is exactly what a model would be for.
+    const { value } = await new SyntheticProvider().extract(request)
+    expect(value.entities.every((e) => e.label_kind === 'alias')).toBe(true)
+    expect(value.entities.every((e) => e.confidence < 0.5)).toBe(true)
+  })
+
+  it('only ever proposes the weakest predicate, as hypothetical', async () => {
+    const { value } = await new SyntheticProvider().extract(request)
+    expect(value.assertions.every((a) => a.predicate === 'related_to')).toBe(true)
+    expect(value.assertions.every((a) => a.epistemic_status === 'hypothetical')).toBe(true)
+  })
+
+  it('refuses to read an image rather than inventing dialogue', async () => {
+    const result = await new SyntheticProvider().transcribe({
+      chapterNumber: 1,
+      images: [{ data: 'AAAA', mediaType: 'image/webp', ref: 'p1c1' }],
+      allowedRefs: ['p1c1'],
+      language: 'fr',
+    })
+    expect(result.value.blocks).toEqual([])
+    expect(result.refusal).toMatch(/ne lit pas les images/)
+  })
+
+  it('answers "insufficient" rather than composing prose it cannot support', async () => {
+    const result = await new SyntheticProvider().answer({
+      question: 'Qui est le père de Maren ?',
+      context: [],
+      boundaryChapter: 3,
+    })
+    expect(result.value.insufficient_data).toBe(true)
+    expect(result.value.citations).toEqual([])
+  })
+
+  it('cites its sources when it does find something', async () => {
+    const result = await new SyntheticProvider().answer({
+      question: 'Que promet Aldren ?',
+      context: [
+        {
+          assertionId: 'a1',
+          chapter: 3,
+          statement: 'Aldren promet de revenir au port de Sarn.',
+          excerpt: 'a promis à Maren de revenir',
+        },
+      ],
+      boundaryChapter: 3,
+    })
+    expect(result.value.insufficient_data).toBe(false)
+    expect(result.value.citations).toHaveLength(1)
+    expect(result.value.citations[0]!.assertion_id).toBe('a1')
+  })
+
+  it('says uncertain for every identity comparison', async () => {
+    // 'same' on a name match would merge two deliberately-similar characters
+    // and destroy the revelation history the product exists to preserve.
+    const result = await new SyntheticProvider().resolve({
+      chapterNumber: 3,
+      candidate: { label: 'Aldren', nodeType: 'character', description: 'un homme au sabre' },
+      existing: [
+        {
+          id: 'x1',
+          label: 'Aldren',
+          nodeType: 'character',
+          firstSeenChapter: 1,
+          description: 'un homme au sabre',
+        },
+      ],
+    })
+    expect(result.value.candidates[0]!.verdict).toBe('uncertain')
+  })
+
+  it('produces normalised, deterministic embeddings', async () => {
+    const provider = new SyntheticProvider()
+    const first = await provider.embed({ texts: ['le port de Sarn'] })
+    const second = await provider.embed({ texts: ['le port de Sarn'] })
+    expect(first.value[0]).toEqual(second.value[0])
+
+    const norm = Math.sqrt(first.value[0]!.reduce((s, v) => s + v * v, 0))
+    expect(norm).toBeCloseTo(1, 6)
+  })
+})
+
+describe('proper-noun detection', () => {
+  it('finds capitalised names mid-sentence', () => {
+    expect(properNouns('Le capitaine Aldren rejoint Maren au port.')).toEqual([
+      'Aldren',
+      'Maren',
+    ])
+  })
+
+  it('ignores a sentence-initial common noun', () => {
+    // "Personne ne connaît…" is not a name, and a French stopword list would be
+    // a model in disguise.
+    expect(properNouns('Personne ne le sait.')).toEqual([])
+  })
+
+  it('ignores shouted text and sound effects', () => {
+    expect(properNouns('BOOM ! CRAAAC !')).toEqual([])
+  })
+
+  it('keeps a multi-word name together', () => {
+    expect(properNouns("Ils accostent à Port Sarn avant l'aube.")).toContain('Port Sarn')
+  })
+})
+
+describe('the replay provider never improvises', () => {
+  it('fails loudly on a missing recording, with the command to fix it', async () => {
+    const provider = new ReplayProvider({ directory: await scratch() })
+
+    await expect(
+      provider.summarize({ chapterNumber: 1, assertions: [] }),
+    ).rejects.toThrow(/RECORD=1/)
+  })
+
+  it('replays a recording and reports zero cost', async () => {
+    const directory = await scratch()
+    const request = { chapterNumber: 1, assertions: [{ id: 'a1', statement: 'Un fait.' }] }
+    const key = cassetteKey('summarize', request)
+
+    await writeFile(
+      path.join(directory, `summarize-${key}.json`),
+      JSON.stringify({
+        value: { sentences: [{ text: 'Un fait.', supported_by: ['a1'] }] },
+        usage: {
+          inputTokens: 100,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          costCents: 999,
+          modelId: 'claude-sonnet-5',
+        },
+      }),
+    )
+
+    const provider = new ReplayProvider({ directory })
+    const result = await provider.summarize(request)
+
+    expect(result.value.sentences[0]!.text).toBe('Un fait.')
+    // Replaying must not add to the cost dashboard: a recorded response was paid
+    // for once, and counting it again would make the figure meaningless.
+    expect(result.usage.costCents).toBe(0)
+  })
+
+  it('records an unknown request when given a recorder', async () => {
+    const directory = await scratch()
+
+    const recorder = {
+      summarize: async () => ({
+        value: { sentences: [{ text: 'Enregistré.', supported_by: ['a1'] }] },
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          costCents: 1,
+          modelId: 'claude-sonnet-5',
+        },
+      }),
+    } as unknown as ModelProvider
+
+    const provider = new ReplayProvider({ directory, recorder })
+    const result = await provider.summarize({ chapterNumber: 2, assertions: [] })
+
+    expect(result.value.sentences[0]!.text).toBe('Enregistré.')
+    expect(await readdir(directory)).toHaveLength(1)
+  })
+
+  it('keys a recording independently of image bytes', () => {
+    /*
+     * Image data is hashed rather than included, so re-encoding a page — a
+     * sharp upgrade, a different WebP quality — does not invalidate every
+     * cassette at once and turn a dependency bump into an afternoon of
+     * re-recording.
+     */
+    const base = {
+      chapterNumber: 1,
+      allowedRefs: ['p1c1'],
+      language: 'fr',
+      images: [{ data: 'A'.repeat(300), mediaType: 'image/webp', ref: 'p1c1' }],
+    }
+    const reencoded = {
+      ...base,
+      images: [{ data: 'B'.repeat(300), mediaType: 'image/webp', ref: 'p1c1' }],
+    }
+
+    // Different bytes still key differently — the hash is of the bytes — but the
+    // key is short and stable rather than embedding 300 characters of base64.
+    expect(cassetteKey('transcribe', base)).not.toBe(cassetteKey('transcribe', reencoded))
+    expect(cassetteKey('transcribe', base)).toHaveLength(16)
+  })
+
+  it('ignores the order object keys happened to be built in', () => {
+    const a = { chapterNumber: 1, assertions: [] }
+    const b = { assertions: [], chapterNumber: 1 }
+    expect(cassetteKey('summarize', a)).toBe(cassetteKey('summarize', b))
+  })
+})
+
+describe('cost arithmetic', () => {
+  it('prices a plain request from the published rates', () => {
+    // 1M input + 1M output on Sonnet 5's introductory rate = $2 + $10 = $12.
+    const cents = costCents('claude-sonnet-5', {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+    })
+    expect(cents).toBeCloseTo(1200, 1)
+  })
+
+  it('charges a cache read at a tenth and a write at 1.25×', () => {
+    const price = PRICING['claude-sonnet-5']!
+    const read = costCents('claude-sonnet-5', {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 1_000_000,
+    })
+    const write = costCents('claude-sonnet-5', {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheWriteTokens: 1_000_000,
+    })
+
+    expect(read).toBeCloseTo(price.input * 100 * 0.1, 2)
+    expect(write).toBeCloseTo(price.input * 100 * 1.25, 2)
+    // Which is why a prefix must be reused three times before caching pays:
+    // one write costs what 12.5 reads cost.
+    expect(write / read).toBeCloseTo(12.5, 2)
+  })
+
+  it('returns zero rather than guessing for an unknown model', () => {
+    expect(costCents('some-future-model', { inputTokens: 1_000, outputTokens: 1_000 })).toBe(0)
+  })
+})
