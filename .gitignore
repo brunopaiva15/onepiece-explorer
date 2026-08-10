@@ -1,0 +1,44 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# production
+build/
+dist/
+
+# private runtime data — never commit imported pages or derivatives
+var/
+!var/.gitkeep
+
+# generated test fixtures (regenerate with `pnpm fixtures:generate`)
+fixtures/generated/
+
+# recorded model responses are committed on purpose (CI replays them),
+# but raw capture scratch is not
+tests/fixtures/model-responses/.scratch/
+
+# env
+.env
+.env.local
+.env*.local
+
+# testing
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+.vercel
+.idea/
+.vscode/

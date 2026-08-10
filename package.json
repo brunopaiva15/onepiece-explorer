@@ -1,0 +1,80 @@
+{
+  "name": "onepiece-explorer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "worker": "tsx watch src/worker/index.ts",
+    "worker:once": "tsx src/worker/index.ts",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "tsx scripts/db-push.ts",
+    "db:push:test": "TEST_DB=1 tsx scripts/db-push.ts",
+    "fixtures:generate": "tsx scripts/generate-fixtures.ts",
+    "fixtures:graph": "tsx scripts/generate-graph.ts",
+    "demo": "tsx scripts/demo.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:antispoiler": "vitest run tests/antispoiler",
+    "test:perf": "vitest run tests/perf",
+    "test:e2e": "playwright test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@napi-rs/canvas",
+      "esbuild",
+      "sharp",
+      "tesseract.js",
+      "unrs-resolver"
+    ]
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
+    "@napi-rs/canvas": "^1.0.5",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.2",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.2",
+    "file-type": "^22.0.1",
+    "graphology": "^0.26.0",
+    "graphology-communities-louvain": "^2.0.2",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "graphology-shortest-path": "^2.1.0",
+    "next": "16.3.0",
+    "pdfjs-dist": "^6.2.108",
+    "pg-boss": "^12.27.0",
+    "postgres": "^3.4.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "^0.35.3",
+    "sigma": "^3.0.3",
+    "tesseract.js": "^7.0.0",
+    "yauzl": "^3.4.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/yauzl": "^3.4.0",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^10.8.1",
+    "eslint-config-next": "16.3.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.12",
+    "typescript": "5.9.3",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.10"
+  }
+}

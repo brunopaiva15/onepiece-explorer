@@ -1,0 +1,232 @@
+@import 'tailwindcss';
+
+/* --------------------------------------------------------------------------
+   One Piece Explorer — sea-chart / exploration-journal art direction.
+
+   Deliberately original: no official One Piece asset, logo, typeface or
+   illustration is used anywhere. The vocabulary is nautical cartography —
+   ink-washed paper, rhumb lines, brass instruments, constellations — which
+   evokes the genre without borrowing from the work itself.
+
+   Every colour is defined on bare :root so a theme token always has a value;
+   the dark palette only redefines tokens.
+   -------------------------------------------------------------------------- */
+
+@theme {
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
+    'Times New Roman', serif;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Parchment ground */
+  --surface-base: #f2ece0;
+  --surface-raised: #f8f4ea;
+  --surface-sunken: #e8e0d0;
+  --surface-overlay: #fffdf8;
+
+  /* Ink */
+  --text-primary: #1b2733;
+  --text-secondary: #4a5a68;
+  --text-muted: #74838f;
+  --text-inverted: #f8f4ea;
+
+  /* Brass and copper — the instrument accents */
+  --accent: #a8622a;
+  --accent-strong: #8a4d1e;
+  --accent-soft: #e6cbae;
+  --brass: #b08430;
+
+  /* Sea */
+  --sea: #2f6f6b;
+  --sea-soft: #cfe0dd;
+
+  /* Epistemic status — the palette that carries meaning.
+     Kept distinguishable without relying on hue alone; every use is
+     paired with an icon or a label. */
+  --epi-explicit: #2f6f6b; /* fait explicite */
+  --epi-inferred: #7a5ea8; /* déduction de l'IA */
+  --epi-hypothetical: #b08430; /* hypothèse */
+  --epi-contradicted: #b4552d; /* contradiction */
+  --epi-refuted: #8c8c8c; /* réfuté */
+  --epi-validated: #2d6a4f; /* validé par l'utilisateur */
+
+  --border: #d6cbb6;
+  --border-strong: #bdae94;
+  --focus-ring: #a8622a;
+
+  --rhumb: rgba(27, 39, 51, 0.045);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --surface-base: #0c141c;
+    --surface-raised: #131e29;
+    --surface-sunken: #070d13;
+    --surface-overlay: #182533;
+
+    --text-primary: #e8e2d4;
+    --text-secondary: #a8b4bf;
+    --text-muted: #74848f;
+    --text-inverted: #0c141c;
+
+    --accent: #d08c4a;
+    --accent-strong: #e5a969;
+    --accent-soft: #3b2c1d;
+    --brass: #d4a24c;
+
+    --sea: #5aa9a3;
+    --sea-soft: #17322f;
+
+    --epi-explicit: #5aa9a3;
+    --epi-inferred: #a58fd4;
+    --epi-hypothetical: #d4a24c;
+    --epi-contradicted: #e0805a;
+    --epi-refuted: #7b8590;
+    --epi-validated: #6bbf8f;
+
+    --border: #26333f;
+    --border-strong: #3a4a58;
+    --focus-ring: #d08c4a;
+
+    --rhumb: rgba(232, 226, 212, 0.04);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --surface-base: #0c141c;
+  --surface-raised: #131e29;
+  --surface-sunken: #070d13;
+  --surface-overlay: #182533;
+
+  --text-primary: #e8e2d4;
+  --text-secondary: #a8b4bf;
+  --text-muted: #74848f;
+  --text-inverted: #0c141c;
+
+  --accent: #d08c4a;
+  --accent-strong: #e5a969;
+  --accent-soft: #3b2c1d;
+  --brass: #d4a24c;
+
+  --sea: #5aa9a3;
+  --sea-soft: #17322f;
+
+  --epi-explicit: #5aa9a3;
+  --epi-inferred: #a58fd4;
+  --epi-hypothetical: #d4a24c;
+  --epi-contradicted: #e0805a;
+  --epi-refuted: #7b8590;
+  --epi-validated: #6bbf8f;
+
+  --border: #26333f;
+  --border-strong: #3a4a58;
+  --focus-ring: #d08c4a;
+
+  --rhumb: rgba(232, 226, 212, 0.04);
+}
+
+/* Expose the tokens to Tailwind utilities (bg-surface-base, text-primary…). */
+@theme inline {
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-inverted: var(--text-inverted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-brass: var(--brass);
+  --color-sea: var(--sea);
+  --color-sea-soft: var(--sea-soft);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-epi-explicit: var(--epi-explicit);
+  --color-epi-inferred: var(--epi-inferred);
+  --color-epi-hypothetical: var(--epi-hypothetical);
+  --color-epi-contradicted: var(--epi-contradicted);
+  --color-epi-refuted: var(--epi-refuted);
+  --color-epi-validated: var(--epi-validated);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+
+  /* Rhumb lines: the faint radiating rules of a portolan chart.
+     Two diagonals at low opacity — present, never noisy over long sessions. */
+  background-image:
+    repeating-linear-gradient(
+      60deg,
+      transparent 0 119px,
+      var(--rhumb) 119px 120px
+    ),
+    repeating-linear-gradient(
+      -60deg,
+      transparent 0 119px,
+      var(--rhumb) 119px 120px
+    );
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Respect the reader's motion preference: graph animations and delta
+   transitions all check this, and a static equivalent is always available. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Skip link for keyboard navigation. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+}
