@@ -92,7 +92,7 @@ export async function withBoundary<T>(
   const boundary = resolveBoundary(ctx.boundaryChapter)
   const claims = JSON.stringify({ sub: ctx.userId, role: 'authenticated' })
 
-  return appDb.transaction(async (tx) => {
+  return appDb().transaction(async (tx) => {
     // Parameterised, not interpolated. The third argument makes each setting
     // local to this transaction so nothing survives onto a pooled connection.
     await tx.execute(
@@ -119,7 +119,7 @@ export async function withBoundary<T>(
 export async function withIngest<T>(
   fn: (db: BoundaryDb) => Promise<T>,
 ): Promise<T> {
-  return ingestDb.transaction(async (tx) => {
+  return ingestDb().transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL ROLE app_ingest`)
     return fn(tx)
   })
@@ -139,7 +139,7 @@ export async function withDestructive<T>(
   if (!reason.trim()) {
     throw new Error('Une opération destructive doit être justifiée.')
   }
-  return ingestDb.transaction(async (tx) => {
+  return ingestDb().transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL ROLE app_ingest`)
     await tx.execute(sql`SELECT set_config('app.allow_destructive', 'on', true)`)
     return fn(tx)

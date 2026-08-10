@@ -6,13 +6,15 @@ const PUBLIC_PATHS = ['/connexion', '/inscription', '/auth']
 /**
  * Refreshes the Supabase session cookie and gates private routes.
  *
+ * Next 16 calls this a proxy; it is what earlier versions called middleware.
+ *
  * This is a convenience layer, not the security boundary. Row-level security
- * is: even a request that slipped past this middleware would read zero rows,
- * because `app.boundary_chapter` is unset outside withBoundary() and
- * `auth.uid()` would not match any row's owner. Middleware exists so the user
- * gets a sign-in page instead of an empty one.
+ * is: even a request that slipped past this file would read zero rows, because
+ * `app.boundary_chapter` is unset outside withBoundary() and `auth.uid()` would
+ * not match any row's owner. This exists so the user gets a sign-in page
+ * instead of an empty one.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const response = NextResponse.next({ request })
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

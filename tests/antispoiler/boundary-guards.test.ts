@@ -205,16 +205,22 @@ describe('guard 2 — no module reaches the database directly', () => {
     }
   }
 
-  it('only src/db imports appSql or ingestSql', async () => {
+  it('only src/db reaches the connection pools or the raw Drizzle handles', async () => {
     const offenders: string[] = []
     const root = path.join(process.cwd(), 'src')
+
+    // appDb/ingestDb are named too, not just the pools. They are the handles
+    // that bypass withBoundary(): calling appDb().select() compiles, runs, and
+    // reads as the connection's owning role — which has BYPASSRLS, so every
+    // policy is inert and the query returns unfiltered knowledge.
+    const forbidden = /\b(appSql|ingestSql|appDb|ingestDb)\b/
 
     for await (const file of walk(root)) {
       const relative = path.relative(process.cwd(), file)
       if (ALLOWED.has(relative)) continue
 
       const source = await readFile(file, 'utf8')
-      if (/\b(appSql|ingestSql)\b/.test(source)) offenders.push(relative)
+      if (forbidden.test(source)) offenders.push(relative)
     }
 
     expect(

@@ -13,8 +13,12 @@ import { env } from '@/lib/env.ts'
  * against a direct connection (ADR 0001).
  */
 export async function createSupabaseServerClient(): Promise<SupabaseClient> {
-  const config = env()
+  // cookies() first, deliberately. It is what tells Next this render depends on
+  // the request, and reading configuration before it would let the build try to
+  // prerender a per-user page and fail on missing configuration instead —
+  // reporting a setup problem where the real issue is a caching decision.
   const cookieStore = await cookies()
+  const config = env()
 
   return createServerClient(
     config.NEXT_PUBLIC_SUPABASE_URL,
