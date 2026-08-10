@@ -99,8 +99,28 @@ pnpm dev      # interface   → http://localhost:3000
 pnpm worker   # worker du pipeline (processus séparé)
 ```
 
-Le worker est indispensable : l'import est asynchrone et rien ne progresse sans
-lui.
+**Le worker est indispensable.** L'import lui-même est synchrone : vous voyez
+les pages tout de suite. Mais le traitement — découpage en cases, transcription,
+extraction — passe par une file de jobs, et sans worker un chapitre reste
+indéfiniment « en attente d'un worker » sur `/runs/[id]`. Ce n'est pas un bug de
+l'application, c'est un processus qui n'a pas été lancé.
+
+Le parcours import → file → pipeline se vérifie d'un coup, sans navigateur :
+
+```bash
+TEST_DB=1 pnpm smoke:worker
+```
+
+### Pourquoi deux processus
+
+Le découpage en cases décode les pages en pleine résolution, et les étapes de
+modèle tiendront des lots longs. Faire cela dans un gestionnaire de requête
+lierait le traitement d'un chapitre à la durée de vie d'une connexion HTTP :
+fermer l'onglet abandonnerait le travail à moitié fait.
+
+Le worker tourne sur la **connexion directe** (port 5432), pas sur le pooler :
+pg-boss maintient des connexions d'écoute longues et gère son propre schéma,
+deux choses incompatibles avec un pooler en mode transaction.
 
 ---
 

@@ -3,7 +3,9 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { getChapter, getChapterPages } from '@/domains/chapters/queries.ts'
+import { latestRunForChapter } from '@/domains/pipeline/runs.ts'
 import { PageGrid } from './page-grid.tsx'
+import { StartRun } from './start-run.tsx'
 
 export const metadata: Metadata = { title: 'Pages du chapitre' }
 
@@ -25,7 +27,10 @@ export default async function ChapterPage({
   const chapter = await getChapter(session.userId, id)
   if (!chapter) notFound()
 
-  const pages = await getChapterPages(session.userId, chapter.id, chapter.number)
+  const [pages, lastRunId] = await Promise.all([
+    getChapterPages(session.userId, chapter.id, chapter.number),
+    latestRunForChapter(session.userId, chapter.id),
+  ])
 
   return (
     <main id="contenu" className="mx-auto max-w-6xl px-6 py-12">
@@ -50,6 +55,18 @@ export default async function ChapterPage({
           {statusLabel(chapter.status)}
         </span>
       </header>
+
+      <div className="mt-6 flex flex-wrap items-start gap-3">
+        {pages.length > 0 && <StartRun chapterId={chapter.id} />}
+        {lastRunId && (
+          <Link
+            href={`/runs/${lastRunId}`}
+            className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
+          >
+            Dernier traitement
+          </Link>
+        )}
+      </div>
 
       {pages.length === 0 ? (
         <p className="mt-10 rounded-sm border border-line bg-surface-raised p-6 text-secondary">

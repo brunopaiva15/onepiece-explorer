@@ -10,8 +10,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "tsx watch src/worker/index.ts",
-    "worker:once": "tsx src/worker/index.ts",
+    "worker": "tsx watch --tsconfig tsconfig.worker.json src/worker/index.ts",
+    "worker:once": "tsx --tsconfig tsconfig.worker.json src/worker/index.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
@@ -25,7 +25,8 @@
     "test:watch": "vitest",
     "test:antispoiler": "vitest run tests/antispoiler",
     "test:perf": "vitest run tests/perf",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "smoke:worker": "tsx --tsconfig tsconfig.worker.json scripts/smoke-worker.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
