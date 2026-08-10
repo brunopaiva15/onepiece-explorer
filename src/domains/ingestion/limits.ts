@@ -1,0 +1,56 @@
+/**
+ * Hard limits on untrusted uploads.
+ *
+ * Every one of these exists because the alternative is a denial of service or
+ * a filesystem escape on a machine holding someone's private library. They are
+ * tunable through the environment but never optional.
+ */
+export interface IngestionLimits {
+  /** Whole upload. */
+  maxUploadBytes: number
+  /** Pages per chapter — a chapter with 5 000 pages is not a chapter. */
+  maxPages: number
+  /** Decoded pixels per page. Guards against decompression bombs in images. */
+  maxPixelsPerPage: number
+  /** Entries in an archive. */
+  maxArchiveEntries: number
+  /** Uncompressed:compressed ratio above which an archive is a bomb. */
+  maxDecompressionRatio: number
+  /** Total uncompressed bytes an archive may expand to. */
+  maxUncompressedBytes: number
+  /** Single entry uncompressed. */
+  maxEntryBytes: number
+}
+
+export function ingestionLimits(): IngestionLimits {
+  const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 524_288_000)
+  return {
+    maxUploadBytes,
+    maxPages: Number(process.env.MAX_PAGES_PER_CHAPTER ?? 120),
+    maxPixelsPerPage: Number(process.env.MAX_PIXELS_PER_PAGE ?? 40_000_000),
+    maxArchiveEntries: Number(process.env.MAX_ARCHIVE_ENTRIES ?? 500),
+    maxDecompressionRatio: Number(process.env.MAX_DECOMPRESSION_RATIO ?? 120),
+    // A CBZ of scans is barely compressible, so a generous multiple of the
+    // upload cap still leaves no room for a bomb.
+    maxUncompressedBytes: maxUploadBytes * 4,
+    maxEntryBytes: 100 * 1024 * 1024,
+  }
+}
+
+/**
+ * A rejection the user can act on.
+ *
+ * `hint` is the whole point: "fichier invalide" tells someone nothing, while
+ * "cette archive contient un chemin qui sort du dossier" tells them what to
+ * check. Every rejection path in the ingestion code carries one.
+ */
+export class IngestionRejection extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly hint: string,
+  ) {
+    super(message)
+    this.name = 'IngestionRejection'
+  }
+}
