@@ -18,6 +18,15 @@
  * Steps marked `implemented: false` are declared and visible but not yet
  * built. Showing them greyed out is honest; pretending the pipeline is
  * complete would not be.
+ *
+ * Two steps from the original plan are deliberately absent rather than listed
+ * as unbuilt. `build_review_batch` had nothing to do: the steps that produce
+ * proposals write them with their own priority and explicit-review flag, and a
+ * separate pass to sort what is already sorted would be ceremony. And the
+ * chapter summary cannot run in this sequence at all — a summary written before
+ * review would summarise unvalidated proposals, which is precisely the thing
+ * this pipeline refuses to present as knowledge. It belongs after publication,
+ * with the narrative delta.
  */
 
 export type StepKey =
@@ -30,7 +39,6 @@ export type StepKey =
   | 'detect_conflicts'
   | 'summarize_chapter'
   | 'embed'
-  | 'build_review_batch'
 
 export interface StepDefinition {
   key: StepKey
@@ -101,7 +109,10 @@ export const STEPS: readonly StepDefinition[] = [
   {
     key: 'summarize_chapter',
     label: 'Résumé du chapitre',
-    detail: 'Chaque phrase pointe les assertions qui la soutiennent.',
+    detail:
+      "Chaque phrase pointe les assertions qui la soutiennent. Ne peut pas s'exécuter ici : " +
+      'un résumé écrit avant la revue résumerait des propositions non validées. Il est produit ' +
+      'après publication, avec le delta narratif.',
     usesModel: true,
     implemented: false,
   },
@@ -110,14 +121,6 @@ export const STEPS: readonly StepDefinition[] = [
     label: 'Indexation sémantique',
     detail: 'Vecteurs pour la recherche et pour l’assistant.',
     usesModel: true,
-    implemented: false,
-  },
-  {
-    key: 'build_review_batch',
-    label: 'Constitution de la revue',
-    detail:
-      'Range les propositions par priorité. Identités, révélations, morts et contradictions passent toujours par une revue explicite.',
-    usesModel: false,
     implemented: false,
   },
 ] as const

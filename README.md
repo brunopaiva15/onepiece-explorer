@@ -124,6 +124,56 @@ deux choses incompatibles avec un pooler en mode transaction.
 
 ---
 
+## Le parcours, de l'import au graphe
+
+```
+/import          →  /runs/[id]        →  /review/[runId]   →  graphe
+importer            suivre le pipeline    trancher            interroger
+                    étape par étape       chaque proposition
+```
+
+**Rien n'entre dans le graphe sans votre accord.** Un traitement réussi laisse
+le chapitre en état « à revoir », jamais « publié » : le pipeline produit des
+propositions, pas du canon. C'est une contrainte du code, pas une convention —
+un test vérifie que la table des assertions est encore vide après un traitement
+réussi.
+
+### Les deux garde-fous mécaniques
+
+**Ancrage des preuves.** Toute proposition doit citer une référence de case ou
+de bloc issue d'une liste blanche, et son extrait doit se retrouver dans le
+texte réel de ce bloc. Sinon : quarantaine, jamais la file de revue. C'est ce
+qui empêche le modèle de répondre depuis ce qu'il sait déjà de One Piece plutôt
+que depuis vos pages. Ce que ce garde-fou arrête n'est pas un fait faux, c'est
+un fait *plausible* : bien formé, citant une case d'apparence réelle, décrivant
+quelque chose que vous n'avez pas encore lu.
+
+**Texte du document = donnée.** Une page peut contenir une pancarte qui
+ressemble à une consigne. Le texte des pages passe dans une enveloppe
+`<untrusted_document_text>`, les appels d'extraction se font **sans outils**,
+aucune URL trouvée dans un document n'est suivie — et de toute façon une
+affirmation produite par une telle consigne n'aurait rien à quoi s'ancrer.
+
+### La quarantaine est un diagnostic, pas une poubelle
+
+Sa répartition se lit : trente rejets `unknown_ref` signalent un découpage en
+cases qui a mal tourné ; trente `excerpt_not_in_source` signalent une
+transcription trop dégradée pour que quoi que ce soit s'ancre. Les éléments en
+quarantaine ne sont **jamais** proposables — les mettre devant quelqu'un en fin
+de session de revue, avec une étiquette plausible et une citation d'apparence
+réelle, est exactement la façon dont un fait fabriqué entre dans un graphe.
+
+### Sans clé Anthropic
+
+Le parcours complet reste exécutable. Le fournisseur synthétique ne réorganise
+que ce qu'on lui donne : les noms propres de la couche texte du PDF, cités au
+bloc dont ils viennent, en `related_to` et en `hypothetical` — la force exacte
+de ce qu'il peut affirmer. Il refuse de lire une image plutôt que d'inventer un
+dialogue, et répond « données insuffisantes » plutôt que de composer une prose
+qu'il ne peut pas soutenir. L'interface le dit.
+
+---
+
 ## Tests
 
 La suite tourne sur un PostgreSQL local et sur des réponses de modèle
