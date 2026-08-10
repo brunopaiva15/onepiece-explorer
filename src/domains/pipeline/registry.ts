@@ -89,14 +89,14 @@ export const STEPS: readonly StepDefinition[] = [
     detail:
       'Blocage par trigramme puis score multi-signaux. Propose des candidats justifiés ; ne fusionne jamais seul.',
     usesModel: true,
-    implemented: false,
+    implemented: true,
   },
   {
     key: 'detect_conflicts',
     label: 'Détection des contradictions',
     detail: 'Confronte chaque proposition aux assertions déjà acceptées.',
     usesModel: false,
-    implemented: false,
+    implemented: true,
   },
   {
     key: 'summarize_chapter',

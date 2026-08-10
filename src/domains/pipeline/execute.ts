@@ -13,10 +13,12 @@ import {
   recordStep,
 } from './runs.ts'
 import type { StepContext, StepResult } from './steps/context.ts'
+import { runConflicts } from './steps/conflicts.ts'
 import { runDescribe } from './steps/describe.ts'
 import { runExtract } from './steps/extract.ts'
 import { runOcr } from './steps/ocr.ts'
 import { runPanelDetect, runTextDetect } from './steps/panel-detect.ts'
+import { runResolve } from './steps/resolve.ts'
 
 /**
  * Run the pipeline for one chapter.
@@ -166,6 +168,12 @@ async function runStep(key: StepKey, context: StepContext): Promise<StepResult> 
 
     case 'extract_candidates':
       return runExtract(context)
+
+    case 'resolve_entities':
+      return runResolve(context)
+
+    case 'detect_conflicts':
+      return runConflicts(context)
 
     default:
       throw new Error(`Étape non implémentée : ${key}`)
