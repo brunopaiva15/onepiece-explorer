@@ -98,7 +98,18 @@ export default async function ChaptersPage() {
                     </span>
                   )}
                 </td>
-                <td className="py-2.5 text-secondary">{chapter.status}</td>
+                <td className="py-2.5 text-secondary">
+                  {chapter.status === 'published' ? (
+                    <Link
+                      href={`/delta/${chapter.number}`}
+                      className="text-accent hover:underline"
+                    >
+                      delta
+                    </Link>
+                  ) : (
+                    chapter.status
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

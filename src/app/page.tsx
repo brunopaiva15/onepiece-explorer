@@ -23,12 +23,21 @@ export default function HomePage() {
         >
           Importer le prochain chapitre
         </Link>
-        <Link
-          href="/graph"
-          className="rounded-sm border border-line-strong px-5 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-surface-raised"
-        >
-          Explorer le graphe
-        </Link>
+        {(
+          [
+            ['/graph', 'Explorer le graphe'],
+            ['/chronologie', 'Chronologie'],
+            ['/chapitres', 'Chapitres'],
+          ] as const
+        ).map(([href, label]) => (
+          <Link
+            key={href}
+            href={href}
+            className="rounded-sm border border-line-strong px-5 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-surface-raised"
+          >
+            {label}
+          </Link>
+        ))}
       </div>
 
       <p className="mt-16 border-t border-line pt-6 text-sm text-muted">
