@@ -1,13 +1,20 @@
 # One Piece Explorer
 
-Un graphe de connaissances **temporel, sourcé et anti-spoiler** construit à
-partir des chapitres de One Piece que vous importez vous-même.
+Un seul grand graphe de connaissances **interconnecté et sourcé**, construit à
+partir des chapitres de One Piece que vous importez vous-même : personnages,
+groupes, lieux, objets, événements, promesses, mystères. C'est là qu'on trouve
+les liens auxquels on n'avait pas pensé — un chemin entre deux personnages, une
+récurrence, un recoupement à trois cents chapitres d'écart.
 
-Chaque fait sait à quel chapitre le lecteur a pu l'apprendre. Déplacez le
-curseur de chapitre et l'œuvre se réduit à ce que vous saviez alors : un alias
-reste un alias tant que le vrai nom n'est pas révélé, deux silhouettes restent
-deux nœuds tant que le chapitre qui les identifie n'est pas atteint, une
-croyance réfutée reste visible dans le passé où elle était tenue pour vraie.
+Chaque fait sait aussi **à quel chapitre vous avez pu l'apprendre**. Par défaut
+vous voyez tout ce que vous avez importé ; le curseur sert à revenir en arrière
+quand vous le voulez. Là, le graphe redevient ce que vous saviez alors : un
+alias reste un alias tant que le vrai nom n'est pas révélé, deux silhouettes
+restent deux nœuds tant que le chapitre qui les identifie n'est pas atteint,
+une croyance réfutée reste visible dans le passé où elle était tenue pour vraie.
+
+C'est ce qui rend le grand graphe sûr à construire pendant qu'on lit encore :
+rien ne vous gâche la lecture, et rien n'est perdu non plus.
 
 > **Outil privé.** L'application ne télécharge rien, ne récupère aucun scan en
 > ligne, ne contourne aucune protection et ne publie rien. Vous importez des
