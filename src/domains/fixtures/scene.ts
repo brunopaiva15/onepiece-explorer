@@ -88,7 +88,9 @@ export function cell(
   rows: number,
   span: { cols?: number; rows?: number } = {},
 ): Rect {
-  const gutter = 0.02
+  // Real manga gutters run 3-5% of page width. 2% was unrealistically tight
+  // and made panel detection resolution-sensitive for the wrong reason.
+  const gutter = 0.035
   const cw = (1 - gutter * (cols + 1)) / cols
   const ch = (1 - gutter * (rows + 1)) / rows
   const spanCols = span.cols ?? 1
