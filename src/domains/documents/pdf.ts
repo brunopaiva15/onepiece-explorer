@@ -82,7 +82,16 @@ export async function extractPdfPages(
   const lib = await pdfjs()
 
   const task = lib.getDocument({
-    data: bytes,
+    /*
+     * A copy, because pdfjs takes ownership of this buffer and detaches it.
+     *
+     * The caller still needs the original bytes afterwards — to store the
+     * uploaded file, and to hash it. Handing pdfjs the caller's array leaves
+     * them holding a detached ArrayBuffer, and the failure surfaces far from
+     * here as "Cannot perform Construct on a detached ArrayBuffer" in whatever
+     * touched the bytes next.
+     */
+    data: new Uint8Array(bytes),
     // No network, ever. A PDF can reference external resources, and this is an
     // untrusted file: fetching anything it names would turn an upload into a
     // server-side request forgery. Font data comes from the local package,
