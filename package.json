@@ -17,6 +17,7 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "tsx scripts/db-push.ts",
     "db:push:test": "TEST_DB=1 tsx scripts/db-push.ts",
+    "doctor": "tsx scripts/doctor.ts",
     "fixtures:generate": "tsx scripts/generate-fixtures.ts",
     "fixtures:graph": "tsx scripts/generate-graph.ts",
     "demo": "tsx scripts/demo.ts",

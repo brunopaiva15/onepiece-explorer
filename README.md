@@ -51,7 +51,17 @@ revue. Voir [ADR 0003](docs/adr/0003-evidence-anchoring.md).
 pnpm install
 cp .env.example .env.local   # puis renseignez les valeurs, voir ci-dessous
 pnpm db:push                 # migrations, rôles, politiques RLS, ontologie
+pnpm doctor                  # vérifie que tout répond vraiment
 ```
+
+`pnpm doctor` se connecte réellement à chaque service et rapporte ce qu'il
+obtient : les deux connexions Postgres, l'état des migrations, les rôles SQL,
+la présence de pgvector, la confidentialité du bucket, et la joignabilité de
+l'API Anthropic (par un comptage de tokens, gratuit). Deux contrôles y valident
+une promesse plutôt qu'une connexion : que la RLS bloque effectivement une
+lecture sans frontière, et que le bucket n'est pas public. Ces deux-là échouent
+en silence autrement — l'application marcherait parfaitement tout en fuyant.
+Aucun secret n'est affiché.
 
 ### Variables à renseigner
 
