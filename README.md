@@ -174,6 +174,78 @@ qu'il ne peut pas soutenir. L'interface le dit.
 
 ---
 
+## Chercher, et poser des questions
+
+```
+/recherche   plein texte · orthographe approchante · voisinage · sens
+/ask         une question, une réponse sourcée — ou « données insuffisantes »
+```
+
+### La recherche dit comment elle a trouvé
+
+Quatre modes, fusionnés par rang réciproque plutôt que par score : `ts_rank_cd`
+et la similarité trigramme sont des grandeurs différentes sur des échelles
+différentes, et les normaliser en un seul nombre produirait un classement qui a
+l'air fondé et qui est arbitraire. Chaque résultat porte le mode qui l'a trouvé,
+parce que « correspond à vos mots exacts » et « ressemble à ce que vous avez
+tapé » ne méritent pas la même confiance.
+
+Un mode qui n'a pas pu tourner le **dit**. La différence entre « votre
+bibliothèque n'a pas la réponse » et « une façon de chercher n'a jamais eu lieu »
+est toute la différence entre un résultat vide fiable et un résultat vide
+trompeur.
+
+### Le chemin entre deux entités
+
+C'est ce qu'un graphe interconnecté permet et qu'un wiki ne permet pas : la
+chaîne de relations la plus courte entre deux personnages, telle que vous la
+connaissez à ce chapitre. Reculez le curseur et vous voyez à partir de quand le
+lien existait.
+
+Chaque relation compte pour un pas, sans pondération. La confiance serait le
+choix tentant et il serait faux : une relation peu sûre n'est pas une connexion
+plus *longue*, elle est moins certaine — confondre les deux ferait
+silencieusement contourner au lecteur exactement les liens qu'il devrait
+regarder.
+
+### L'assistant ne peut pas répondre de mémoire
+
+Trois mécanismes, dans cet ordre :
+
+1. **Le contexte est filtré avant d'être assemblé.** Récupérer puis filtrer est
+   l'ordre inverse et c'est ainsi que ces systèmes fuient. Ici tout passe par
+   `withBoundary` : le modèle ne voit jamais une ligne qu'il pourrait divulguer.
+2. **Sans contexte, aucun appel.** Demander à un modèle de répondre à partir de
+   rien, c'est lui demander de répondre depuis son entraînement — et il le fera,
+   avec aisance, sur des chapitres que vous n'avez pas ouverts.
+3. **Chaque citation est vérifiée** contre ce qui était réellement dans le
+   contexte, par identifiant. Une citation qui ne correspond à rien est retirée
+   et signalée ; une réponse dont toutes les citations tombent devient « données
+   insuffisantes », jamais une affirmation nue.
+
+L'extrait affiché vient du contexte, pas de la réponse du modèle : citer un vrai
+identifiant en paraphrasant la citation est l'échec le plus subtil ici, et le
+lecteur doit voir ce que la page dit vraiment.
+
+```bash
+TEST_DB=1 pnpm eval:assistant
+```
+
+Trois scores : citations inventées, franchissements de frontière, réponses
+malhonnêtes. Les questions du jeu incluent « Qui est le père de Luffy ? » — le
+piège de connaissance externe le plus direct qui soit.
+
+### Recherche sémantique
+
+Anthropic n'expose pas d'endpoint d'embeddings. La recherche plein texte,
+approchante et par graphe fonctionne sans aucune clé ni dépendance
+supplémentaire ; la couche sémantique est enfichable derrière `VectorStore`.
+Sans fournisseur, le magasin vectoriel **déclare** son indisponibilité au lieu
+de renvoyer une liste vide — une liste vide affirmerait que rien ne correspond,
+ce qui est une affirmation sur votre bibliothèque, et elle serait fausse.
+
+---
+
 ## Tests
 
 La suite tourne sur un PostgreSQL local et sur des réponses de modèle

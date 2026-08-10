@@ -11,8 +11,10 @@ export interface ReaderSession {
   workId: string
   /** Highest published chapter number — the ceiling for the boundary slider. */
   maxChapter: number
-  /** Where the reader currently is. */
+  /** Where the reader currently is. Defaults to everything they have. */
   boundaryChapter: number
+  /** True when the reader has not deliberately rewound. */
+  followingLatest: boolean
 }
 
 /**
@@ -74,10 +76,19 @@ export async function getReaderSession(
       .where(eq(profiles.id, user.id))
       .limit(1)
 
-    const stored = profile?.boundaryChapter ?? maxChapter
+    /*
+     * No stored position means "show me everything I have".
+     *
+     * This used to default to 0, so a reader who had never touched the slider
+     * saw an empty graph — every chapter they had imported and published hidden
+     * by the feature meant to protect them. Dating facts by revelation chapter
+     * exists to make the whole graph safe to accumulate while you are still
+     * reading, not to withhold it.
+     */
+    const stored = profile?.boundaryChapter ?? null
     const boundaryChapter =
       requestedBoundary === undefined
-        ? Math.min(stored, maxChapter)
+        ? (stored === null ? maxChapter : Math.min(stored, maxChapter))
         : resolveBoundary(requestedBoundary, maxChapter)
 
     return {
@@ -86,6 +97,7 @@ export async function getReaderSession(
       workId: work.id,
       maxChapter,
       boundaryChapter,
+      followingLatest: boundaryChapter >= maxChapter,
     }
   })
 }

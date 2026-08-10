@@ -119,9 +119,12 @@ export const STEPS: readonly StepDefinition[] = [
   {
     key: 'embed',
     label: 'Indexation sémantique',
-    detail: 'Vecteurs pour la recherche et pour l’assistant.',
+    detail:
+      'Vecteurs pour la recherche sémantique. Sans fournisseur d’embeddings configuré, '
+      + 'l’étape se déclare ignorée : la recherche plein texte, approchante et par graphe '
+      + 'fonctionne sans elle.',
     usesModel: true,
-    implemented: false,
+    implemented: true,
   },
 ] as const
 

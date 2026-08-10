@@ -1,0 +1,170 @@
+import 'server-only'
+import { and, inArray, sql } from 'drizzle-orm'
+import { withBoundary } from '@/db/boundary.ts'
+import { assertions, entityLabels, evidence } from '@/db/schema/knowledge.ts'
+import { search } from '../search/index.ts'
+
+/**
+ * Assemble what the assistant is allowed to reason from.
+ *
+ * The ordering is the whole safety argument: retrieve, *then* filter, is the
+ * wrong way round and is how most of these systems leak. Here every read runs
+ * inside `withBoundary`, so the search that finds candidates and the query that
+ * expands them into assertions are both filtered by the database before
+ * anything reaches a prompt. The model never sees a row it could have leaked,
+ * so no amount of prompt engineering on its side can produce one.
+ *
+ * The context is also the *allowlist* the answer is checked against afterwards.
+ * That is why it is built here rather than assembled inline in the prompt: the
+ * verification step needs the same object the model was given, not a
+ * reconstruction of it.
+ */
+
+export interface ContextEntry {
+  assertionId: string
+  chapter: number
+  statement: string
+  excerpt: string | null
+  subjectId: string
+  objectId: string | null
+}
+
+export interface AssistantContext {
+  boundaryChapter: number
+  entries: ContextEntry[]
+  /** Entities the search surfaced, for "I looked at these" transparency. */
+  entityIds: string[]
+  /** Modes that could not run, passed through so the answer can say so. */
+  notes: string[]
+}
+
+/** How many assertions to hand the model. */
+const MAX_ENTRIES = 40
+
+export async function buildContext(
+  userId: string,
+  boundaryChapter: number,
+  question: string,
+): Promise<AssistantContext> {
+  const found = await search(userId, boundaryChapter, question, { limit: 20 })
+
+  const entityIds = [
+    ...new Set(
+      found.hits
+        .map((hit) => hit.entityId)
+        .filter((id): id is string => id !== null),
+    ),
+  ]
+
+  const notes = found.modes
+    .filter((mode) => !mode.ran && mode.note)
+    .map((mode) => mode.note!)
+
+  if (entityIds.length === 0) {
+    return { boundaryChapter, entries: [], entityIds: [], notes }
+  }
+
+  const entries = await withBoundary({ userId, boundaryChapter }, async (db) => {
+    /*
+     * Every assertion touching a found entity, in either direction.
+     *
+     * Subject-only would answer "what did X do" and not "who did something to
+     * X", and for a story the second question is at least as common — who
+     * betrayed whom, who is looking for whom.
+     */
+    const rows = await db
+      .select({
+        id: assertions.id,
+        predicate: assertions.predicate,
+        subjectId: assertions.subjectEntityId,
+        objectId: assertions.objectEntityId,
+        objectValue: assertions.objectValue,
+        chapter: assertions.knowledgeFromChapter,
+        epistemicStatus: assertions.epistemicStatus,
+      })
+      .from(assertions)
+      .where(
+        sql`${assertions.subjectEntityId} IN ${entityIds} OR ${assertions.objectEntityId} IN ${entityIds}`,
+      )
+      .orderBy(assertions.knowledgeFromChapter)
+      .limit(MAX_ENTRIES)
+
+    if (rows.length === 0) return []
+
+    const involved = [
+      ...new Set(
+        rows.flatMap((row) =>
+          [row.subjectId, row.objectId].filter((id): id is string => id !== null),
+        ),
+      ),
+    ]
+
+    const labels = await db
+      .select({
+        entityId: entityLabels.entityId,
+        label: entityLabels.label,
+      })
+      .from(entityLabels)
+      .where(inArray(entityLabels.entityId, involved))
+      .orderBy(sql`${entityLabels.precedence} DESC`)
+
+    const labelOf = new Map<string, string>()
+    for (const row of labels) {
+      if (!labelOf.has(row.entityId)) labelOf.set(row.entityId, row.label)
+    }
+
+    // One excerpt per assertion, so the model can quote what the page said
+    // rather than paraphrasing the predicate.
+    const excerpts = await db
+      .select({ assertionId: evidence.assertionId, excerpt: evidence.excerpt })
+      .from(evidence)
+      .where(
+        and(
+          inArray(
+            evidence.assertionId,
+            rows.map((row) => row.id),
+          ),
+          sql`${evidence.excerpt} IS NOT NULL`,
+        ),
+      )
+
+    const excerptOf = new Map<string, string>()
+    for (const row of excerpts) {
+      if (row.excerpt && !excerptOf.has(row.assertionId)) {
+        excerptOf.set(row.assertionId, row.excerpt)
+      }
+    }
+
+    return rows.map((row): ContextEntry => {
+      const subject = labelOf.get(row.subjectId) ?? 'une entité sans nom révélé'
+      const object = row.objectId
+        ? (labelOf.get(row.objectId) ?? 'une entité sans nom révélé')
+        : literalOf(row.objectValue)
+
+      return {
+        assertionId: row.id,
+        chapter: row.chapter,
+        // Rendered as a sentence rather than passed as a triple: the model
+        // reads prose better, and the qualifier keeps a hypothesis from being
+        // quoted back as though it were established.
+        statement:
+          `${subject} — ${row.predicate} — ${object ?? '(valeur absente)'}` +
+          (row.epistemicStatus === 'explicit' ? '' : ` [${row.epistemicStatus}]`),
+        excerpt: excerptOf.get(row.id) ?? null,
+        subjectId: row.subjectId,
+        objectId: row.objectId,
+      }
+    })
+  })
+
+  return { boundaryChapter, entries, entityIds, notes }
+}
+
+function literalOf(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'object' && 'value' in (value as Record<string, unknown>)) {
+    const inner = (value as Record<string, unknown>).value
+    return inner === null || inner === undefined ? null : String(inner)
+  }
+  return String(value)
+}

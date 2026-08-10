@@ -26,7 +26,8 @@
     "test:antispoiler": "vitest run tests/antispoiler",
     "test:perf": "vitest run tests/perf",
     "test:e2e": "playwright test",
-    "smoke:worker": "tsx --tsconfig tsconfig.worker.json scripts/smoke-worker.ts"
+    "smoke:worker": "tsx --tsconfig tsconfig.worker.json scripts/smoke-worker.ts",
+    "eval:assistant": "tsx --tsconfig tsconfig.worker.json scripts/eval-assistant.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

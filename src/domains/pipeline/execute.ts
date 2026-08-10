@@ -15,6 +15,7 @@ import {
 import type { StepContext, StepResult } from './steps/context.ts'
 import { runConflicts } from './steps/conflicts.ts'
 import { runDescribe } from './steps/describe.ts'
+import { runEmbed } from './steps/embed.ts'
 import { runExtract } from './steps/extract.ts'
 import { runOcr } from './steps/ocr.ts'
 import { runPanelDetect, runTextDetect } from './steps/panel-detect.ts'
@@ -174,6 +175,9 @@ async function runStep(key: StepKey, context: StepContext): Promise<StepResult> 
 
     case 'detect_conflicts':
       return runConflicts(context)
+
+    case 'embed':
+      return runEmbed(context)
 
     default:
       throw new Error(`Étape non implémentée : ${key}`)

@@ -11,6 +11,7 @@ import {
   events,
   evidence,
   mysteries,
+  occurrences,
 } from '@/db/schema/knowledge.ts'
 import { PROMPT_VERSION } from '@/domains/ai/prompts.ts'
 import type {
@@ -297,13 +298,46 @@ export async function publishDecisions(
         continue
       }
 
-      await insertEvidence(db, {
+      const anchors = await insertEvidence(db, {
         assertionId: assertion.id,
         userId,
         chapterId: run.chapterId,
         refs: candidate.evidence,
         refTable: table,
       })
+
+      /*
+       * Record where each participant was seen.
+       *
+       * `occurrences` has been boundary-filtered since 0005 and empty ever
+       * since — nothing wrote it. It is what makes "where does this character
+       * appear" answerable without walking every assertion's evidence, and it
+       * gives a search result a page and a panel to link to rather than only a
+       * chapter number.
+       *
+       * `appearance` when the evidence is a drawing, `mention` when it is text:
+       * being named in a conversation is not the same as being on the page, and
+       * a reader looking for a character's first appearance means the first.
+       */
+      const participants = [subjectId, objectId].filter(
+        (id): id is string => id !== null,
+      )
+      for (const entityId of participants) {
+        for (const anchor of anchors) {
+          await db
+            .insert(occurrences)
+            .values({
+              entityId,
+              userId,
+              chapterId: run.chapterId,
+              panelId: anchor.panelId,
+              kind: anchor.kind === 'image' ? 'appearance' : 'mention',
+              chapterNumber: run.chapterNumber,
+              confidence: candidate.confidence,
+            })
+            .onConflictDoNothing()
+        }
+      }
 
       result.assertionsCreated++
       await recordDecision(db, userId, run.workId, item, decision)
@@ -481,8 +515,8 @@ async function insertEvidence(
     refs: EvidenceRef[]
     refTable: RefTable
   },
-): Promise<void> {
-  if (input.refs.length === 0) return
+): Promise<Array<{ panelId: string | null; kind: 'dialogue' | 'image' }>> {
+  if (input.refs.length === 0) return []
 
   const rows = input.refs.map((ref) => {
     const resolved = resolveRef(input.refTable, ref.ref)
@@ -518,6 +552,7 @@ async function insertEvidence(
   })
 
   await db.insert(evidence).values(rows)
+  return rows.map((row) => ({ panelId: row.panelId, kind: row.kind }))
 }
 
 /**

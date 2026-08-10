@@ -33,7 +33,12 @@ export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey(),
   displayName: text('display_name'),
   theme: text('theme').notNull().default('system'),
-  boundaryChapter: integer('boundary_chapter').notNull().default(0),
+  /**
+   * Reader position. NULL means "follow the latest published chapter", which
+   * is the default and shows the entire graph — the boundary is a lens you
+   * reach for, not a gate you unlock. See migration 0011.
+   */
+  boundaryChapter: integer('boundary_chapter'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

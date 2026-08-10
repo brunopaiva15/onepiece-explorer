@@ -6,16 +6,19 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 /**
  * The chapter boundary, always visible.
  *
- * This is the control the whole product is about, so it lives in the URL rather
- * than in component state: a view of the graph at chapter 20 is a thing you can
- * link to, reload, and open in two tabs beside chapter 300. State that only
- * exists in memory would make "compare two moments" impossible without building
- * a second mechanism for it.
+ * The default position is the far right: everything imported. The slider is a
+ * lens for looking *back*, not a gate to unlock — its normal state shows the
+ * whole graph, and only a deliberate drag hides anything.
  *
- * The banner is not decoration. Someone who scrolled the slider ten minutes ago
- * and came back to the tab has no other way to tell that what they are reading
- * is deliberately incomplete — and a graph that is quietly missing half the
- * story looks exactly like a graph that has all of it.
+ * It lives in the URL rather than in component state, so a view at chapter 20
+ * is something you can link to, reload, and open in a tab beside chapter 300.
+ * State that only existed in memory would make "compare two moments" need a
+ * second mechanism.
+ *
+ * The banner is not decoration, but it only appears once you have rewound:
+ * someone returning to a tab has no other way to tell that what they are
+ * reading is deliberately partial, and a graph quietly missing half the story
+ * looks exactly like a graph that has all of it.
  */
 
 interface Props {
@@ -52,7 +55,7 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
     <div className="sticky top-0 z-20 border-b border-line bg-surface-base/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-3">
         <label htmlFor={inputId} className="shrink-0 text-sm font-medium text-primary">
-          Chapitre lu
+          Jusqu&apos;au chapitre
         </label>
 
         <input
@@ -89,6 +92,14 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
           </span>
         )}
       </div>
+
+      {atPresent && maxChapter > 0 && (
+        <p className="border-t border-line px-6 py-1 text-center text-xs text-muted">
+          Vue compl&egrave;te : tout ce que vous avez import&eacute; jusqu&apos;au
+          chapitre {maxChapter}. Reculez le curseur pour retrouver un &eacute;tat
+          ant&eacute;rieur de vos connaissances.
+        </p>
+      )}
 
       {!atPresent && (
         <p
