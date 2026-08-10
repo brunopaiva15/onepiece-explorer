@@ -1,7 +1,8 @@
 import 'server-only'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
-import { documents, pages } from '@/db/schema/documents.ts'
+import { chapters, documents, pages } from '@/db/schema/documents.ts'
+import { ingestionRuns } from '@/db/schema/ingestion.ts'
 import { RUNNABLE_STEPS, STEPS, type StepKey } from './registry.ts'
 import {
   inputHash,
@@ -11,6 +12,10 @@ import {
   previousSuccess,
   recordStep,
 } from './runs.ts'
+import type { StepContext, StepResult } from './steps/context.ts'
+import { runDescribe } from './steps/describe.ts'
+import { runExtract } from './steps/extract.ts'
+import { runOcr } from './steps/ocr.ts'
 import { runPanelDetect, runTextDetect } from './steps/panel-detect.ts'
 
 /**
@@ -30,6 +35,7 @@ import { runPanelDetect, runTextDetect } from './steps/panel-detect.ts'
 export interface ExecuteResult {
   status: 'succeeded' | 'failed'
   error?: string
+  costCents: number
 }
 
 export async function executeRun(
@@ -39,7 +45,21 @@ export async function executeRun(
 ): Promise<ExecuteResult> {
   await markRunStarted(runId)
 
+  let totalCostCents = 0
+
   try {
+    const chapterNumber = await withIngest(async (db) => {
+      const [row] = await db
+        .select({ number: chapters.number })
+        .from(chapters)
+        .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))
+        .limit(1)
+      if (!row) throw new Error(`Chapitre introuvable : ${chapterId}`)
+      return row.number
+    })
+
+    const context: StepContext = { userId, chapterId, chapterNumber, runId }
+
     for (const step of RUNNABLE_STEPS) {
       const hash = await hashInputsFor(step.key, userId, chapterId)
 
@@ -67,11 +87,17 @@ export async function executeRun(
       const started = Date.now()
 
       try {
-        const note = await runStep(step.key, userId, chapterId)
+        const result = await runStep(step.key, context)
+        totalCostCents += result.costCents ?? 0
+
         await recordStep(runId, userId, step.key, hash, {
-          status: 'succeeded',
+          status: result.status ?? 'succeeded',
           durationMs: Date.now() - started,
-          note,
+          note: result.note,
+          ...(result.costCents === undefined ? {} : { costCents: result.costCents }),
+          ...(result.tokensIn === undefined ? {} : { tokensIn: result.tokensIn }),
+          ...(result.tokensOut === undefined ? {} : { tokensOut: result.tokensOut }),
+          ...(result.modelId === undefined ? {} : { modelId: result.modelId }),
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -80,8 +106,9 @@ export async function executeRun(
           durationMs: Date.now() - started,
           error: message,
         })
+        await recordRunCost(runId, totalCostCents)
         await markRunFinished(runId, { status: 'failed', error: message })
-        return { status: 'failed', error: message }
+        return { status: 'failed', error: message, costCents: totalCostCents }
       }
     }
 
@@ -89,50 +116,77 @@ export async function executeRun(
       await recordStep(runId, userId, step.key, null, {
         status: 'skipped',
         durationMs: 0,
-        note: 'Étape déclarée, pas encore implémentée (phase 2).',
+        note: 'Étape déclarée, pas encore implémentée.',
       })
     }
 
+    await recordRunCost(runId, totalCostCents)
     await markRunFinished(runId, { status: 'succeeded' })
-    return { status: 'succeeded' }
+    return { status: 'succeeded', costCents: totalCostCents }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    await recordRunCost(runId, totalCostCents)
     await markRunFinished(runId, { status: 'failed', error: message })
-    return { status: 'failed', error: message }
+    return { status: 'failed', error: message, costCents: totalCostCents }
   }
 }
 
-async function runStep(
-  key: StepKey,
-  userId: string,
-  chapterId: string,
-): Promise<string> {
+async function runStep(key: StepKey, context: StepContext): Promise<StepResult> {
   switch (key) {
     case 'panel_detect': {
-      const result = await runPanelDetect(userId, chapterId)
+      const result = await runPanelDetect(context.userId, context.chapterId)
       const warning =
         result.lowConfidencePages > 0
           ? ` · ${result.lowConfidencePages} page(s) à vérifier`
           : ''
-      return `${result.panelsCreated} cases sur ${result.pagesProcessed} pages${warning}`
+      return {
+        note: `${result.panelsCreated} cases sur ${result.pagesProcessed} pages${warning}`,
+      }
     }
 
     case 'text_detect': {
-      const result = await runTextDetect(userId, chapterId)
+      const result = await runTextDetect(context.userId, context.chapterId)
       if (result.blocks === 0) {
-        return 'Aucun bloc de texte — la transcription reste à faire.'
+        return { note: 'Aucun bloc de texte — la transcription reste à faire.' }
       }
       const orphans =
         result.unassigned > 0
           ? ` · ${result.unassigned} hors case (titre, pagination, mentions)`
           : ''
-      return `${result.assigned}/${result.blocks} blocs rattachés à une case${orphans}`
+      return {
+        note: `${result.assigned}/${result.blocks} blocs rattachés à une case${orphans}`,
+      }
     }
 
-    default: {
+    case 'ocr':
+      return runOcr(context)
+
+    case 'panel_describe':
+      return runDescribe(context)
+
+    case 'extract_candidates':
+      return runExtract(context)
+
+    default:
       throw new Error(`Étape non implémentée : ${key}`)
-    }
   }
+}
+
+/**
+ * The run's real cost, accumulated from what the provider actually reported.
+ *
+ * Kept next to the pre-launch estimate rather than replacing it, so the
+ * estimator can be checked against reality. An estimate nobody compares to the
+ * outcome is decoration.
+ */
+async function recordRunCost(runId: string, costCents: number): Promise<void> {
+  if (costCents <= 0) return
+  await withIngest(async (db) => {
+    await db
+      .update(ingestionRuns)
+      .set({ totalCostCents: Math.round(costCents) })
+      .where(eq(ingestionRuns.id, runId))
+  })
 }
 
 /**
@@ -183,7 +237,37 @@ async function hashInputsFor(
     case 'text_detect':
       return inputHash(['text_detect', fingerprint])
 
+    /*
+     * The model steps deliberately return null: always re-run.
+     *
+     * Their output depends on the prompt version, the model id, and — for
+     * extraction — on which entities were already validated when the run
+     * started, none of which are in the page fingerprint. A hash that missed
+     * any of those would reuse a stale result after a prompt fix, which is the
+     * one kind of caching bug that is invisible: the run reports success and
+     * silently reproduces the behaviour the fix was meant to change.
+     *
+     * The per-step cost is recorded, so the price of this choice is visible
+     * rather than hidden. Narrowing it is a later optimisation with a real
+     * correctness argument attached, not a default.
+     */
     default:
       return null
   }
+}
+
+/** Total spent on a chapter across every run. For the cost dashboard. */
+export async function chapterCostCents(
+  userId: string,
+  chapterId: string,
+): Promise<number> {
+  return withIngest(async (db) => {
+    const [row] = await db
+      .select({ total: sql<number>`coalesce(sum(total_cost_cents), 0)::int` })
+      .from(ingestionRuns)
+      .where(
+        and(eq(ingestionRuns.chapterId, chapterId), eq(ingestionRuns.userId, userId)),
+      )
+    return row?.total ?? 0
+  })
 }

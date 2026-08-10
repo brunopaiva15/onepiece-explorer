@@ -63,8 +63,24 @@ beforeEach(async () => {
   // adapter, so point the configured driver at this test's directory.
   process.env.STORAGE_DRIVER = 'local'
   process.env.LOCAL_STORAGE_ROOT = storageRoot
+
+  /*
+   * Synthetic, not replay, and deliberately so.
+   *
+   * This file asks whether the *steps* compose — whether panels get written,
+   * text lands inside them, proposals reach the queue, costs are recorded.
+   * None of that is a question about what a model answered. Replay would be
+   * the right provider for a test asserting on model output, and it correctly
+   * refuses to run without a recording; using it here would make every one of
+   * these assertions depend on a cassette that says nothing about the property
+   * under test.
+   */
+  process.env.MODEL_PROVIDER = 'synthetic'
+
   const { resetStorageCache } = await import('@/domains/storage/index.ts')
+  const { resetModelProvider } = await import('@/domains/ai/index.ts')
   resetStorageCache()
+  resetModelProvider()
 })
 
 afterAll(async () => {
@@ -130,9 +146,98 @@ describe('executing a run', () => {
     expect(unbuilt.every((s) => s.status === 'skipped')).toBe(true)
     expect(unbuilt.every((s) => (s.note ?? '').length > 0)).toBe(true)
 
+    /*
+     * A built step can honestly report 'skipped', and conflating that with
+     * failure would be wrong in the most important case: this chapter's PDF
+     * carried its own text layer, so transcription has nothing to add and
+     * running it could only degrade an exact result. What must hold is that no
+     * built step failed and every one explains itself.
+     */
     const built = view!.steps.filter((s) => s.implemented)
-    expect(built.every((s) => s.status === 'succeeded')).toBe(true)
+    expect(built.every((s) => s.status !== 'failed' && s.status !== 'pending')).toBe(true)
     expect(built.every((s) => (s.note ?? '').length > 0)).toBe(true)
+
+    const ocr = view!.steps.find((s) => s.key === 'ocr')
+    expect(ocr?.status).toBe('skipped')
+    expect(ocr?.note).toMatch(/couche texte/)
+  })
+
+  it('describes panels and queues proposals, none of them canon', async () => {
+    const { userId, chapterId } = await importFixtureChapter()
+    const runId = await createRun(userId, chapterId)
+    await executeRun(userId, chapterId, runId)
+
+    const [described] = await raw<Array<{ count: number }>>`
+      SELECT count(*)::int AS count FROM panels
+      WHERE chapter_id = ${chapterId} AND description IS NOT NULL
+    `
+    expect(described!.count).toBeGreaterThan(0)
+
+    const items = await raw<
+      Array<{ category: string; proposal_fingerprint: string; status: string }>
+    >`
+      SELECT category, proposal_fingerprint, status FROM review_items
+      WHERE run_id = ${runId}
+    `
+    expect(items.length).toBeGreaterThan(0)
+
+    // Everything the pipeline produces waits for a human. Nothing is accepted,
+    // and nothing has reached the assertions table.
+    expect(items.every((i) => i.status === 'proposed')).toBe(true)
+    expect(items.every((i) => i.proposal_fingerprint.length === 64)).toBe(true)
+
+    const [assertions] = await raw<Array<{ count: number }>>`
+      SELECT count(*)::int AS count FROM assertions
+    `
+    expect(assertions!.count).toBe(0)
+  })
+
+  it('does not re-ask about a proposal the user already decided', async () => {
+    /*
+     * Blocking test 6. The mechanism is the fingerprint: a decision recorded
+     * against one is re-applied on the next run and the item never returns to
+     * the queue. Without it, re-importing a chapter would ask the same
+     * questions again — and a reviewer who has to re-answer fifty decisions
+     * stops reading them.
+     */
+    const { userId, chapterId } = await importFixtureChapter()
+
+    const firstRun = await createRun(userId, chapterId)
+    await executeRun(userId, chapterId, firstRun)
+
+    const items = await raw<Array<{ proposal_fingerprint: string }>>`
+      SELECT proposal_fingerprint FROM review_items WHERE run_id = ${firstRun}
+    `
+    expect(items.length).toBeGreaterThan(0)
+
+    const [work] = await raw<Array<{ work_id: string }>>`
+      SELECT work_id FROM chapters WHERE id = ${chapterId}
+    `
+
+    // The user rejects the first proposal.
+    await raw`
+      INSERT INTO review_decisions (user_id, work_id, proposal_fingerprint, decision)
+      VALUES (${userId}, ${work!.work_id}, ${items[0]!.proposal_fingerprint}, 'reject')
+    `
+
+    // Force extraction to run again rather than reuse its cache.
+    await raw`DELETE FROM ingestion_steps WHERE step_key = 'extract_candidates'`
+
+    const secondRun = await createRun(userId, chapterId)
+    await executeRun(userId, chapterId, secondRun)
+
+    const requeued = await raw<Array<{ proposal_fingerprint: string }>>`
+      SELECT proposal_fingerprint FROM review_items WHERE run_id = ${secondRun}
+    `
+    expect(requeued.map((r) => r.proposal_fingerprint)).not.toContain(
+      items[0]!.proposal_fingerprint,
+    )
+    // The others still come back: only the decided one is suppressed.
+    expect(requeued.length).toBe(items.length - 1)
+
+    const view = await getRun(userId, secondRun)
+    const extract = view!.steps.find((s) => s.key === 'extract_candidates')
+    expect(extract?.note).toMatch(/déjà décidées/)
   })
 
   it('reuses an unchanged step instead of recomputing it', async () => {

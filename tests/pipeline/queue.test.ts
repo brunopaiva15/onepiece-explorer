@@ -47,4 +47,37 @@ describe('the job queue', () => {
     const configured = await queue.getQueue(CHAPTER_QUEUE)
     expect(configured?.policy).toBe('stately')
   })
+
+  it('dedupes per chapter, not across the whole queue', async () => {
+    /*
+     * `stately` allows one job per state, and without a singletonKey that scope
+     * is the entire queue — so importing two chapters back to back silently
+     * dropped the second one's job. The smoke test surfaced it as a null job
+     * id, which is easy to read past. This makes it fail loudly instead.
+     */
+    const chapterA = '00000000-0000-4000-8000-00000000aaaa'
+    const chapterB = '00000000-0000-4000-8000-00000000bbbb'
+
+    const first = await enqueueChapter({
+      runId: '00000000-0000-4000-8000-00000000aaa1',
+      userId: '00000000-0000-4000-8000-000000000002',
+      chapterId: chapterA,
+    })
+    const second = await enqueueChapter({
+      runId: '00000000-0000-4000-8000-00000000bbb1',
+      userId: '00000000-0000-4000-8000-000000000002',
+      chapterId: chapterB,
+    })
+    // Same chapter again: this one *should* be deduped.
+    const duplicate = await enqueueChapter({
+      runId: '00000000-0000-4000-8000-00000000aaa2',
+      userId: '00000000-0000-4000-8000-000000000002',
+      chapterId: chapterA,
+    })
+
+    expect(first).toBeTruthy()
+    expect(second).toBeTruthy()
+    expect(second).not.toBe(first)
+    expect(duplicate).toBeNull()
+  })
 })

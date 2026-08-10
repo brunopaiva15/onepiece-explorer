@@ -64,8 +64,16 @@ export async function boss(): Promise<PgBoss> {
 
     await created.start()
     await created.createQueue(CHAPTER_QUEUE, {
-      // One run at a time per chapter: two concurrent runs over the same pages
-      // would each delete the other's panels.
+      /*
+       * One run at a time per chapter, scoped by singletonKey at send time.
+       *
+       * `stately` allows one job per state, and *without* a singletonKey that
+       * scope is the whole queue — so queueing chapter 2 while chapter 1 was
+       * still waiting silently dropped chapter 2. The smoke test caught it as a
+       * null job id. The dedup wanted here is per chapter: two runs over the
+       * same pages would each delete the other's panels, while two runs over
+       * different chapters are simply two pieces of work.
+       */
       policy: 'stately',
     })
 
@@ -79,6 +87,9 @@ export async function boss(): Promise<PgBoss> {
 export async function enqueueChapter(job: ChapterJob): Promise<string | null> {
   const queue = await boss()
   return queue.send(CHAPTER_QUEUE, job, {
+    // Scopes the queue's `stately` dedup to one chapter. Without it the policy
+    // applies across the whole queue and a second chapter's job is dropped.
+    singletonKey: job.chapterId,
     // Retries are for transient failures — a dropped connection, a storage
     // timeout. A malformed page fails the same way every time, so the backoff
     // is short and the ceiling low; the failure is then visible in the run

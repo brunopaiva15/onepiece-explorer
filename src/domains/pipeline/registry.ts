@@ -66,14 +66,14 @@ export const STEPS: readonly StepDefinition[] = [
     detail:
       'Ignorée si la source portait une couche texte : celle-ci est exacte et gratuite. Sinon tesseract, puis un modèle si la confiance est basse.',
     usesModel: true,
-    implemented: false,
+    implemented: true,
   },
   {
     key: 'panel_describe',
     label: 'Description des cases',
     detail: 'Description factuelle de ce qui est dessiné, case par case.',
     usesModel: true,
-    implemented: false,
+    implemented: true,
   },
   {
     key: 'extract_candidates',
@@ -81,7 +81,7 @@ export const STEPS: readonly StepDefinition[] = [
     detail:
       'Entités, événements et relations, chacun obligatoirement ancré à une case ou à un bloc de texte réel.',
     usesModel: true,
-    implemented: false,
+    implemented: true,
   },
   {
     key: 'resolve_entities',
