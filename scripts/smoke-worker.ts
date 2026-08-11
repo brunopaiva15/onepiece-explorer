@@ -10,7 +10,7 @@
  *
  *   TEST_DB=1 pnpm smoke:worker
  */
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 import { readFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'

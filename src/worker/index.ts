@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import '@/lib/load-env.ts'
 import { closeConnections } from '@/db/client.ts'
 import { executeRun } from '@/domains/pipeline/execute.ts'
 import { boss, CHAPTER_QUEUE, stopQueue, type ChapterJob } from '@/domains/pipeline/queue.ts'

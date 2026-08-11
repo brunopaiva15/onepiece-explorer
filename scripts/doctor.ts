@@ -15,7 +15,7 @@
  * Reads .env.local. Prints no secret: only whether one is present, and what
  * the far end said.
  */
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 import postgres from 'postgres'
 
 type Level = 'ok' | 'warn' | 'fail' | 'skip'

@@ -11,7 +11,7 @@
  * keeps working when one of the three is down, and means the enrichment run in
  * CI never opens a socket.
  */
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 import { buildCatalogue, cataloguePath, loadCatalogue, summarize } from '../src/domains/images/catalogue.ts'
 
 async function main(): Promise<void> {

@@ -87,6 +87,21 @@ Les deux connexions ne sont pas interchangeables. Les lectures applicatives
 passent par le pooler en mode transaction (`prepare: false` obligatoire) ; les
 migrations, le worker et le pipeline exigent la connexion directe.
 
+**Où les mettre.** Dans `.env.local`, à la racine — ignoré par Git. Tout les
+lit : l'application, le worker, et les scripts (`db:push`, `doctor`, `demo`,
+`images:enrich`…). L'ordre de priorité est celui de Next.js :
+
+```
+variable d'environnement réelle  >  .env.local  >  .env
+```
+
+Une variable déjà posée dans le shell gagne toujours, ce qui permet à
+`TEST_DB=1 pnpm demo` de passer outre votre fichier, et à un hébergeur ou à la
+CI de fournir les leurs sans fichier du tout. `.env` sert aux valeurs partagées
+et sans secret ; `.env.local` aux secrets.
+
+`pnpm doctor` dit lesquelles sont vues, et ne montre jamais une valeur.
+
 ### Bucket de stockage
 
 Créez un bucket **privé** nommé `chapters` dans Supabase Storage. S'il est

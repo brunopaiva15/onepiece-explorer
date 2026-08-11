@@ -17,7 +17,7 @@
  *
  *   TEST_DB=1 pnpm fixtures:graph
  */
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 import { randomUUID } from 'node:crypto'
 import postgres from 'postgres'
 

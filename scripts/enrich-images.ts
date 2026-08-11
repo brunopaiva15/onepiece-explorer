@@ -10,7 +10,7 @@
  * finds and stores it in the private bucket. Re-runnable: an entity that already
  * has a picture is skipped, so a second pass only fills what the first missed.
  */
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 import path from 'node:path'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

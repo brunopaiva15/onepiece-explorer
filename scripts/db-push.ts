@@ -10,7 +10,7 @@
  *   pnpm db:push        → DIRECT_URL (Supabase, direct connection)
  *   pnpm db:push:test   → TEST_DATABASE_URL (local PostgreSQL, created if absent)
  */
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 import { readdir, readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import path from 'node:path'

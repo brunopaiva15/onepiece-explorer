@@ -45,6 +45,11 @@ pnpm build
 # puis redémarrer les deux processus
 ```
 
+La configuration se lit dans `.env.local` puis `.env`, une variable réellement
+présente dans l'environnement l'emportant sur les deux — même ordre que
+Next.js, et le même pour l'application, le worker et les scripts. Un hébergeur
+qui injecte ses propres variables n'a donc aucun fichier à déposer.
+
 `pnpm db:push` est idempotent : il applique les migrations manquantes, les
 inscrit dans `_migrations`, et ne rejoue pas celles qui y sont déjà.
 

@@ -23,7 +23,7 @@
  * does. A demo that stopped at the review queue would demonstrate the review
  * queue and nothing after it.
  */
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 import { readFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'

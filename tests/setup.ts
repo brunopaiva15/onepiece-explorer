@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import '../src/lib/load-env.ts'
 
 /**
  * The suite runs against the local PostgreSQL 16, never against Supabase and
