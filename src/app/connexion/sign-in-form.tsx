@@ -33,6 +33,22 @@ function translateError(message: string): string {
   if (m.includes('fetch') || m.includes('network')) {
     return 'Connexion à Supabase impossible. Vérifiez NEXT_PUBLIC_SUPABASE_URL.'
   }
+  /*
+   * "Invalid API key" is about the installation, not about the person typing.
+   * It reaches the one screen where a visitor can do nothing with it, and reads
+   * like a rejected password — so it deserves the three things it can actually
+   * be, in place of a message that sends someone to reset a password that was
+   * never wrong.
+   */
+  if (m.includes('invalid api key') || m.includes('no api key')) {
+    return (
+      "La clé NEXT_PUBLIC_SUPABASE_ANON_KEY n'est pas acceptée par ce projet. " +
+      "Trois causes : elle vient d'un autre projet que NEXT_PUBLIC_SUPABASE_URL, " +
+      'elle a été tronquée au collage (une clé JWT fait plus de 200 caractères, ' +
+      'sur une seule ligne), ou les clés héritées sont désactivées dans Supabase ' +
+      '— auquel cas prenez la clé « publishable ». Rien à voir avec votre mot de passe.'
+    )
+  }
   return message
 }
 
