@@ -10,13 +10,14 @@ import {
   filterExtraction,
   proposalFingerprint,
   type OntologyView,
+  type Quarantined,
 } from '@/domains/ai/anchoring.ts'
 import { modelProvider } from '@/domains/ai/index.ts'
-import type { PanelDescription } from '@/domains/ai/schemas.ts'
+import type { Extraction, PanelDescription } from '@/domains/ai/schemas.ts'
 import { PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { quarantineItems } from '../quarantine.ts'
 import { reanchorOrphans } from '../reanchor.ts'
-import { allowedRefs, buildRefTable } from '../refs.ts'
+import { buildRefTable } from '../refs.ts'
 import type { StepContext, StepResult } from './context.ts'
 
 /**
@@ -40,6 +41,54 @@ import type { StepContext, StepResult } from './context.ts'
  *      re-import instead of being asked again.
  *   4. Queue the rest, flagging the categories that can never be bulk-accepted.
  */
+
+/** A text block as the prompt sees it. */
+interface PromptBlock {
+  ref: string
+  text: string
+  panelRef: string | null
+}
+
+/**
+ * How much of a chapter goes into one extraction call.
+ *
+ * Forty panels is roughly seven pages: enough context for a scene to hold
+ * together, small enough that the answer — entities, assertions, events and
+ * mysteries for all of them — finishes inside the output ceiling. A chapter of
+ * 122 panels ran through that ceiling in a single call and came back truncated.
+ */
+const SLICE_PANELS = 40
+
+/**
+ * Panels in slices, each carrying the text blocks that belong to it.
+ *
+ * Blocks attached to no panel — a narration box in a gutter, a title — go with
+ * the first slice rather than into every one: repeating them would have the
+ * model propose the same fact once per slice.
+ */
+export function sliceChapter(
+  descriptions: PanelDescription[],
+  blocks: PromptBlock[],
+): Array<{ descriptions: PanelDescription[]; blocks: PromptBlock[] }> {
+  if (descriptions.length === 0) return [{ descriptions: [], blocks }]
+
+  const orphans = blocks.filter((block) => block.panelRef === null)
+  const slices: Array<{ descriptions: PanelDescription[]; blocks: PromptBlock[] }> = []
+
+  for (let start = 0; start < descriptions.length; start += SLICE_PANELS) {
+    const chunk = descriptions.slice(start, start + SLICE_PANELS)
+    const refs = new Set(chunk.map((d) => d.panel_ref))
+    slices.push({
+      descriptions: chunk,
+      blocks: [
+        ...(start === 0 ? orphans : []),
+        ...blocks.filter((block) => block.panelRef !== null && refs.has(block.panelRef)),
+      ],
+    })
+  }
+
+  return slices
+}
 
 export async function runExtract(context: StepContext): Promise<StepResult> {
   const { userId, chapterId, chapterNumber, runId } = context
@@ -183,40 +232,96 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
 
   const knownEntities = dedupeById(world.known)
 
-  const result = await provider.extract({
-    chapterNumber,
-    ontology: renderOntology(world.preds),
-    knownEntities,
-    descriptions,
-    textBlocks: promptBlocks,
-    allowedRefs: allowedRefs(table),
-  })
-
-  if (result.refusal) {
-    return {
-      note: `Le modèle a refusé : ${result.refusal}`,
-      costCents: result.usage.costCents,
-      modelId: result.usage.modelId,
-    }
-  }
-
-  const sources = buildAnchorSources({
-    textBlocks: promptBlocks,
-    descriptions,
-    allowedRefs: allowedRefs(table),
-  })
-
   const ontology: OntologyView = {
     nodeTypes: new Set(world.types.map((t) => t.key)),
     predicates: new Set(world.preds.map((p) => p.key)),
   }
 
-  const filtered = filterExtraction(
-    result.value,
-    sources,
-    ontology,
-    new Set(knownEntities.map((e) => e.id)),
-  )
+  /*
+   * The chapter, in slices.
+   *
+   * One call for a whole chapter used to be the design, and it met its limit on
+   * a real one: 122 panels and 130 text blocks in, everything out — entities,
+   * assertions, events, mysteries — against a ceiling the answer ran straight
+   * through. `stop_reason: max_tokens` leaves truncated JSON, which surfaced as
+   * "réponse non conforme au schéma", a message about a symptom.
+   *
+   * Slicing bounds the output by bounding the input, which is the only bound
+   * that holds: no ceiling is high enough for a chapter that happens to be
+   * denser than the last one. The cacheable prefix — system prompt, ontology,
+   * validated entities — is identical across slices, so the extra calls are
+   * cheap after the first.
+   *
+   * What it costs: a character appearing in two slices is proposed twice, since
+   * only *accepted* entities are given as known and nothing is accepted mid-run.
+   * Entity resolution and review already handle that — it is the same situation
+   * as two chapters processed before either is reviewed.
+   */
+  const slices = sliceChapter(descriptions, promptBlocks)
+
+  const accepted: Extraction = { entities: [], assertions: [], events: [], mysteries: [] }
+  const quarantined: Quarantined[] = []
+  let usage = { costCents: 0, inputTokens: 0, outputTokens: 0, modelId: undefined as string | undefined }
+  let refusal: string | null = null
+
+  for (const [index, slice] of slices.entries()) {
+    if (slices.length > 1) {
+      console.log(`[extract] tranche ${index + 1}/${slices.length}`)
+    }
+
+    const refs = [
+      ...slice.descriptions.map((d) => d.panel_ref),
+      ...slice.blocks.map((b) => b.ref),
+    ]
+
+    const result = await provider.extract({
+      chapterNumber,
+      ontology: renderOntology(world.preds),
+      knownEntities,
+      descriptions: slice.descriptions,
+      textBlocks: slice.blocks,
+      allowedRefs: refs,
+    })
+
+    usage = {
+      costCents: usage.costCents + result.usage.costCents,
+      inputTokens: usage.inputTokens + result.usage.inputTokens,
+      outputTokens: usage.outputTokens + result.usage.outputTokens,
+      modelId: result.usage.modelId,
+    }
+
+    if (result.refusal) {
+      refusal = result.refusal
+      continue
+    }
+
+    const sliceFiltered = filterExtraction(
+      result.value,
+      buildAnchorSources({
+        textBlocks: slice.blocks,
+        descriptions: slice.descriptions,
+        allowedRefs: refs,
+      }),
+      ontology,
+      new Set(knownEntities.map((e) => e.id)),
+    )
+
+    accepted.entities.push(...sliceFiltered.accepted.entities)
+    accepted.assertions.push(...sliceFiltered.accepted.assertions)
+    accepted.events.push(...sliceFiltered.accepted.events)
+    accepted.mysteries.push(...sliceFiltered.accepted.mysteries)
+    quarantined.push(...sliceFiltered.quarantined)
+  }
+
+  if (refusal !== null && accepted.entities.length === 0 && accepted.assertions.length === 0) {
+    return {
+      note: `Le modèle a refusé : ${refusal}`,
+      costCents: usage.costCents,
+      modelId: usage.modelId,
+    }
+  }
+
+  const filtered = { accepted, quarantined }
 
   await quarantineItems(context, filtered.quarantined)
 
@@ -374,10 +479,10 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
 
   return {
     note: parts.join(' · '),
-    costCents: result.usage.costCents,
-    tokensIn: result.usage.inputTokens,
-    tokensOut: result.usage.outputTokens,
-    modelId: result.usage.modelId,
+    costCents: usage.costCents,
+    tokensIn: usage.inputTokens,
+    tokensOut: usage.outputTokens,
+    ...(usage.modelId ? { modelId: usage.modelId } : {}),
   }
 }
 

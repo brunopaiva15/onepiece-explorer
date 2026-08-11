@@ -197,7 +197,10 @@ export class AnthropicProvider implements ModelProvider {
       tier: 'extract',
       system,
       schema: extractionSchema,
-      maxTokens: 16_000,
+      // Headroom above what a sliced call needs, not a substitute for slicing:
+      // a ceiling can always be met by a chapter denser than the last one, and
+      // the step bounds its input for that reason.
+      maxTokens: 32_000,
       content: [
         { type: 'text', text: known, cache_control: { type: 'ephemeral', ttl: CACHE_TTL } },
         { type: 'text', text: refList(request.allowedRefs) },
@@ -367,6 +370,19 @@ export class AnthropicProvider implements ModelProvider {
 
     const parsed = message.parsed_output
     if (parsed === null || parsed === undefined) {
+      /*
+       * `max_tokens` is not a malformed answer, it is a complete answer that was
+       * cut off, and saying "réponse non conforme au schéma" about it sends the
+       * search to the schema — where there is nothing wrong. It means the work
+       * handed to this call was too big for one reply, so the fix is upstream:
+       * fewer panels per call, not a looser schema.
+       */
+      if (message.stop_reason === 'max_tokens') {
+        throw new Error(
+          `La réponse a atteint le plafond de ${options.maxTokens} tokens et s'est arrêtée en ` +
+            'cours de JSON. Il y a trop de matière dans un seul appel : réduisez la tranche.',
+        )
+      }
       throw new Error(
         `Réponse non conforme au schéma attendu (stop_reason: ${String(message.stop_reason)}).`,
       )

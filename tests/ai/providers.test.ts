@@ -18,6 +18,7 @@ import { cassetteKey, ReplayProvider } from '@/domains/ai/replay.ts'
 import { properNouns, SyntheticProvider } from '@/domains/ai/synthetic.ts'
 import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
 import type { ExtractRequest, ModelProvider } from '@/domains/ai/provider.ts'
+import { sliceChapter } from '@/domains/pipeline/steps/extract.ts'
 
 const ONTOLOGY: OntologyView = {
   nodeTypes: new Set(NODE_TYPES.map((t) => t.key)),
@@ -370,5 +371,66 @@ describe('length budgets', () => {
       panels: [panel({ description: 'x'.repeat(5_000) })],
     })
     expect(parsed.success).toBe(true)
+  })
+})
+
+describe('slicing a chapter for extraction', () => {
+  /**
+   * One call per chapter met its limit on a real one: 122 panels and 130 text
+   * blocks in, everything out, against an output ceiling the answer ran through.
+   * `stop_reason: max_tokens` leaves truncated JSON — which the code reported as
+   * a schema violation, a message about the symptom.
+   */
+  const panelsOf = (n: number): PanelDescription[] =>
+    Array.from({ length: n }, (_, i) => ({
+      panel_ref: `P${i + 1}`,
+      description: 'Une case.',
+      characters_visible: [],
+      setting: null,
+      actions: [],
+      confidence: 1,
+    }))
+
+  it('keeps a small chapter in a single call', () => {
+    expect(sliceChapter(panelsOf(12), [])).toHaveLength(1)
+  })
+
+  it('splits a dense chapter and loses no panel', () => {
+    const slices = sliceChapter(panelsOf(122), [])
+    expect(slices.length).toBeGreaterThan(1)
+    expect(slices.flatMap((s) => s.descriptions)).toHaveLength(122)
+    expect(new Set(slices.flatMap((s) => s.descriptions.map((d) => d.panel_ref))).size).toBe(122)
+  })
+
+  it('sends each block with its own panel, and each orphan exactly once', () => {
+    // A block repeated across slices would have the same fact proposed twice,
+    // which review would then have to reject twice.
+    const blocks = [
+      { ref: 'B1', text: 'dans la première', panelRef: 'P1' },
+      { ref: 'B2', text: 'dans la dernière', panelRef: 'P100' },
+      { ref: 'B3', text: 'hors case', panelRef: null },
+    ]
+    const slices = sliceChapter(panelsOf(100), blocks)
+
+    const placements = new Map<string, number>()
+    for (const slice of slices) {
+      for (const block of slice.blocks) {
+        placements.set(block.ref, (placements.get(block.ref) ?? 0) + 1)
+      }
+    }
+    expect(placements.get('B1')).toBe(1)
+    expect(placements.get('B2')).toBe(1)
+    expect(placements.get('B3')).toBe(1)
+
+    expect(slices[0]!.blocks.map((b) => b.ref)).toContain('B1')
+    expect(slices[0]!.blocks.map((b) => b.ref)).toContain('B3')
+    expect(slices.at(-1)!.blocks.map((b) => b.ref)).toContain('B2')
+  })
+
+  it('still runs when a chapter has text but no described panel', () => {
+    const blocks = [{ ref: 'B1', text: 'seul', panelRef: null }]
+    const slices = sliceChapter([], blocks)
+    expect(slices).toHaveLength(1)
+    expect(slices[0]!.blocks).toHaveLength(1)
   })
 })
