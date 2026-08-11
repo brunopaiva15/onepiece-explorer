@@ -59,6 +59,16 @@ export default async function GraphTablePage({
           Mêmes données que la vue graphique, au même chapitre. Aucun WebGL requis.
         </p>
 
+        {projection.truncated && (
+          <p
+            role="status"
+            className="mt-4 rounded-sm border border-[var(--epi-hypothetical)] bg-surface-raised p-3 text-sm text-primary"
+          >
+            Liste tronquée : {projection.truncated.shown} entités sur{' '}
+            {projection.truncated.total}, les plus connectées d&apos;abord.
+          </p>
+        )}
+
         <section className="mt-8">
           <h2 className="text-lg font-semibold text-primary">
             Entités ({projection.nodes.length})

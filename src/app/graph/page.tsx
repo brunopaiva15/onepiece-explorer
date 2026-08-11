@@ -62,6 +62,18 @@ export default async function GraphPage({
           </Link>
         </div>
 
+        {projection.truncated && (
+          <p
+            role="status"
+            className="mt-4 rounded-sm border border-[var(--epi-hypothetical)] bg-surface-raised p-3 text-sm text-primary"
+          >
+            Graphe tronqué : {projection.truncated.shown} nœuds affichés sur{' '}
+            {projection.truncated.total}. Les plus connectés sont conservés —
+            c&apos;est l&apos;ossature de l&apos;histoire, pas ses premiers
+            chapitres. Filtrez par type pour voir le reste.
+          </p>
+        )}
+
         <GraphCanvas projection={projection} />
 
         <p className="mt-6 text-sm text-muted">

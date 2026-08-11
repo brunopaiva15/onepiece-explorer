@@ -55,6 +55,15 @@ export interface GraphProjection {
   edges: GraphEdge[]
   /** Entities hidden because their component representative is another node. */
   mergedAway: number
+  /**
+   * Set when the node cap was reached, so the caller can say so.
+   *
+   * Never null-and-silent. A graph that is quietly missing three quarters of
+   * the work looks exactly like a graph that has all of it, and the reader has
+   * no way to tell — which is the same failure mode as a spoiler, pointed the
+   * other way.
+   */
+  truncated: { shown: number; total: number } | null
 }
 
 /**
@@ -135,18 +144,50 @@ interface AssertionRow extends Record<string, unknown> {
   confidence: number
 }
 
+/**
+ * The node cap.
+ *
+ * Sized for the finished work: ADR 0005 puts it at roughly 20 000 nodes after
+ * ~1 100 chapters, and the measured projection cost is around 0.05 ms per node,
+ * so the whole thing lands comfortably inside a request.
+ *
+ * It was 5 000, which the perf corpus exposed as a silent truncation: at 8 000
+ * entities the projection returned 4 898 and said nothing. Worse, it ordered by
+ * `first_seen_chapter`, so a truncated graph was the *earliest* nodes — the
+ * story appeared to stop a quarter of the way through while looking complete.
+ */
+const DEFAULT_NODE_CAP = 25_000
+
 export async function projectGraph(
   userId: string,
   boundaryChapter: number,
   options: { nodeTypes?: string[]; limit?: number } = {},
 ): Promise<GraphProjection> {
-  const limit = options.limit ?? 5_000
+  const limit = options.limit ?? DEFAULT_NODE_CAP
 
   return withBoundary({ userId, boundaryChapter }, async (db) => {
+    const [counted] = await db.execute<{ total: number }>(sql`
+      SELECT count(*)::int AS total FROM entities
+    `)
+    const total = Number(counted?.total ?? 0)
+
+    /*
+     * Ordered by degree, so a capped view is the backbone of the story rather
+     * than its first chapters. If the cap is ever hit, the reader gets the
+     * characters everything connects through — which is the useful subset — and
+     * is told the count.
+     */
     const entities = await db.execute<EntityRow>(sql`
-      SELECT id, node_type, first_seen_chapter
-      FROM entities
-      ORDER BY first_seen_chapter, id
+      SELECT e.id, e.node_type, e.first_seen_chapter
+      FROM entities e
+      LEFT JOIN (
+        SELECT subject_entity_id AS id, count(*) AS n FROM assertions GROUP BY 1
+        UNION ALL
+        SELECT object_entity_id AS id, count(*) AS n FROM assertions
+        WHERE object_entity_id IS NOT NULL GROUP BY 1
+      ) d ON d.id = e.id
+      GROUP BY e.id, e.node_type, e.first_seen_chapter
+      ORDER BY coalesce(sum(d.n), 0) DESC, e.first_seen_chapter, e.id
       LIMIT ${limit}
     `)
 
@@ -164,7 +205,19 @@ export async function projectGraph(
       WHERE object_entity_id IS NOT NULL
     `)
 
-    return assemble(boundaryChapter, entities, labels, assertions, options.nodeTypes)
+    const projection = assemble(
+      boundaryChapter,
+      entities,
+      labels,
+      assertions,
+      options.nodeTypes,
+    )
+
+    return {
+      ...projection,
+      truncated:
+        entities.length < total ? { shown: entities.length, total } : null,
+    }
   })
 }
 
@@ -306,6 +359,8 @@ export function assemble(
     // dangling.
     edges: edges.filter((edge) => visible.has(edge.source) && visible.has(edge.target)),
     mergedAway,
+    // Set by projectGraph, which is the only caller that knows the true total.
+    truncated: null,
   }
 }
 
