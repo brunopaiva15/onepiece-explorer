@@ -58,6 +58,7 @@ export async function runDescribe(context: StepContext): Promise<StepResult> {
         pageId: panels.pageId,
         index: panels.index,
         bbox: panels.bbox,
+        description: panels.description,
       })
       .from(panels)
       .where(and(eq(panels.chapterId, chapterId), eq(panels.userId, userId)))
@@ -99,7 +100,25 @@ export async function runDescribe(context: StepContext): Promise<StepResult> {
     textByRef[ref] = textByRef[ref] ? `${textByRef[ref]}\n${block.text}` : block.text
   }
 
-  const crops = await cropPanels(work, table, store, limits)
+  /*
+   * Resume rather than restart.
+   *
+   * Descriptions are written batch by batch as they arrive, so a run that dies
+   * at panel 60 leaves 54 of them done and paid for. Re-describing those costs
+   * the money a second time to produce an answer with no reason to be better —
+   * and after a failure is exactly when this step gets run again.
+   *
+   * The whole step is still skipped wholesale when a previous *success* has the
+   * same input hash; this is the other case, where the step failed and there is
+   * partial work to keep. Re-detecting panels clears their descriptions, so a
+   * genuine reprocessing from the pages still redescribes everything.
+   */
+  const already = new Set(
+    work.panelRows.filter((panel) => (panel.description ?? '').length > 0).map((p) => p.id),
+  )
+  const pending = { ...work, panelRows: work.panelRows.filter((p) => !already.has(p.id)) }
+
+  const crops = pending.panelRows.length === 0 ? [] : await cropPanels(pending, table, store, limits)
 
   let described = 0
   let costCents = 0
@@ -186,7 +205,8 @@ export async function runDescribe(context: StepContext): Promise<StepResult> {
     )
   }
 
-  const parts = [`${described}/${crops.length} cases décrites`]
+  const parts = [`${described + already.size}/${work.panelRows.length} cases décrites`]
+  if (already.size > 0) parts.push(`${already.size} conservée(s) d'une exécution précédente`)
   if (refusals > 0) parts.push(`${refusals} refus du modèle`)
   if (failedBatches > 0) {
     parts.push(
@@ -194,7 +214,7 @@ export async function runDescribe(context: StepContext): Promise<StepResult> {
         `(dernière erreur : ${lastFailure ?? 'inconnue'})`,
     )
   }
-  if (described === 0) {
+  if (described + already.size === 0) {
     parts.push('aucune description : les preuves visuelles ne pourront pas être ancrées')
   }
 

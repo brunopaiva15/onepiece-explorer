@@ -33,22 +33,49 @@ import type { StepContext, StepResult } from './context.ts'
 /** Below this, tesseract's reading is not worth storing without a second pass. */
 const TESSERACT_FLOOR = 0.55
 
+const SOURCE_LABEL: Record<string, string> = {
+  pdf_text: 'depuis la couche texte',
+  tesseract: 'par OCR local',
+  model: 'par un modèle',
+}
+
 export async function runOcr(context: StepContext): Promise<StepResult> {
   const { userId, chapterId } = context
 
+  /*
+   * Where the existing blocks came from, not merely how many there are.
+   *
+   * This used to count them and announce that they came from the file's text
+   * layer. That is true of a chapter whose PDF carried one, and a lie about a
+   * chapter transcribed by a model on an earlier run — which is precisely the
+   * case where the note is read, since a failed run is what brings anyone back
+   * here. Telling someone their text is "exact and free" when twelve of their
+   * pages went to quarantine would hide the one fact that should shape how they
+   * read everything downstream.
+   */
   const existing = await withIngest(async (db) => {
-    const [row] = await db
-      .select({ count: sql<number>`count(*)::int` })
+    const rows = await db
+      .select({ source: textBlocks.source, count: sql<number>`count(*)::int` })
       .from(textBlocks)
       .where(and(eq(textBlocks.chapterId, chapterId), eq(textBlocks.userId, userId)))
-    return row?.count ?? 0
+      .groupBy(textBlocks.source)
+    return rows
   })
 
-  if (existing > 0) {
+  const total = existing.reduce((sum, row) => sum + row.count, 0)
+
+  if (total > 0) {
+    const fromPdf = existing.find((row) => row.source === 'pdf_text')?.count ?? 0
+
     return {
       note:
-        `Ignorée : ${existing} blocs de texte proviennent déjà de la couche texte du fichier. ` +
-        `Cette transcription est exacte et gratuite — la refaire ne pourrait que la dégrader.`,
+        fromPdf === total
+          ? `Ignorée : ${total} blocs de texte proviennent déjà de la couche texte du fichier. ` +
+            `Cette transcription est exacte et gratuite — la refaire ne pourrait que la dégrader.`
+          : `Ignorée : ${total} blocs de texte sont déjà transcrits (` +
+            existing.map((row) => `${row.count} ${SOURCE_LABEL[row.source]}`).join(', ') +
+            `). Conservés tels quels : les refaire coûterait le même prix pour un résultat ` +
+            `qui n'aurait aucune raison d'être meilleur.`,
       status: 'skipped',
     }
   }

@@ -355,3 +355,40 @@ describe('recording what a step cost', () => {
     expect(Number(row?.cost_cents)).toBeCloseTo(50.156, 5)
   })
 })
+
+describe('resuming a step that failed halfway', () => {
+  it('keeps the descriptions already paid for', async () => {
+    /*
+     * A run that dies at panel 60 leaves 54 described and billed. Redescribing
+     * them costs the money a second time for an answer with no reason to be
+     * better — and a failure is exactly what brings this step round again.
+     */
+    const { runDescribe } = await import('@/domains/pipeline/steps/describe.ts')
+    const { userId, chapterId } = await importFixtureChapter()
+    const runId = await createRun(userId, chapterId)
+    await executeRun(userId, chapterId, runId)
+
+    const [before] = await raw<Array<{ count: number }>>`
+      SELECT count(*)::int AS count FROM panels
+      WHERE chapter_id = ${chapterId}::uuid AND description IS NOT NULL
+    `
+    expect(Number(before?.count)).toBeGreaterThan(0)
+
+    // Clear one, as a partial failure would have left it.
+    await raw`
+      UPDATE panels SET description = NULL
+      WHERE id = (SELECT id FROM panels WHERE chapter_id = ${chapterId}::uuid
+                  ORDER BY index DESC LIMIT 1)
+    `
+
+    const result = await runDescribe({ userId, chapterId, chapterNumber: 1, runId })
+
+    expect(result.note).toContain(`${Number(before?.count) - 1} conservée(s)`)
+
+    const [after] = await raw<Array<{ count: number }>>`
+      SELECT count(*)::int AS count FROM panels
+      WHERE chapter_id = ${chapterId}::uuid AND description IS NOT NULL
+    `
+    expect(Number(after?.count)).toBe(Number(before?.count))
+  })
+})
