@@ -59,6 +59,33 @@ interface PromptBlock {
  */
 const SLICE_PANELS = 40
 
+/** How many times a failing slice may be halved before it is given up on. */
+const MAX_SPLIT_DEPTH = 2
+
+interface Slice {
+  descriptions: PanelDescription[]
+  blocks: PromptBlock[]
+}
+
+/** Halve a slice, each half keeping the blocks of the panels it holds. */
+export function splitSlice(slice: Slice): Slice[] {
+  const middle = Math.ceil(slice.descriptions.length / 2)
+  const halves = [slice.descriptions.slice(0, middle), slice.descriptions.slice(middle)]
+
+  return halves
+    .filter((half) => half.length > 0)
+    .map((half, index) => {
+      const refs = new Set(half.map((d) => d.panel_ref))
+      return {
+        descriptions: half,
+        blocks: slice.blocks.filter((block) =>
+          // Orphans stay with the first half, once — the same rule as slicing.
+          block.panelRef === null ? index === 0 : refs.has(block.panelRef),
+        ),
+      }
+    })
+}
+
 /**
  * Panels in slices, each carrying the text blocks that belong to it.
  *
@@ -66,14 +93,11 @@ const SLICE_PANELS = 40
  * the first slice rather than into every one: repeating them would have the
  * model propose the same fact once per slice.
  */
-export function sliceChapter(
-  descriptions: PanelDescription[],
-  blocks: PromptBlock[],
-): Array<{ descriptions: PanelDescription[]; blocks: PromptBlock[] }> {
+export function sliceChapter(descriptions: PanelDescription[], blocks: PromptBlock[]): Slice[] {
   if (descriptions.length === 0) return [{ descriptions: [], blocks }]
 
   const orphans = blocks.filter((block) => block.panelRef === null)
-  const slices: Array<{ descriptions: PanelDescription[]; blocks: PromptBlock[] }> = []
+  const slices: Slice[] = []
 
   for (let start = 0; start < descriptions.length; start += SLICE_PANELS) {
     const chunk = descriptions.slice(start, start + SLICE_PANELS)
@@ -264,9 +288,35 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   let usage = { costCents: 0, inputTokens: 0, outputTokens: 0, modelId: undefined as string | undefined }
   let refusal: string | null = null
 
-  for (const [index, slice] of slices.entries()) {
+  /*
+   * A slice that fails is retried smaller, then given up on — never the step.
+   *
+   * The first sliced run got through two of four and died on the third, taking
+   * the two that had worked with it: eight minutes and their cost, discarded
+   * because a later call came back with truncated JSON. The describe step
+   * already knew better; this one did not, and the inconsistency was mine.
+   *
+   * Splitting on failure also treats the likeliest cause rather than reporting
+   * it. Truncation means the answer did not fit; half as many panels is half as
+   * much answer. Two splits take forty panels down to ten, and a slice that
+   * still fails at ten is not failing because of its size.
+   */
+  const pending: Array<{ slice: Slice; depth: number }> = slices.map((slice) => ({
+    slice,
+    depth: 0,
+  }))
+  let done = 0
+  let failedSlices = 0
+  let lastFailure: string | null = null
+
+  while (pending.length > 0) {
+    const { slice, depth } = pending.shift()!
+    done++
     if (slices.length > 1) {
-      console.log(`[extract] tranche ${index + 1}/${slices.length}`)
+      console.log(
+        `[extract] tranche ${done} (${slice.descriptions.length} cases` +
+          `${depth > 0 ? `, redécoupée ×${depth}` : ''})`,
+      )
     }
 
     const refs = [
@@ -274,14 +324,31 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       ...slice.blocks.map((b) => b.ref),
     ]
 
-    const result = await provider.extract({
-      chapterNumber,
-      ontology: renderOntology(world.preds),
-      knownEntities,
-      descriptions: slice.descriptions,
-      textBlocks: slice.blocks,
-      allowedRefs: refs,
-    })
+    let result: Awaited<ReturnType<typeof provider.extract>>
+    try {
+      result = await provider.extract({
+        chapterNumber,
+        ontology: renderOntology(world.preds),
+        knownEntities,
+        descriptions: slice.descriptions,
+        textBlocks: slice.blocks,
+        allowedRefs: refs,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+
+      if (depth < MAX_SPLIT_DEPTH && slice.descriptions.length > 1) {
+        const halves = splitSlice(slice)
+        pending.unshift(...halves.map((half) => ({ slice: half, depth: depth + 1 })))
+        console.warn(`[extract] tranche en échec, redécoupée en ${halves.length} : ${message}`)
+        continue
+      }
+
+      failedSlices++
+      lastFailure = message
+      console.error(`[extract] tranche abandonnée (${slice.descriptions.length} cases) : ${message}`)
+      continue
+    }
 
     usage = {
       costCents: usage.costCents + result.usage.costCents,
@@ -311,6 +378,15 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     accepted.events.push(...sliceFiltered.accepted.events)
     accepted.mysteries.push(...sliceFiltered.accepted.mysteries)
     quarantined.push(...sliceFiltered.quarantined)
+  }
+
+  if (failedSlices > 0 && failedSlices === slices.length) {
+    // Every slice failed: not a bad patch, a broken step. Failing puts the
+    // reason in the run instead of in a note under a green tick.
+    throw new Error(
+      `Les ${slices.length} tranche(s) ont échoué, y compris après redécoupage. ` +
+        `Dernière erreur : ${lastFailure ?? 'inconnue'}`,
+    )
   }
 
   if (refusal !== null && accepted.entities.length === 0 && accepted.assertions.length === 0) {
@@ -475,6 +551,18 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   }
   if (filtered.quarantined.length > 0) {
     parts.push(`${filtered.quarantined.length} en quarantaine (preuve non vérifiable)`)
+  }
+  if (failedSlices > 0) {
+    /*
+     * Named, not swallowed. Panels in a slice that never came back are panels
+     * whose facts are absent from the review queue — and an absence is the one
+     * thing a reviewer cannot notice. Better a note saying which part of the
+     * chapter was not read than a clean-looking run that quietly skipped it.
+     */
+    parts.push(
+      `${failedSlices} tranche(s) abandonnée(s) après redécoupage — les cases concernées ` +
+        `n'ont produit aucune proposition (dernière erreur : ${lastFailure ?? 'inconnue'})`,
+    )
   }
 
   return {

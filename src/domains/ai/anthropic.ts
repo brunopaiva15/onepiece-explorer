@@ -372,7 +372,26 @@ export class AnthropicProvider implements ModelProvider {
      * the incremental events are of no use to a batch pipeline, only the
      * connection staying alive is.
      */
-    const message = await this.client.messages.stream(params).finalMessage()
+    let message: Awaited<ReturnType<typeof this.client.messages.parse<typeof params>>>
+    try {
+      message = await this.client.messages.stream(params).finalMessage()
+    } catch (error: unknown) {
+      /*
+       * The SDK parses the accumulated JSON inside finalMessage(), so a
+       * truncated answer arrives here as a parse error and never reaches the
+       * stop_reason check below. Which truncation it was matters, and the
+       * position in the message is what says so: a JSON that stops after a few
+       * thousand characters ran out of connection, not out of budget — 32 000
+       * tokens is an order of magnitude more text than that. Saying so turns
+       * "Unterminated string at position 2501" from a mystery into a diagnosis.
+       */
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `Réponse illisible de ${model} (plafond ${options.maxTokens} tokens) : ${detail}` +
+          ' · Un JSON coupé après quelques milliers de caractères vient d’un flux' +
+          ' interrompu, pas du plafond.',
+      )
+    }
     const usage = readUsage(model, message.usage)
 
     // Refusals arrive as a normal response with a distinct stop_reason. Reading

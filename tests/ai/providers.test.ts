@@ -18,7 +18,7 @@ import { cassetteKey, ReplayProvider } from '@/domains/ai/replay.ts'
 import { properNouns, SyntheticProvider } from '@/domains/ai/synthetic.ts'
 import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
 import type { ExtractRequest, ModelProvider } from '@/domains/ai/provider.ts'
-import { sliceChapter } from '@/domains/pipeline/steps/extract.ts'
+import { sliceChapter, splitSlice } from '@/domains/pipeline/steps/extract.ts'
 
 const ONTOLOGY: OntologyView = {
   nodeTypes: new Set(NODE_TYPES.map((t) => t.key)),
@@ -432,5 +432,54 @@ describe('slicing a chapter for extraction', () => {
     const slices = sliceChapter([], blocks)
     expect(slices).toHaveLength(1)
     expect(slices[0]!.blocks).toHaveLength(1)
+  })
+})
+
+describe('splitting a slice that failed', () => {
+  /**
+   * Four slices went out, two came back, and the third took the two that had
+   * worked down with it — eight minutes and their cost, discarded because a
+   * later call returned truncated JSON. Halving treats the likeliest cause
+   * rather than reporting it: truncation means the answer did not fit, and half
+   * as many panels is half as much answer.
+   */
+  const panelsOf = (n: number): PanelDescription[] =>
+    Array.from({ length: n }, (_, i) => ({
+      panel_ref: `P${i + 1}`,
+      description: 'Une case.',
+      characters_visible: [],
+      setting: null,
+      actions: [],
+      confidence: 1,
+    }))
+
+  it('halves a slice and keeps every panel exactly once', () => {
+    const halves = splitSlice({ descriptions: panelsOf(40), blocks: [] })
+
+    expect(halves).toHaveLength(2)
+    expect(halves.flatMap((h) => h.descriptions)).toHaveLength(40)
+    expect(new Set(halves.flatMap((h) => h.descriptions.map((d) => d.panel_ref))).size).toBe(40)
+  })
+
+  it('sends each block with its own half, orphans once', () => {
+    const blocks = [
+      { ref: 'B1', text: 'début', panelRef: 'P1' },
+      { ref: 'B2', text: 'fin', panelRef: 'P10' },
+      { ref: 'B3', text: 'hors case', panelRef: null },
+    ]
+    const halves = splitSlice({ descriptions: panelsOf(10), blocks })
+
+    const seen = halves.flatMap((h) => h.blocks.map((b) => b.ref))
+    expect(seen).toHaveLength(3)
+    expect(halves[0]!.blocks.map((b) => b.ref)).toEqual(expect.arrayContaining(['B1', 'B3']))
+    expect(halves[1]!.blocks.map((b) => b.ref)).toContain('B2')
+  })
+
+  it('stops rather than looping on a slice of one', () => {
+    // A single panel that still fails is not failing because of its size, and
+    // halving it forever would turn one bad call into an infinite bill.
+    const halves = splitSlice({ descriptions: panelsOf(1), blocks: [] })
+    expect(halves).toHaveLength(1)
+    expect(halves[0]!.descriptions).toHaveLength(1)
   })
 })
