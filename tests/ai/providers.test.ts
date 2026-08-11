@@ -8,6 +8,12 @@ import {
   type OntologyView,
 } from '@/domains/ai/anchoring.ts'
 import { costCents, PRICING } from '@/domains/ai/provider.ts'
+import {
+  clampPanelDescriptions,
+  DESCRIPTION_BUDGET,
+  panelDescriptionsSchema,
+  type PanelDescription,
+} from '@/domains/ai/schemas.ts'
 import { cassetteKey, ReplayProvider } from '@/domains/ai/replay.ts'
 import { properNouns, SyntheticProvider } from '@/domains/ai/synthetic.ts'
 import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
@@ -301,5 +307,68 @@ describe('cost arithmetic', () => {
 
   it('returns zero rather than guessing for an unknown model', () => {
     expect(costCents('some-future-model', { inputTokens: 1_000, outputTokens: 1_000 })).toBe(0)
+  })
+})
+
+describe('length budgets', () => {
+  /**
+   * The failure this guards is not hypothetical: two panel descriptions of
+   * 1 300 characters failed a Zod parse, which failed the batch of six, which
+   * failed the run — a whole chapter lost because a model was wordy in a field
+   * where wordiness is not even an error. The API does not enforce string
+   * length from a JSON Schema, so the only real choice was between clamping and
+   * throwing.
+   */
+  const panel = (over: Partial<PanelDescription> = {}): PanelDescription => ({
+    panel_ref: 'p1',
+    description: 'Une case.',
+    characters_visible: ['silhouette en manteau'],
+    setting: 'un port',
+    actions: ['il marche'],
+    confidence: 0.8,
+    ...over,
+  })
+
+  it('accepts an answer that overruns every budget', () => {
+    const [clamped] = clampPanelDescriptions([
+      panel({
+        description: 'x'.repeat(1_300),
+        setting: 'y'.repeat(400),
+        characters_visible: Array.from({ length: 20 }, () => 'z'.repeat(250)),
+        actions: Array.from({ length: 15 }, () => 'a'.repeat(400)),
+      }),
+    ])
+
+    expect(clamped).toBeDefined()
+    expect(clamped!.description).toHaveLength(DESCRIPTION_BUDGET.description)
+    expect(clamped!.description.endsWith('…')).toBe(true)
+    expect(clamped!.setting).toHaveLength(DESCRIPTION_BUDGET.setting)
+    expect(clamped!.characters_visible).toHaveLength(DESCRIPTION_BUDGET.descriptors)
+    expect(clamped!.actions).toHaveLength(DESCRIPTION_BUDGET.actions)
+    for (const action of clamped!.actions) {
+      expect(action.length).toBeLessThanOrEqual(DESCRIPTION_BUDGET.action)
+    }
+  })
+
+  it('leaves an answer within budget untouched, ellipsis included', () => {
+    const original = panel()
+    const [clamped] = clampPanelDescriptions([original])
+
+    expect(clamped).toEqual(original)
+    expect(clamped!.description).not.toContain('…')
+  })
+
+  it('keeps a null setting null rather than clamping it to a string', () => {
+    const [clamped] = clampPanelDescriptions([panel({ setting: null })])
+    expect(clamped!.setting).toBeNull()
+  })
+
+  it('parses a model answer that exceeds the budgets instead of rejecting it', () => {
+    // The schema itself must not carry the limits: a parse failure discards the
+    // whole batch, and there is nothing wrong with the other five panels in it.
+    const parsed = panelDescriptionsSchema.safeParse({
+      panels: [panel({ description: 'x'.repeat(5_000) })],
+    })
+    expect(parsed.success).toBe(true)
   })
 })

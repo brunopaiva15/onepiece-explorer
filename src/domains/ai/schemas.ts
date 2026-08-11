@@ -44,24 +44,67 @@ export type Transcription = z.infer<typeof transcriptionSchema>
  * because the name has not been revealed yet — and if it could name them it
  * would name them from training data, not from the page.
  */
+/**
+ * Budgets, not validation rules — and the distinction cost a chapter.
+ *
+ * The Messages API does not enforce string length from a JSON Schema; the
+ * lengths are checked here, after the answer arrives. So a `.max()` on a
+ * free-text field is not a constraint on the model, it is a licence to throw at
+ * one: a model that wrote two descriptions of 1 300 characters failed the parse,
+ * which failed the batch, which failed the run — a hundred panels lost to
+ * verbosity, in a field where verbosity is not even wrong.
+ *
+ * These are enforced by clamping instead. The prompt states them so the model
+ * aims below, and anything over is cut. A truncated visual description loses a
+ * clause; a rejected one loses the chapter.
+ */
+export const DESCRIPTION_BUDGET = {
+  description: 1200,
+  descriptor: 200,
+  setting: 300,
+  action: 300,
+  descriptors: 12,
+  actions: 10,
+  panels: 40,
+} as const
+
 export const panelDescriptionSchema = z.object({
   panel_ref: z.string(),
   /** What is drawn. Present tense, no narrative interpretation. */
-  description: z.string().min(1).max(1200),
+  description: z.string().min(1),
   /** Purely visual descriptors: clothing, silhouette, distinguishing features. */
-  characters_visible: z.array(z.string().max(200)).max(12),
+  characters_visible: z.array(z.string()),
   /** Where it happens, if the art shows it. */
-  setting: z.string().max(300).nullable(),
+  setting: z.string().nullable(),
   /** Actions depicted, one per entry. */
-  actions: z.array(z.string().max(300)).max(10),
+  actions: z.array(z.string()),
   confidence: z.number().min(0).max(1),
 })
 
 export type PanelDescription = z.infer<typeof panelDescriptionSchema>
 
 export const panelDescriptionsSchema = z.object({
-  panels: z.array(panelDescriptionSchema).max(40),
+  panels: z.array(panelDescriptionSchema),
 })
+
+function cut(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`
+}
+
+/** Bring a model's answer inside the budgets, rather than reject it for missing them. */
+export function clampPanelDescriptions(panels: PanelDescription[]): PanelDescription[] {
+  return panels.slice(0, DESCRIPTION_BUDGET.panels).map((panel) => ({
+    ...panel,
+    description: cut(panel.description, DESCRIPTION_BUDGET.description),
+    characters_visible: panel.characters_visible
+      .slice(0, DESCRIPTION_BUDGET.descriptors)
+      .map((d) => cut(d, DESCRIPTION_BUDGET.descriptor)),
+    setting: panel.setting === null ? null : cut(panel.setting, DESCRIPTION_BUDGET.setting),
+    actions: panel.actions
+      .slice(0, DESCRIPTION_BUDGET.actions)
+      .map((a) => cut(a, DESCRIPTION_BUDGET.action)),
+  }))
+}
 
 /**
  * Candidate entities and relations extracted from one chapter.

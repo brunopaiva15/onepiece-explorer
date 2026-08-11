@@ -4,6 +4,7 @@ import sharp from 'sharp'
 import { withIngest } from '@/db/boundary.ts'
 import { pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { modelProvider } from '@/domains/ai/index.ts'
+import { clampPanelDescriptions } from '@/domains/ai/schemas.ts'
 import { ingestionLimits } from '@/domains/ingestion/limits.ts'
 import { storage } from '@/domains/storage/index.ts'
 import { buildRefTable, type RefTable } from '../refs.ts'
@@ -106,21 +107,45 @@ export async function runDescribe(context: StepContext): Promise<StepResult> {
   let tokensOut = 0
   let modelId: string | undefined
   let refusals = 0
+  let failedBatches = 0
+  let lastFailure: string | null = null
 
   for (let start = 0; start < crops.length; start += BATCH_SIZE) {
     const batch = crops.slice(start, start + BATCH_SIZE)
     const refs = batch.map((crop) => crop.ref)
 
-    const result = await provider.describePanels({
-      chapterNumber,
-      images: batch.map((crop) => ({
-        data: crop.base64,
-        mediaType: 'image/webp' as const,
-        ref: crop.ref,
-      })),
-      allowedRefs: refs,
-      text: Object.fromEntries(refs.map((ref) => [ref, textByRef[ref] ?? ''])),
-    })
+    /*
+     * One failed batch is six panels, not a chapter.
+     *
+     * This used to let the error out, and the run died on it — a hundred panels
+     * lost because the model wrote two long descriptions. The call is a network
+     * request to a probabilistic system: it will occasionally time out, be rate
+     * limited, or answer in a shape the schema rejects. None of that is a reason
+     * to discard the ninety-four panels that worked.
+     *
+     * The failure is counted and reported in the step's note, and if every
+     * batch fails the step fails — silence would be worse than the crash.
+     */
+    let result: Awaited<ReturnType<typeof provider.describePanels>>
+    try {
+      result = await provider.describePanels({
+        chapterNumber,
+        images: batch.map((crop) => ({
+          data: crop.base64,
+          mediaType: 'image/webp' as const,
+          ref: crop.ref,
+        })),
+        allowedRefs: refs,
+        text: Object.fromEntries(refs.map((ref) => [ref, textByRef[ref] ?? ''])),
+      })
+    } catch (error) {
+      failedBatches++
+      lastFailure = error instanceof Error ? error.message : String(error)
+      console.error(
+        `[describe] lot ${start / BATCH_SIZE + 1} échoué (${batch.length} cases) : ${lastFailure}`,
+      )
+      continue
+    }
 
     costCents += result.usage.costCents
     tokensIn += result.usage.inputTokens
@@ -133,7 +158,7 @@ export async function runDescribe(context: StepContext): Promise<StepResult> {
     }
 
     await withIngest(async (db) => {
-      for (const description of result.value) {
+      for (const description of clampPanelDescriptions(result.value)) {
         const panelId = table.panelIds.get(description.panel_ref)
         // A description of a panel that was not in this batch is discarded
         // rather than stored against a guess. It has no anchor, and storing it
@@ -152,8 +177,23 @@ export async function runDescribe(context: StepContext): Promise<StepResult> {
     })
   }
 
+  const totalBatches = Math.ceil(crops.length / BATCH_SIZE)
+  if (failedBatches > 0 && failedBatches === totalBatches) {
+    // Every batch failed: this is not a bad patch, it is a broken step. Failing
+    // is what puts the reason in the run rather than in a note nobody reads.
+    throw new Error(
+      `Les ${totalBatches} lots ont échoué. Dernière erreur : ${lastFailure ?? 'inconnue'}`,
+    )
+  }
+
   const parts = [`${described}/${crops.length} cases décrites`]
   if (refusals > 0) parts.push(`${refusals} refus du modèle`)
+  if (failedBatches > 0) {
+    parts.push(
+      `${failedBatches} lot(s) sur ${totalBatches} en échec — ces cases restent sans description ` +
+        `(dernière erreur : ${lastFailure ?? 'inconnue'})`,
+    )
+  }
   if (described === 0) {
     parts.push('aucune description : les preuves visuelles ne pourront pas être ancrées')
   }

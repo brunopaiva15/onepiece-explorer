@@ -3,6 +3,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   real,
   text,
@@ -18,6 +19,19 @@ import {
   stepStatusEnum,
 } from './enums.ts'
 
+/**
+ * A cost in cents, with the decimals it actually has.
+ *
+ * `integer` was the original choice and it threw on the first real invoice: a
+ * step's cost is token counts times a per-million price, which is fractional by
+ * construction. Rounding at the write boundary would lose sub-cent steps
+ * entirely, and the cost dashboard is there to be trusted against a measured
+ * estimate. `mode: 'number'` keeps every reader working with a number rather
+ * than the string node-postgres returns for numeric by default.
+ */
+const money = (name: string) =>
+  numeric(name, { precision: 14, scale: 6, mode: 'number' })
+
 export const ingestionRuns = pgTable(
   'ingestion_runs',
   {
@@ -32,8 +46,8 @@ export const ingestionRuns = pgTable(
     usedBatchApi: boolean('used_batch_api').notNull().default(false),
     /** From a real countTokens() call, kept next to the observed total so the
      *  estimator can be checked against reality. */
-    estimatedCostCents: integer('estimated_cost_cents'),
-    totalCostCents: integer('total_cost_cents').notNull().default(0),
+    estimatedCostCents: money('estimated_cost_cents'),
+    totalCostCents: money('total_cost_cents').notNull().default(0),
     error: text('error'),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -65,7 +79,7 @@ export const ingestionSteps = pgTable(
     inputHash: text('input_hash'),
     outputRef: text('output_ref'),
     durationMs: integer('duration_ms'),
-    costCents: integer('cost_cents').notNull().default(0),
+    costCents: money('cost_cents').notNull().default(0),
     tokensIn: integer('tokens_in'),
     tokensOut: integer('tokens_out'),
     cacheReadTokens: integer('cache_read_tokens'),

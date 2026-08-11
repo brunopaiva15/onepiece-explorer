@@ -322,3 +322,36 @@ describe('executing a run', () => {
     expect(textDetect?.status).toBe('pending')
   })
 })
+
+describe('recording what a step cost', () => {
+  it('stores a fractional cost instead of failing on it', async () => {
+    /*
+     * A step's cost is token counts times a per-million-token price, so it is
+     * fractional by construction. The column was `integer`, and the first real
+     * invoice — an OCR step at 50.156 cents — failed the insert and took the
+     * whole run down with it: nine minutes of transcription, already paid for,
+     * discarded at the moment of writing down what it had cost.
+     */
+    const { recordStep } = await import('@/domains/pipeline/runs.ts')
+    const { userId, chapterId } = await importFixtureChapter()
+    const runId = await createRun(userId, chapterId)
+
+    await recordStep(runId, userId, 'ocr', 'hash', {
+      status: 'succeeded',
+      note: '238 blocs transcrits',
+      durationMs: 568_314,
+      costCents: 50.156_000_000_000_006,
+      modelId: 'claude-sonnet-5',
+    })
+
+    const [row] = await raw<Array<{ cost_cents: string }>>`
+      SELECT cost_cents FROM ingestion_steps
+      WHERE run_id = ${runId}::uuid AND step_key = 'ocr'
+      ORDER BY attempt DESC LIMIT 1
+    `
+
+    // Six decimals, so the sub-cent steps that make up most of a chapter are
+    // not each rounded away.
+    expect(Number(row?.cost_cents)).toBeCloseTo(50.156, 5)
+  })
+})

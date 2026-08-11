@@ -24,7 +24,13 @@
  *      document is ever fetched.
  */
 
-export const PROMPT_VERSION = '1'
+import { DESCRIPTION_BUDGET } from './schemas.ts'
+
+/**
+ * Bumped when the wording changes in a way that could change what comes back.
+ * '2' states the length budgets, which '1' enforced without ever mentioning.
+ */
+export const PROMPT_VERSION = '2'
 
 /** Wrap page text so its status as data is unmistakable. */
 export function untrusted(label: string, content: string): string {
@@ -112,6 +118,11 @@ Une description factuelle dit ce qu'un lecteur voit, au présent, sans
 interprétation narrative : positions, vêtements, expressions, actions, décor.
 Elle ne dit pas ce que cela signifie, ni ce qui va arriver, ni ce que le
 personnage pense — sauf si une bulle de pensée le dit.
+
+Longueurs à respecter : « description » au plus ${DESCRIPTION_BUDGET.description}
+caractères, « setting » au plus ${DESCRIPTION_BUDGET.setting}, et chaque entrée de
+« actions » au plus ${DESCRIPTION_BUDGET.action}. Une case ordinaire tient en deux
+ou trois phrases ; au-delà, c'est de l'interprétation, pas de la description.
 
 Pour « characters_visible », ne donnez QUE des descripteurs visuels : silhouette,
 vêtement, coiffure, cicatrice, arme. Jamais un nom, même si vous croyez le
