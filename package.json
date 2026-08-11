@@ -19,6 +19,7 @@
     "db:push": "tsx scripts/db-push.ts",
     "db:push:test": "TEST_DB=1 tsx scripts/db-push.ts",
     "doctor": "tsx --tsconfig tsconfig.worker.json scripts/doctor.ts",
+    "queue": "tsx --tsconfig tsconfig.worker.json scripts/queue.ts",
     "fixtures:generate": "tsx scripts/generate-fixtures.ts",
     "images:catalogue": "tsx --tsconfig tsconfig.worker.json scripts/image-catalogue.ts",
     "images:enrich": "tsx --tsconfig tsconfig.worker.json scripts/enrich-images.ts",

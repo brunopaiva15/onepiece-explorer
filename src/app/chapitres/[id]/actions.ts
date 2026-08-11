@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireOwner } from '@/domains/auth/session.ts'
 import { enqueueChapter } from '@/domains/pipeline/queue.ts'
-import { createRun } from '@/domains/pipeline/runs.ts'
+import { createRun, discardRun } from '@/domains/pipeline/runs.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
 
 export interface StartRunResult {
@@ -38,7 +38,29 @@ export async function startRunAction(chapterId: string): Promise<StartRunResult>
     const runId = await createRun(session.userId, chapterId)
 
     try {
-      await enqueueChapter({ runId, userId: session.userId, chapterId })
+      const jobId = await enqueueChapter({ runId, userId: session.userId, chapterId })
+
+      /*
+       * A null job id is a refusal, not a success.
+       *
+       * The queue deduplicates per chapter, so a job already waiting or running
+       * for this one makes `send` return null. That return value used to be
+       * discarded: the action reported success, the run row stayed `pending`
+       * forever, and the progress page said "en attente d'un worker" — naming
+       * the one thing that was not the problem, while a worker sat idle two
+       * metres away. The run is discarded here because it never became work,
+       * and the refusal is stated.
+       */
+      if (jobId === null) {
+        await discardRun(runId)
+        return {
+          ok: false,
+          error:
+            'Un traitement est déjà en file ou en cours pour ce chapitre. ' +
+            "Ouvrez-le pour suivre son avancement. S'il ne bouge plus — worker interrompu, " +
+            'machine mise en veille — libérez-le avec « pnpm queue --unstick ».',
+        }
+      }
     } catch (error) {
       // The run exists and is pending; the queue is what failed. Say which,
       // because "start the worker" and "fix the pipeline" are different

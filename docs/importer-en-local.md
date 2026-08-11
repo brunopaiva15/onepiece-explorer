@@ -173,6 +173,12 @@ retrouvez le compte créé sur Vercel.
 indéfiniment « en attente d'un worker » — ce n'est pas un bug, c'est un processus
 qui n'a pas été lancé. Laissez-le tourner pendant tout l'import, coupez-le après.
 
+**Et ne mettez pas la machine en veille pendant un traitement.** La connexion à
+Supabase tombe, le worker perd son job en cours, et le chapitre reste réservé
+par un job que plus personne ne tient. Le symptôme est déroutant : le worker
+redémarré dit « à l'écoute » et rien n'avance. `pnpm queue` montre la file,
+`pnpm queue --unstick` la débloque.
+
 ---
 
 ## 5. Importer un chapitre
@@ -266,6 +272,7 @@ compte.
 | `Invalid URL` sur une connexion | Un `#`, `/` ou `?` dans le mot de passe, des guillemets autour de la valeur, ou un `psql ` en tête | `pnpm doctor` nomme le caractère et donne son encodage |
 | `getaddrinfo ENOTFOUND base` au lancement du worker | `DIRECT_URL` n'est pas une chaîne de connexion. Le pilote PostgreSQL accepte n'importe quel texte et lit le mot « base » d'une phrase française comme un nom d'hôte — d'où ce message, qui ne nomme pas la variable | `pnpm doctor` affiche l'hôte réellement extrait de chaque connexion |
 | « en attente d'un worker », indéfiniment | `pnpm worker` n'est pas lancé | Lancez-le, terminal 2 |
+| « en attente d'un worker » **alors que le worker tourne** | Un worker précédent a été interrompu — machine en veille, connexion perdue, `Ctrl+C` — en laissant son job marqué « en cours ». Le chapitre reste réservé pendant une heure | Coupez le worker, `pnpm queue` pour voir la file, `pnpm queue --unstick` pour libérer, puis relancez le traitement |
 | L'import réussit, Vercel n'affiche pas les images | `STORAGE_DRIVER=local` | Mettez `supabase` et réimportez |
 | `SUPABASE_SERVICE_ROLE_KEY est requis` | La clé manque dans `.env.local` | Copiez-la depuis Vercel |
 | `DIRECT_URL n'est pas configuré` | Idem, pour le worker | Le pooler en mode session, port 5432 |
