@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { search, shortestPath, type SearchHit } from '@/domains/search/index.ts'
 import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
@@ -25,7 +25,7 @@ export default async function SearchPage({
   searchParams: Promise<{ ch?: string; q?: string; de?: string; vers?: string }>
 }) {
   const { ch, q, de, vers } = await searchParams
-  const session = await getReaderSession(ch)
+  const session = await getViewerSession(ch)
   const chapters = await listChapters(session.userId, session.workId)
 
   const query = (q ?? '').trim()

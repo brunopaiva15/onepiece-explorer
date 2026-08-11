@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { requireOwner } from '@/domains/auth/session.ts'
 import {
   deleteChapter,
   previewDeletion,
@@ -21,7 +21,7 @@ export async function previewDeletionAction(
   chapterId: string,
 ): Promise<PreviewResult> {
   try {
-    const session = await getReaderSession()
+    const session = await requireOwner()
     const preview = await previewDeletion(session.userId, chapterId)
     if (!preview) return { ok: false, error: 'Chapitre introuvable.' }
     return { ok: true, preview }
@@ -52,7 +52,7 @@ export async function deleteChapterAction(
   keepKnowledge: boolean,
 ): Promise<DeleteResult> {
   try {
-    const session = await getReaderSession()
+    const session = await requireOwner()
 
     const preview = await previewDeletion(session.userId, chapterId)
     if (!preview) return { ok: false, error: 'Chapitre introuvable.' }
@@ -102,7 +102,7 @@ export interface EnrichImagesResult {
  */
 export async function enrichImagesAction(): Promise<EnrichImagesResult> {
   try {
-    const session = await getReaderSession()
+    const session = await requireOwner()
 
     const allowance = await consume(session.userId, 'start_run')
     if (!allowance.allowed) {

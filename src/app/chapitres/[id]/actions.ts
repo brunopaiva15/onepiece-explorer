@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { requireOwner } from '@/domains/auth/session.ts'
 import { enqueueChapter } from '@/domains/pipeline/queue.ts'
 import { createRun } from '@/domains/pipeline/runs.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
@@ -21,7 +21,7 @@ export interface StartRunResult {
  */
 export async function startRunAction(chapterId: string): Promise<StartRunResult> {
   try {
-    const session = await getReaderSession()
+    const session = await requireOwner()
 
     // A chapter run is the heaviest spend in the system; a script re-launching
     // the same one in a loop is the failure mode worth bounding.

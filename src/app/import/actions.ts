@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { requireOwner } from '@/domains/auth/session.ts'
 import { importChapter } from '@/domains/ingestion/import.ts'
 import { IngestionRejection } from '@/domains/ingestion/limits.ts'
 import { reorderPages } from '@/domains/ingestion/persist.ts'
@@ -34,7 +34,7 @@ export async function importChapterAction(
   formData: FormData,
 ): Promise<ImportActionResult> {
   try {
-    const session = await getReaderSession()
+    const session = await requireOwner()
 
     const numberRaw = formData.get('chapterNumber')
     const chapterNumber = Number(numberRaw)
@@ -131,7 +131,7 @@ export async function reorderPagesAction(
   order: Array<{ pageId: string; index: number; excluded?: boolean }>,
 ): Promise<ReorderActionResult> {
   try {
-    const session = await getReaderSession()
+    const session = await requireOwner()
     await reorderPages(session.userId, chapterId, order)
     revalidatePath(`/chapitres/${chapterId}`)
     return { ok: true }

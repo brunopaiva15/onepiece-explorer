@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
@@ -20,7 +20,7 @@ export default async function EntityPage({
 }) {
   const { id } = await params
   const { ch } = await searchParams
-  const session = await getReaderSession(ch)
+  const session = await getViewerSession(ch)
 
   const sheet = await getEntitySheet(session.userId, session.boundaryChapter, id)
   if (!sheet) notFound()

@@ -235,6 +235,38 @@ une image ne doit pas casser le jour où un projet de fans déplace un bucket.
 
 ---
 
+## Ouvrir la lecture au public
+
+Par défaut le site est privé : chaque page exige une connexion. Vous pouvez
+ouvrir la **lecture** sans ouvrir l'écriture, en posant votre identifiant de
+bibliothèque (affiché dans `/reglages`) :
+
+```
+PUBLIC_LIBRARY_OWNER_ID=<votre identifiant>
+```
+
+Ce qui devient public : le graphe, la chronologie, les fiches d'entité, la
+recherche, les mystères, les extraits de dialogue cités et leurs références de
+chapitre, page et case. Un visiteur dispose du **curseur**, librement — c'est
+tout l'intérêt de rendre ça public plutôt que de renvoyer vers un wiki : il le
+pose où il en est de sa lecture et explore sans se faire gâcher la suite.
+
+Ce qui ne le devient pas, et ne le deviendra pas : **les images de pages et de
+cases**. Elles restent servies par une route authentifiée, à URL signée courte,
+sous le préfixe de leur propriétaire. Publier le graphe, c'est ce que fait un
+wiki de fans ; publier les scans serait de la redistribution, et le projet le
+refuse depuis sa première ligne. Un visiteur voit la référence de la case et
+l'extrait — de quoi vérifier dans son propre exemplaire.
+
+Restent également à vous seul : l'import, la revue, la publication, la
+suppression, l'export, l'enrichissement d'images et l'assistant — ce dernier
+parce qu'un visiteur y dépenserait votre argent à la question.
+
+Un identifiant absent ou mal formé est traité comme absent. Une faute de frappe
+rend le site privé ; elle ne l'ouvre jamais à moitié.
+
+---
+
 ## Chercher, et poser des questions
 
 ```

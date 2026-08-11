@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { requireOwner } from '@/domains/auth/session.ts'
 import { publishDecisions, type Decision, type PublishResult } from '@/domains/review/publish.ts'
 
 export interface ReviewActionResult {
@@ -25,7 +25,7 @@ export async function publishDecisionsAction(
   decisions: Decision[],
 ): Promise<ReviewActionResult> {
   try {
-    const session = await getReaderSession()
+    const session = await requireOwner()
 
     if (decisions.length === 0) {
       return { ok: false, error: 'Aucune décision à publier.' }

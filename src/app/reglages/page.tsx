@@ -14,6 +14,7 @@ import {
   effectiveModelProvider,
   hasModelCredentials,
   isAssistantEnabled,
+  publicLibraryOwnerId,
 } from '@/lib/env.ts'
 import { imageCoverage } from '@/domains/images/index.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
@@ -167,6 +168,49 @@ export default async function SettingsPage() {
             </table>
           </>
         )}
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-lg font-semibold text-primary">Lecture publique</h2>
+        <p className="mt-2 max-w-2xl text-sm text-secondary">
+          {publicLibraryOwnerId() === session.userId ? (
+            <>
+              <strong className="font-medium text-primary">Ouverte.</strong>{' '}
+              N&apos;importe qui peut explorer le graphe, la chronologie, les
+              fiches et la recherche, et d&eacute;placer le curseur o&ugrave; il
+              en est de sa lecture. Les pages de manga, elles, restent derri&egrave;re
+              l&apos;authentification : un visiteur voit la r&eacute;f&eacute;rence
+              de la case et l&apos;extrait cit&eacute;, jamais l&apos;image.
+              L&apos;import, la revue, la suppression, l&apos;export,
+              l&apos;enrichissement et l&apos;assistant restent &agrave; vous seul.
+            </>
+          ) : publicLibraryOwnerId() === null ? (
+            <>
+              <strong className="font-medium text-primary">Ferm&eacute;e.</strong>{' '}
+              Chaque page exige une connexion. Pour ouvrir la lecture, posez la
+              variable d&apos;environnement{' '}
+              <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code> sur
+              l&apos;identifiant ci-dessous, et red&eacute;ployez.
+            </>
+          ) : (
+            <>
+              <strong className="font-medium text-[var(--epi-contradicted)]">
+                Ouverte sur une autre biblioth&egrave;que.
+              </strong>{' '}
+              <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code> ne
+              correspond pas &agrave; la v&ocirc;tre : les visiteurs ne voient
+              donc rien de ce qui suit. C&apos;est presque toujours une faute de
+              frappe.
+            </>
+          )}
+        </p>
+        <dl className="mt-4 divide-y divide-[var(--border)] text-sm">
+          <Row
+            label="Identifiant de votre bibliothèque"
+            value={session.userId}
+            note="À coller dans PUBLIC_LIBRARY_OWNER_ID pour ouvrir la lecture publique. Ce n'est pas un secret : c'est un identifiant, et il ne donne aucun droit d'écriture."
+          />
+        </dl>
       </section>
 
       <section className="mt-12">

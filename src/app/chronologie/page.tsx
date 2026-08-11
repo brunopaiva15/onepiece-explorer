@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { getTimeline, type TimelineEntry } from '@/domains/temporal/timeline.ts'
 import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
@@ -14,7 +14,7 @@ export default async function TimelinePage({
   searchParams: Promise<{ ch?: string; axe?: string }>
 }) {
   const { ch, axe } = await searchParams
-  const session = await getReaderSession(ch)
+  const session = await getViewerSession(ch)
   const chapters = await listChapters(session.userId, session.workId)
   const timeline = await getTimeline(session.userId, session.boundaryChapter)
 

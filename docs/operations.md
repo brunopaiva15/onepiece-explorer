@@ -188,6 +188,28 @@ Points d'exploitation :
 
 ---
 
+## Lecture publique
+
+`PUBLIC_LIBRARY_OWNER_ID` sur l'identifiant affiché dans `/reglages`, puis
+redéploiement. Absente, le site est privé — c'est le défaut et l'état de repli
+de toute erreur de saisie.
+
+- **Le graphe est public, les pages ne le sont pas.** C'est la ligne, et elle
+  est structurelle : les images passent par une route authentifiée qui vérifie
+  aussi que la clé est sous le préfixe de l'appelant. Aucun visiteur ne la
+  franchit, connecté ou non.
+- **`/ask` reste réservé au propriétaire**, même quand l'assistant est activé.
+  Un visiteur y dépenserait votre argent à la question, et le compteur de débit
+  est indexé sur votre identifiant.
+- **Coupez les inscriptions Supabase** (Authentication → Sign In / Providers →
+  « Allow new users to sign up »), sinon n'importe qui crée un compte. Il
+  obtiendrait sa propre bibliothèque vide — pas la vôtre, la RLS cloisonne —
+  mais consommerait votre stockage et vos quotas.
+- **Le curseur du visiteur vient de l'URL.** Une vue est donc partageable par
+  lien, et votre propre position de lecture n'est jamais affichée.
+
+---
+
 ## Garde-fou de dépense
 
 Trois actions sont plafonnées par heure glissante, par lecteur :

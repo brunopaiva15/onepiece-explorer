@@ -107,6 +107,27 @@ export function isAssistantEnabled(): boolean {
   return process.env.ASSISTANT_ENABLED === '1'
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/**
+ * Whose library anonymous visitors read, if anyone's.
+ *
+ * Absent — the default — means the site is exactly as private as it has always
+ * been: every page requires signing in. Public reading is something you switch
+ * on deliberately, by pasting your own library id, and never something a
+ * missing or malformed value can switch on by accident.
+ *
+ * A malformed value returns null rather than throwing. Failing closed is the
+ * right direction here: a typo should make the site private, not crash it, and
+ * `pnpm doctor` and the settings page both report what was resolved.
+ */
+export function publicLibraryOwnerId(): string | null {
+  const value = process.env.PUBLIC_LIBRARY_OWNER_ID?.trim()
+  if (!value || !UUID_RE.test(value)) return null
+  return value
+}
+
 export function effectiveModelProvider(): 'anthropic' | 'replay' | 'synthetic' {
   const requested = (process.env.MODEL_PROVIDER ?? 'anthropic') as
     | 'anthropic'

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { getViewerSession } from '@/domains/auth/session.ts'
 import { getNarrativeDelta } from '@/domains/temporal/timeline.ts'
 
 export const metadata: Metadata = { title: 'Delta narratif' }
@@ -25,7 +25,7 @@ export default async function DeltaPage({
   const chapterNumber = Number(chapitre)
   if (!Number.isInteger(chapterNumber) || chapterNumber < 0) notFound()
 
-  const session = await getReaderSession()
+  const session = await getViewerSession()
   const delta = await getNarrativeDelta(session.userId, chapterNumber)
   if (!delta) notFound()
 

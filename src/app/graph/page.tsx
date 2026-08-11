@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
@@ -28,7 +28,7 @@ export default async function GraphPage({
   // The boundary is resolved and clamped server-side. A value from the query
   // string is untrusted input, and one that widened what the reader can see
   // would be the whole product failing at once.
-  const session = await getReaderSession(ch)
+  const session = await getViewerSession(ch)
   const chapters = await listChapters(session.userId, session.workId)
 
   const nodeTypes = type ? type.split(',').filter(Boolean) : undefined

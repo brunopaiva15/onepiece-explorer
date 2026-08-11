@@ -107,6 +107,18 @@ Les images viennent de trois catalogues publics ; la connaissance, jamais.
 - [x] Les tests n'ouvrent aucune connexion réseau ; le catalogue est une fixture.
 - [ ] Couverture complète. Impossible : les catalogues gratuits plafonnent à 369 personnages, 94 fruits, 16 navires et 31 îles. Les absences sont affichées par type dans `/reglages` plutôt que passées sous silence.
 
+## Lecture publique
+
+Ouverte seulement si `PUBLIC_LIBRARY_OWNER_ID` est posée sur une bibliothèque existante.
+
+- [x] **Bloquant** — un visiteur ne peut atteindre aucune image de page ni de case : la route d'assets exige une authentification et une clé sous le préfixe de l'appelant — `tests/antispoiler/public-reading.test.ts`.
+- [x] **Bloquant** — aucun chemin d'écriture ne passe par la session visiteur : vérifié structurellement sur les sept actions et routes, avec garde contre un glob qui ne trouverait rien.
+- [x] La frontière s'applique au visiteur exactement comme au propriétaire — même politique RLS, même colonne, pas de second chemin plus permissif.
+- [x] Éteinte par défaut, et une valeur mal formée est traitée comme absente. Une faute de frappe rend le site privé, jamais à moitié ouvert.
+- [x] La position de lecture du propriétaire n'est jamais exposée : celle du visiteur vient de l'URL.
+- [x] Un identifiant qui ne correspond à rien donne un site vide, pas une erreur 500.
+- [x] Import, revue, publication, suppression, export, enrichissement et assistant restent réservés au propriétaire.
+
 ## Exploitation
 
 - [x] Une documentation d'exploitation existe : déploiement, surveillance, sauvegarde, rétention, pannes courantes — [docs/operations.md](operations.md).

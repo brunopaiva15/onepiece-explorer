@@ -37,6 +37,16 @@ export async function listChapters(
   userId: string,
   workId: string,
 ): Promise<ChapterSummary[]> {
+  /*
+   * No library, no chapters.
+   *
+   * A visitor reading a public library whose owner id points at nothing gets an
+   * empty workId. Passing that to a uuid column raises a syntax error and turns
+   * a mistyped PUBLIC_LIBRARY_OWNER_ID into a 500 — which reports a broken
+   * application where the truth is a wrong value in one setting.
+   */
+  if (workId.length === 0) return []
+
   return withIngest(async (db) => {
     const rows = await db
       .select({

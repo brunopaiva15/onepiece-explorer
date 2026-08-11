@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getReaderSession } from '@/domains/auth/session.ts'
+import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
@@ -29,7 +29,7 @@ export default async function GraphTablePage({
   searchParams: Promise<{ ch?: string }>
 }) {
   const { ch } = await searchParams
-  const session = await getReaderSession(ch)
+  const session = await getViewerSession(ch)
   const chapters = await listChapters(session.userId, session.workId)
   const projection = await projectGraph(session.userId, session.boundaryChapter)
 
