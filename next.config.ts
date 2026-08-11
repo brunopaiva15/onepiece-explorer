@@ -3,6 +3,21 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  experimental: {
+    serverActions: {
+      /*
+       * A Server Action's body is capped at 1 MB by default, which is fine for a
+       * form and useless for a chapter. Raised to the ingestion ceiling so a
+       * self-hosted or local instance can accept a real file.
+       *
+       * This does nothing on a serverless host: the platform caps the request
+       * before Next sees it — 4.5 MB on Vercel, not configurable. See
+       * uploadTransportLimitBytes().
+       */
+      bodySizeLimit: Number(process.env.MAX_UPLOAD_BYTES ?? 524_288_000),
+    },
+  },
+
   // sharp, pdfjs-dist and @napi-rs/canvas are native/heavy modules that must stay
   // outside the bundler and run in the Node runtime.
   serverExternalPackages: [

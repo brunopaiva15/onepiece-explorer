@@ -16,8 +16,11 @@ import { importChapterAction, type ImportActionResult } from './actions.ts'
 interface Props {
   suggestedNumber: number
   defaultDirection: 'rtl' | 'ltr'
+  /** Bytes this request can actually carry, in MB — not what the pipeline accepts. */
   maxUploadMb: number
   maxPages: number
+  /** True when the ceiling comes from the host and cannot be raised. */
+  limitIsHostImposed: boolean
 }
 
 const ACCEPT = '.pdf,.cbz,.zip,.jpg,.jpeg,.png,.webp,.avif'
@@ -27,6 +30,7 @@ export function ImportForm({
   defaultDirection,
   maxUploadMb,
   maxPages,
+  limitIsHostImposed,
 }: Props) {
   const [state, submit, pending] = useActionState<ImportActionResult | null, FormData>(
     importChapterAction,
@@ -148,7 +152,12 @@ export function ImportForm({
 
           {tooBig && (
             <p className="mt-2 text-sm text-[var(--epi-contradicted)]">
-              Au-delà de la limite de {maxUploadMb} Mo. L&apos;import sera refusé.
+              {totalMb.toFixed(1)} Mo, au-delà des {maxUploadMb} Mo que cette
+              requête peut transporter — l&apos;import échouerait sans message
+              exploitable.
+              {limitIsHostImposed
+                ? " Cette limite vient de l'hébergeur, pas de la configuration : elle n'est pas réglable. Importez depuis une machine qui fait tourner l'application, ou faites-moi passer l'envoi directement au stockage."
+                : ' Ajustez MAX_UPLOAD_BYTES si votre machine peut la porter.'}
             </p>
           )}
           {tooMany && (

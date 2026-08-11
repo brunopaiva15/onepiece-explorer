@@ -22,6 +22,34 @@ export interface IngestionLimits {
   maxEntryBytes: number
 }
 
+/**
+ * How many bytes can actually reach the server in one request.
+ *
+ * Distinct from `maxUploadBytes`, and the distinction cost a broken import
+ * button: that one is what the *pipeline* will accept once the bytes arrive,
+ * this one is whether they can arrive at all. The form was checking the first
+ * and letting a 40 MB chapter be submitted into a request that could carry one.
+ *
+ * A Server Action's body is capped by Next at 1 MB unless configured — raised in
+ * next.config.ts — and on a serverless host by the platform, which cannot be
+ * configured at all. Vercel's cap is 4.5 MB for the whole request, so the figure
+ * below leaves room for the multipart boundaries, part headers and field
+ * metadata that count towards it.
+ *
+ * The consequence is not a tuning problem, it is an architectural one: a manga
+ * chapter is ten to a hundred times this. Importing on a serverless host
+ * requires the bytes to go straight to storage and never through a function.
+ */
+export function uploadTransportLimitBytes(): number {
+  if (process.env.VERCEL === '1') return 4 * 1_024 * 1_024
+  return ingestionLimits().maxUploadBytes
+}
+
+/** True when the host, not the configuration, is what caps an upload. */
+export function transportLimitIsHostImposed(): boolean {
+  return process.env.VERCEL === '1'
+}
+
 export function ingestionLimits(): IngestionLimits {
   const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES ?? 524_288_000)
   return {

@@ -175,6 +175,32 @@ chapitre pose, et qui écrit une entrée d'audit d'abord.
 
 ---
 
+## Importer, et pourquoi pas depuis un hébergeur serverless
+
+Un chapitre arrive par une **server action**, donc dans le corps d'une requête
+HTTP. Next.js plafonne ce corps à 1 Mo par défaut — relevé dans
+`next.config.ts` — mais une plate-forme serverless impose le sien par-dessus, et
+celui-là n'est pas réglable : **4,5 Mo sur Vercel**. Un chapitre fait dix à cent
+fois cela.
+
+Ce n'est donc pas un réglage à ajuster, c'est une contrainte d'architecture. Les
+conséquences pratiques :
+
+- **Sur un hébergeur serverless, l'import ne peut pas fonctionner.** La page le
+  dit désormais en haut plutôt que de laisser un bouton accepter un fichier que
+  la requête ne peut pas porter — Next.js ne transmet aucun message quand la
+  limite est franchie, ce qui produisait une page d'erreur nue.
+- **Le reste fonctionne** : lire, chercher, explorer le graphe, les fiches, la
+  chronologie. C'est 95 % de l'usage.
+- **Pour importer aujourd'hui** : lancez l'application sur une machine à vous
+  (`pnpm dev` puis `pnpm worker`), avec le même `DIRECT_URL`. Elle écrit dans la
+  même base ; l'hébergeur sert la lecture.
+- **La vraie correction**, non écrite : faire passer l'envoi du navigateur
+  directement au stockage Supabase par URL signée, puis laisser le worker
+  extraire les pages. Les octets ne traversent alors aucune fonction.
+
+---
+
 ## Illustrations
 
 `pnpm images:catalogue` récupère les trois catalogues (~1 000 illustrations) et
@@ -285,6 +311,7 @@ Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répo
 | Symptôme | Cause probable | Que faire |
 |---|---|---|
 | **Toutes** les pages en erreur serveur | Variables absentes au moment du build | `/etat`, puis redéployez après les avoir enregistrées |
+| L'import échoue sans message exploitable | Corps de requête au-delà de la limite | Plafond de la plate-forme, pas un réglage : 4,5 Mo sur Vercel. Importez depuis une machine qui fait tourner l'application |
 | Une seule page en erreur serveur | Schéma en retard sur cette table | `pnpm db:push` avec le `DIRECT_URL` de production |
 | Chapitre bloqué en « en attente d'un worker » | Worker non lancé | `pnpm worker:once` |
 | Second chapitre importé d'affilée jamais traité | Job dédupliqué par la file | Vérifiez que `singletonKey` vaut bien l'identifiant du chapitre ; un `stately` sans clé déduplique sur toute la file |

@@ -30,18 +30,32 @@ export default function ErrorBoundary({
       </h1>
 
       <p className="mt-4 text-secondary">
-        Si toutes les pages échouent, la cause est presque toujours la même :
-        chacune résout une session, et une session lit la configuration puis
-        ouvre une connexion à la base. Une seule variable manquante suffit à
-        faire tomber le site entier.
+        Le message exact n&apos;arrive pas jusqu&apos;ici : en production il est
+        remplacé par une référence avant d&apos;atteindre le navigateur, et
+        c&apos;est voulu — une erreur peut contenir une chaîne de connexion.
+        Cette page ne sait donc pas ce qui a échoué, et ne va pas le deviner.
       </p>
 
       <p className="mt-4 text-secondary">
+        <strong className="font-medium text-primary">
+          Si toutes les pages échouent
+        </strong>{' '}
+        : c&apos;est la configuration ou le schéma de la base.{' '}
         <Link href="/etat" className="text-accent underline">
-          Ouvrez l&apos;état du déploiement
+          L&apos;état du déploiement
         </Link>{' '}
-        — cette page-là ne dépend de rien de ce qu&apos;elle contrôle, donc elle
-        répond même maintenant, et elle dit laquelle manque.
+        ne dépend de rien de ce qu&apos;il contrôle, donc il répond même
+        maintenant et nomme ce qui manque.
+      </p>
+
+      <p className="mt-4 text-secondary">
+        <strong className="font-medium text-primary">
+          Si seule cette action échoue
+        </strong>{' '}
+        : la cause est dans cette action, pas dans la configuration. Sur un
+        envoi de fichier, le suspect habituel est la taille — le corps
+        d&apos;une requête est plafonné par l&apos;hébergeur, et Next.js ne
+        transmet pas de message quand la limite est franchie.
       </p>
 
       <div className="mt-8 flex flex-wrap gap-3">

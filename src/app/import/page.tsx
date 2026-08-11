@@ -2,7 +2,11 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
-import { ingestionLimits } from '@/domains/ingestion/limits.ts'
+import {
+  ingestionLimits,
+  transportLimitIsHostImposed,
+  uploadTransportLimitBytes,
+} from '@/domains/ingestion/limits.ts'
 import { ImportForm } from './import-form.tsx'
 
 export const metadata: Metadata = { title: 'Importer un chapitre' }
@@ -40,10 +44,42 @@ export default async function ImportPage() {
         qui décide, plus tard, de ce qui reste caché derrière le curseur.
       </p>
 
+      {transportLimitIsHostImposed() && (
+        <div
+          role="note"
+          className="mt-6 rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-4 text-sm"
+        >
+          <p className="text-primary">
+            <strong className="font-medium">
+              Cet hébergeur ne peut pas recevoir un chapitre.
+            </strong>{' '}
+            Le corps d&apos;une requête y est plafonné à 4,5 Mo par la
+            plate-forme — pas par un réglage — et un chapitre fait dix à cent
+            fois cela.
+          </p>
+          <p className="mt-2 text-secondary">
+            Le reste du site fonctionne : lire, chercher, explorer le graphe. Pour
+            importer, deux voies — lancer l&apos;application sur une machine à
+            vous, qui écrira dans la même base ; ou faire passer l&apos;envoi
+            directement du navigateur au stockage, sans traverser de fonction.
+            La seconde est la vraie correction, et elle reste à écrire.
+          </p>
+        </div>
+      )}
+
       <ImportForm
         suggestedNumber={suggested}
         defaultDirection={direction}
-        maxUploadMb={Math.round(limits.maxUploadBytes / 1_048_576)}
+        /*
+         * The transport limit, not the ingestion one.
+         *
+         * What the pipeline will accept is irrelevant if the bytes cannot reach
+         * it. Showing the larger number let the form accept a file the request
+         * could not carry, and the Server Action then failed without a message
+         * Next passes on — which is how an import produced a bare error page.
+         */
+        maxUploadMb={Math.round(uploadTransportLimitBytes() / 1_048_576)}
+        limitIsHostImposed={transportLimitIsHostImposed()}
         maxPages={limits.maxPages}
       />
 
