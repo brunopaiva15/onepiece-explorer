@@ -39,19 +39,22 @@ async function main(): Promise<void> {
   Object.assign(process.env, testDb ? { TEST_DATABASE_URL: url } : { DIRECT_URL: url })
 
   /*
-   * Local storage when nothing else is configured.
+   * Local storage for a test run, and only for a test run.
    *
-   * Without this the run would fail at the first download with a message about
-   * SUPABASE_SERVICE_ROLE_KEY, which is the right error for a chapter import
-   * and the wrong one here: illustrating a test library should not require a
-   * production bucket.
+   * Illustrating a test library should not require a production bucket, so
+   * TEST_DB=1 gets a temporary directory. A real run must not be given one:
+   * defaulting to the filesystem there would write every portrait to whichever
+   * machine happened to run the script, and a deployment reading the same
+   * database would find rows pointing at files it cannot see — working locally,
+   * broken everywhere else, with nothing saying so.
+   *
+   * Unset outside a test, the storage adapter decides. It defaults to Supabase
+   * and says exactly what is missing if the service-role key is absent.
    */
-  if (!process.env.STORAGE_DRIVER) {
-    const root = testDb
-      ? await mkdtemp(path.join(tmpdir(), 'ope-images-'))
-      : path.join(process.cwd(), 'var', 'storage')
+  if (testDb && !process.env.STORAGE_DRIVER) {
+    const root = await mkdtemp(path.join(tmpdir(), 'ope-images-'))
     Object.assign(process.env, { STORAGE_DRIVER: 'local', LOCAL_STORAGE_ROOT: root })
-    console.log(`Stockage local : ${root}`)
+    console.log(`Stockage local temporaire : ${root}`)
   }
 
   const sql = postgres(url, { max: 2, onnotice: () => {} })

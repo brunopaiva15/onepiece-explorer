@@ -454,6 +454,8 @@ const graphe = await withBoundary(
   comment le coût IA est maîtrisé
 - [Illustrations externes](docs/adr/0007-external-illustrations.md) — pourquoi
   une image n'est jamais une source, et pourquoi elle attend son nom
+- [Importer depuis votre machine](docs/importer-en-local.md) — la marche à
+  suivre complète quand l'application est hébergée ailleurs
 - [Exploitation](docs/operations.md) — déployer, surveiller, sauvegarder,
   purger, et le tableau des pannes courantes avec leur diagnostic
 - [Critères d'acceptation](docs/acceptance-criteria.md) — dont les huit
