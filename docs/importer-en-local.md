@@ -85,7 +85,15 @@ remplissez les six valeurs. Les deux premières se lisent aussi bien dans Supaba
 → Project Settings → API (« Project URL » et la clé `anon` / `public`) que dans
 Vercel → Settings → Environment Variables ; les autres, seulement dans Vercel.
 
-| Variable | Rôle |
+La colonne de droite dit **à quoi sert** la variable ; ce n'est pas sa valeur. Les
+deux formes attendues :
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://abcdefgh.supabase.co
+DIRECT_URL=postgresql://postgres.abcdefgh:MOT_DE_PASSE@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
+```
+
+| Variable | Ce qu'elle sert |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | authentification |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | authentification |
@@ -231,6 +239,8 @@ compte.
 | Symptôme | Cause | Correction |
 |---|---|---|
 | `Configuration incomplète : NEXT_PUBLIC_… undefined` | `.env.local` absent du dossier du projet, ou pull de l'environnement Development | `pnpm doctor` nomme les manquantes ; voir §3 |
+| `Invalid supabaseUrl: Must be a valid HTTP or HTTPS URL` | `NEXT_PUBLIC_SUPABASE_URL` contient autre chose qu'une URL | Attendu : `https://<ref>.supabase.co`, dans Supabase → Project Settings → API |
+| `getaddrinfo ENOTFOUND base` au lancement du worker | `DIRECT_URL` n'est pas une chaîne de connexion. Le pilote PostgreSQL accepte n'importe quel texte et lit le mot « base » d'une phrase française comme un nom d'hôte — d'où ce message, qui ne nomme pas la variable | `pnpm doctor` affiche l'hôte réellement extrait de chaque connexion |
 | « en attente d'un worker », indéfiniment | `pnpm worker` n'est pas lancé | Lancez-le, terminal 2 |
 | L'import réussit, Vercel n'affiche pas les images | `STORAGE_DRIVER=local` | Mettez `supabase` et réimportez |
 | `SUPABASE_SERVICE_ROLE_KEY est requis` | La clé manque dans `.env.local` | Copiez-la depuis Vercel |

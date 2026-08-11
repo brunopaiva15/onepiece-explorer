@@ -322,4 +322,43 @@ describe('the gate in front of everything', () => {
     expect(decide('/connexion', true, false)).toBe('home')
     expect(decide('/reglages', true, false)).toBe('allow')
   })
+
+  it('stands down when the authentication configuration is unusable', async () => {
+    /*
+     * The gate runs before every route, `/etat` included. So it must survive a
+     * configuration the rest of the application cannot use — a value that is
+     * present but is not a URL threw inside createServerClient and took the
+     * diagnostic page down with everything else. Letting the request through is
+     * safe: row-level security is the boundary, and every page that reads
+     * anything raises its own configuration error.
+     */
+    const { usableAuthConfig } = await import('@/proxy.ts')
+
+    const key = 'anon-key'
+    expect(usableAuthConfig({})).toBeNull()
+    expect(
+      usableAuthConfig({ NEXT_PUBLIC_SUPABASE_URL: 'https://x.supabase.co' }),
+    ).toBeNull()
+    for (const url of [
+      'authentification', // a description pasted from the documentation table
+      '',
+      '   ',
+      'x.supabase.co', // no scheme
+      'postgresql://x.supabase.co', // right shape, wrong protocol
+    ]) {
+      expect(
+        usableAuthConfig({
+          NEXT_PUBLIC_SUPABASE_URL: url,
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: key,
+        }),
+      ).toBeNull()
+    }
+
+    expect(
+      usableAuthConfig({
+        NEXT_PUBLIC_SUPABASE_URL: '  https://x.supabase.co  ',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: `  ${key}  `,
+      }),
+    ).toEqual({ url: 'https://x.supabase.co', anonKey: key })
+  })
 })

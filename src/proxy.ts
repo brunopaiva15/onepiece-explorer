@@ -49,6 +49,31 @@ function publiclyOpen(): boolean {
   return Boolean(value && UUID_RE.test(value))
 }
 
+/**
+ * The two values this file needs, if they are usable at all.
+ *
+ * Present is not the same as usable. `createServerClient` throws on a value that
+ * is not an http(s) URL — and a variable filled in by hand from a documentation
+ * table holds a description far more often than it holds nothing.
+ */
+export function usableAuthConfig(
+  source: Record<string, string | undefined> = process.env,
+): { url: string; anonKey: string } | null {
+  const url = source.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const anonKey = source.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+  if (!url || !anonKey) return null
+
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+
+  return { url, anonKey }
+}
+
 function matches(pathname: string, paths: string[]): boolean {
   return paths.some(
     (p) => pathname === p || (p !== '/' && pathname.startsWith(`${p}/`)),
@@ -101,14 +126,22 @@ export function decide(
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next({ request })
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  /*
+   * Unconfigured OR misconfigured instance: let the page render and explain what
+   * is missing, rather than redirect-loop to a sign-in page that cannot work
+   * either.
+   *
+   * The shape check is not decoration. This file runs before every route,
+   * including /etat — the one page written to answer when everything else fails.
+   * An earlier version tested only for presence, so a variable holding something
+   * that was not a URL threw inside createServerClient, and the diagnostic page
+   * went down with the rest. A guard whose whole purpose is to survive a broken
+   * configuration must not itself require a working one.
+   */
+  const auth = usableAuthConfig()
+  if (!auth) return response
 
-  // Unconfigured instance: let the page render and explain what is missing,
-  // rather than redirect-looping to a sign-in page that cannot work either.
-  if (!url || !anonKey) return response
-
-  const supabase = createServerClient(url, anonKey, {
+  const supabase = createServerClient(auth.url, auth.anonKey, {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (toSet) => {
@@ -128,11 +161,22 @@ export async function proxy(request: NextRequest) {
     },
   })
 
-  // getUser(), not getSession(): this verifies the token with the auth server
-  // and is what refreshes an expired one.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  /*
+   * getUser(), not getSession(): this verifies the token with the auth server
+   * and is what refreshes an expired one.
+   *
+   * Which means it is a network call, and a network call fails. Unreachable auth
+   * used to turn every single route into a 500, /etat included. Failing closed —
+   * treating the visitor as signed out — sends them to a sign-in page that will
+   * say what is wrong, and leaves the diagnostic page reachable.
+   */
+  let user: { id: string } | null = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch {
+    user = null
+  }
 
   const { pathname } = request.nextUrl
 

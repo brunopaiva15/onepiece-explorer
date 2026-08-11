@@ -29,6 +29,15 @@ interface Result {
 
 const results: Result[] = []
 
+/**
+ * Variables whose value is present but not the right kind of thing.
+ *
+ * Recorded so the checks downstream can stand aside instead of crashing on them.
+ * A diagnostic that stops at its first bad value reports one problem out of
+ * three, and the run has to be repeated once per fix.
+ */
+const unusable = new Set<string>()
+
 function record(result: Result): void {
   results.push(result)
   const mark = { ok: '✓', warn: '!', fail: '✗', skip: '·' }[result.level]
@@ -52,6 +61,49 @@ function endpoint(url: string | undefined): string {
   } catch {
     return 'illisible'
   }
+}
+
+/**
+ * Is the value the right *kind* of thing?
+ *
+ * Present and usable are different claims, and the gap between them is worse
+ * than an absence: an absent variable is named here, a malformed one is named
+ * nowhere. It surfaces much later as `Invalid supabaseUrl` from a Supabase
+ * client, or as `getaddrinfo ENOTFOUND base` from the PostgreSQL driver — which
+ * happens because `pg-connection-string` accepts any prose and reads the word
+ * "base" in it as a hostname. Both of those were real, and neither mentioned
+ * which variable was at fault.
+ */
+function shapeProblem(name: string, value: string): string | null {
+  if (name === 'NEXT_PUBLIC_SUPABASE_URL') {
+    let parsed: URL
+    try {
+      parsed = new URL(value)
+    } catch {
+      return "n'est pas une URL"
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return `protocole « ${parsed.protocol} » au lieu de https:`
+    }
+    if (!parsed.hostname.includes('.')) return `hôte « ${parsed.hostname} » sans domaine`
+    return null
+  }
+
+  if (name === 'DATABASE_URL' || name === 'DIRECT_URL' || name === 'TEST_DATABASE_URL') {
+    if (!/^postgres(ql)?:\/\//.test(value)) {
+      return "n'est pas une chaîne de connexion (attendu : postgresql://…)"
+    }
+    let parsed: URL
+    try {
+      parsed = new URL(value)
+    } catch {
+      return 'chaîne de connexion illisible'
+    }
+    if (!parsed.hostname) return 'chaîne de connexion sans hôte'
+    return null
+  }
+
+  return null
 }
 
 // --------------------------------------------------------------------------
@@ -85,7 +137,26 @@ function checkVariables(): void {
         detail: 'contient encore un espace réservé de .env.example',
       })
     } else {
-      record({ level: 'ok', label: name, detail: 'défini' })
+      const problem = shapeProblem(name, value)
+      if (problem) {
+        unusable.add(name)
+        record({
+          level: 'fail',
+          label: name,
+          detail: problem,
+          hint: 'La variable a une valeur, mais pas du bon genre. Recopiez-la depuis sa source.',
+        })
+      } else {
+        record({
+          level: 'ok',
+          label: name,
+          // The endpoint for a connection string, because "défini" is exactly
+          // what the failing case also says. Host and port carry no secret.
+          detail: name.endsWith('_URL') && name !== 'NEXT_PUBLIC_SUPABASE_URL'
+            ? `défini — ${endpoint(value)}`
+            : 'défini',
+        })
+      }
     }
   }
 
@@ -125,14 +196,31 @@ function checkVariables(): void {
 // Database
 // --------------------------------------------------------------------------
 
+/**
+ * The connection string, or nothing — and a line saying which.
+ *
+ * Absent and malformed both mean "cannot connect", and neither is a reason to
+ * abandon the remaining checks. The malformed case in particular used to end the
+ * run with `Invalid URL` and no attribution, three sections short.
+ */
+function connectionString(name: string): string | null {
+  if (unusable.has(name)) {
+    record({ level: 'skip', label: `${name} illisible`, detail: 'contrôles ignorés' })
+    return null
+  }
+  const value = process.env[name]
+  if (!value) {
+    record({ level: 'skip', label: `${name} absent`, detail: 'contrôles ignorés' })
+    return null
+  }
+  return value
+}
+
 async function checkApplicationConnection(): Promise<void> {
   console.log('\n\x1b[1mConnexion applicative (lectures, RLS appliquée)\x1b[0m')
 
-  const url = process.env.DATABASE_URL
-  if (!url) {
-    record({ level: 'skip', label: 'DATABASE_URL absent', detail: 'contrôles ignorés' })
-    return
-  }
+  const url = connectionString('DATABASE_URL')
+  if (!url) return
 
   const sql = postgres(url, {
     max: 1,
@@ -256,11 +344,8 @@ async function checkApplicationConnection(): Promise<void> {
 async function checkDirectConnection(): Promise<void> {
   console.log('\n\x1b[1mConnexion directe (migrations, worker, pipeline)\x1b[0m')
 
-  const url = process.env.DIRECT_URL
-  if (!url) {
-    record({ level: 'skip', label: 'DIRECT_URL absent', detail: 'contrôles ignorés' })
-    return
-  }
+  const url = connectionString('DIRECT_URL')
+  if (!url) return
 
   const sql = postgres(url, { max: 1, connect_timeout: 10, onnotice: () => {} })
 
