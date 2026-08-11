@@ -50,6 +50,26 @@ présente dans l'environnement l'emportant sur les deux — même ordre que
 Next.js, et le même pour l'application, le worker et les scripts. Un hébergeur
 qui injecte ses propres variables n'a donc aucun fichier à déposer.
 
+### Appliquer les migrations sans machine locale
+
+`Actions → Migrations (production) → Run workflow`, en tapant `PRODUCTION`
+dans le champ de confirmation. Déclenchement manuel uniquement — jamais sur un
+push, jamais sur un merge, jamais planifié.
+
+Prérequis, une fois : le secret de dépôt `PRODUCTION_DIRECT_URL`
+(Settings → Secrets and variables → Actions), contenant la chaîne du pooler
+Supabase **en mode session**, port 5432 sur l'hôte du pooler. Le DDL ne passe pas
+par le pooler en mode transaction, et l'hôte `db.…` est en IPv6 uniquement.
+
+Rejouable sans risque : `db:push` retient une empreinte par migration et saute
+ce qui est déjà appliqué. Une migration dont le fichier a changé après
+application est refusée plutôt que rejouée — une base et un dépôt qui ne sont
+pas d'accord sur le schéma est pire qu'un job en échec.
+
+La confirmation tapée n'est pas de la cérémonie : c'est la production, et un
+clic mal placé ne doit pas y arriver. Elle est vérifiée avant toute
+installation, donc une mauvaise réponse ne coûte rien.
+
 `pnpm db:push` est idempotent : il applique les migrations manquantes, les
 inscrit dans `_migrations`, et ne rejoue pas celles qui y sont déjà.
 

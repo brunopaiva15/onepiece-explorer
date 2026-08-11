@@ -1,0 +1,92 @@
+name: Migrations (production)
+
+# Applies the SQL migrations to the production database, on a button press.
+#
+# `workflow_dispatch` and nothing else. Never on a push, never on a merge, never
+# on a schedule. That is the whole design: a migration that fires automatically
+# runs while the previous version of the application is still serving requests,
+# which is the worst moment available. Choosing the moment is the point.
+#
+# It exists because migrations are not applied by a deployment — nothing on a
+# serverless host runs them — and doing it from a laptop assumes a laptop with
+# the repository, Node, pnpm and a production credential on it. This is the same
+# operation without that assumption.
+#
+# What it needs, once: a repository secret PRODUCTION_DIRECT_URL, holding the
+# Supabase *session-mode pooler* string (port 5432 on the pooler host, not the
+# db.… host, which is IPv6-only). DDL does not work through the transaction
+# pooler.
+#
+# Safe to re-run. `pnpm db:push` records a checksum per migration and skips what
+# is already applied; the ontology seed is idempotent. A migration whose file
+# changed after being applied is refused rather than reapplied, because a
+# database and a repository disagreeing about the schema is worse than a failed
+# job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Tapez PRODUCTION pour confirmer'
+        required: true
+        default: ''
+
+# Two migration runs at once would race on the same schema.
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # A typed confirmation rather than a bare button, for the same reason
+      # chapter deletion asks for the number: a misdirected click should not
+      # reach production. Checked before anything is installed, so a wrong
+      # answer costs nothing.
+      - name: Check the confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "PRODUCTION" ]; then
+            echo "Confirmation absente ou incorrecte. Relancez en tapant PRODUCTION."
+            exit 1
+          fi
+
+      - name: Check the secret is present
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: |
+          if [ -z "$DIRECT_URL" ]; then
+            echo "Le secret PRODUCTION_DIRECT_URL n'est pas configuré."
+            echo "Settings → Secrets and variables → Actions → New repository secret."
+            echo "Valeur : la chaîne du pooler Supabase en mode session (port 5432)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # db:push prints one line per migration — `=` for already applied, `+` for
+      # newly applied — then the ontology counts. That output *is* the
+      # verification, so the log is worth reading rather than skipping.
+      - name: pnpm db:push
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: pnpm db:push
+
+      # No verification step after this one, on purpose. `db:push` already
+      # prints the whole answer — one line per migration, `=` for already
+      # applied and `+` for newly applied, then the ontology counts and
+      # "Schéma à jour." A second step re-asking the database the same question
+      # through a shell-quoted inline script would add a way to fail and no
+      # information.
