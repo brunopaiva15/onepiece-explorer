@@ -134,6 +134,17 @@ qui n'a pas été lancé. Laissez-le tourner pendant tout l'import, coupez-le ap
 Aucune limite de 4,5 Mo ici : le plafond de transport local vaut
 `MAX_UPLOAD_BYTES`, soit 500 Mo par défaut.
 
+**Mais le stockage a le sien.** Le plan gratuit Supabase refuse tout fichier de
+plus de **50 Mo**, et ce plafond n'est pas relevable sur ce plan. L'application
+acceptera le fichier, puis le stockage le rejettera — l'erreur remonte, mais
+elle arrive tard. Si un chapitre dépasse 50 Mo, réexportez-le à une résolution
+plus basse, ou passez les pages en WebP avant d'importer.
+
+**Et surveillez le total** : 1 Go de stockage sur le plan gratuit, soit de
+l'ordre de 25 à 60 chapitres selon la résolution. C'est le vrai plafond de ce
+projet, bien avant la question de l'envoi. `/reglages` montre ce que chaque
+chapitre occupe, et la suppression d'un chapitre efface réellement les octets.
+
 ---
 
 ## 6. Traiter, relire, publier

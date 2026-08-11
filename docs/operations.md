@@ -196,8 +196,28 @@ conséquences pratiques :
   (`pnpm dev` puis `pnpm worker`), avec le même `DIRECT_URL`. Elle écrit dans la
   même base ; l'hébergeur sert la lecture.
 - **La vraie correction**, non écrite : faire passer l'envoi du navigateur
-  directement au stockage Supabase par URL signée, puis laisser le worker
-  extraire les pages. Les octets ne traversent alors aucune fonction.
+  directement au stockage Supabase par URL signée (`createSignedUploadUrl` puis
+  `uploadToSignedUrl`), puis laisser le worker extraire les pages. Les octets ne
+  traversent alors aucune fonction.
+
+  À noter avant de s'y lancer : cela ne résout que le **transport**. Il resterait
+  à découper les pages — `pdfjs` et `sharp` sur 18 pages en pleine résolution —
+  et à faire tourner le pipeline, ce qu'une fonction serverless fait mal et
+  qu'un worker `pg-boss` ne peut pas y faire du tout. Tant que le worker tourne
+  sur une machine à vous, l'envoi peut y tourner aussi et l'envoi direct
+  n'apporte rien. Il ne devient utile que le jour où le traitement quitte aussi
+  cette machine — et cet hébergeur-là recevra alors le fichier directement.
+
+  Vercel Blob résoudrait le même transport, en ajoutant un **second endroit où
+  vivent les pages** : deux chemins de suppression, deux politiques de rétention.
+  Pour un produit qui promet qu'une purge efface les octets, c'est le mauvais
+  compromis tant que Supabase Storage suffit.
+
+### Les plafonds de stockage, qui arrivent avant tout le reste
+
+Plan gratuit Supabase : **50 Mo par fichier** (non relevable) et **1 Go au
+total**, soit de l'ordre de 25 à 60 chapitres. C'est la limite qui se fera
+sentir en premier, avant toute question d'architecture d'envoi.
 
 ---
 
