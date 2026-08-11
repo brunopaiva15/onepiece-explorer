@@ -39,6 +39,81 @@ function presence(name: string): boolean {
   return (process.env[name] ?? '').trim().length > 0
 }
 
+interface SchemaReport {
+  /** Null when the connection did not answer; the failure is reported elsewhere. */
+  reachable: boolean
+  /** Last row of `_migrations`, or null when the table itself is absent. */
+  lastMigration: string | null
+  appliedCount: number
+  /** Tables the code expects and the database does not have. */
+  missingTables: string[]
+}
+
+/**
+ * Is the schema behind the code?
+ *
+ * The question that "everything responds and one page still fails" always turns
+ * out to be. Migrations are not applied by a deployment — nothing in a serverless
+ * host runs them — so a database can sit several versions behind indefinitely
+ * while every connection check passes.
+ *
+ * Expected tables come from the Drizzle schema rather than a hand-kept list, so
+ * adding a table updates this automatically. That module is pure table
+ * definitions: no `env()`, no connection, nothing this page must avoid.
+ */
+async function schemaState(url: string | undefined): Promise<SchemaReport> {
+  const absent: SchemaReport = {
+    reachable: false,
+    lastMigration: null,
+    appliedCount: 0,
+    missingTables: [],
+  }
+  if (!url) return absent
+
+  const [{ getTableName, is }, { PgTable }, schema] = await Promise.all([
+    import('drizzle-orm'),
+    import('drizzle-orm/pg-core'),
+    import('@/db/schema/index.ts'),
+  ])
+
+  const expected = Object.values(schema)
+    .filter((value) => is(value, PgTable))
+    .map((table) => getTableName(table as never))
+    .sort()
+
+  let sql: ReturnType<typeof postgres> | null = null
+  try {
+    sql = postgres(url, {
+      max: 1,
+      connect_timeout: 8,
+      idle_timeout: 2,
+      prepare: false,
+      onnotice: () => {},
+    })
+
+    const present = await sql<Array<{ table_name: string }>>`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public'
+    `
+    const have = new Set(present.map((row) => row.table_name))
+
+    const migrations = await sql<Array<{ name: string }>>`
+      SELECT name FROM _migrations ORDER BY name
+    `.catch(() => [] as Array<{ name: string }>)
+
+    return {
+      reachable: true,
+      lastMigration: migrations.at(-1)?.name ?? null,
+      appliedCount: migrations.length,
+      missingTables: expected.filter((name) => !have.has(name)),
+    }
+  } catch {
+    return absent
+  } finally {
+    await sql?.end({ timeout: 3 }).catch(() => undefined)
+  }
+}
+
 async function connects(url: string | undefined): Promise<string | null> {
   if (!url) return "la variable n'est pas définie"
   let sql: ReturnType<typeof postgres> | null = null
@@ -110,9 +185,10 @@ export default async function StatePage() {
    * built before they were saved. Nothing in the running code can tell the two
    * apart — so this says so rather than pretending to know.
    */
-  const [appConnection, directConnection] = await Promise.all([
+  const [appConnection, directConnection, schema] = await Promise.all([
     connects(process.env.DATABASE_URL),
     connects(process.env.DIRECT_URL),
+    schemaState(process.env.DIRECT_URL),
   ])
 
   checks.push({
@@ -125,6 +201,18 @@ export default async function StatePage() {
     state: directConnection === null ? 'ok' : 'fail',
     detail: directConnection === null ? 'répond' : directConnection,
   })
+
+  if (schema.reachable) {
+    checks.push({
+      label: 'Schéma de la base',
+      state: schema.missingTables.length === 0 ? 'ok' : 'fail',
+      detail:
+        schema.missingTables.length === 0
+          ? `à jour — ${schema.appliedCount} migration(s), la dernière étant ${schema.lastMigration ?? 'inconnue'}`
+          : `EN RETARD — table(s) absente(s) : ${schema.missingTables.join(', ')}. ` +
+            `Dernière migration appliquée : ${schema.lastMigration ?? 'aucune'}.`,
+    })
+  }
 
   const broken = checks.filter((check) => check.state === 'fail')
 
@@ -141,17 +229,28 @@ export default async function StatePage() {
 
       {broken.length === 0 ? (
         <p className="mt-8 rounded-sm border border-line bg-surface-raised p-4 text-primary">
-          Tout répond. Si une page échoue malgré ça, la cause est ailleurs : le
-          plus probable est un schéma de base en retard —{' '}
-          <code>pnpm db:push</code> depuis votre machine, avec le même{' '}
-          <code>DIRECT_URL</code>.
+          Tout répond et le schéma est à jour. Si une page échoue malgré ça, le
+          message complet est dans les journaux d&apos;exécution de
+          l&apos;hébergeur — la page en erreur affiche une référence à y
+          chercher.
         </p>
       ) : (
         <div className="mt-8 rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-4">
           <p className="font-medium text-primary">
-            {broken.length} problème(s) suffisant(s) à faire échouer toutes les
-            pages.
+            {broken.length} problème(s) à corriger.
           </p>
+          {schema.missingTables.length > 0 && (
+            <p className="mt-2 text-sm text-primary">
+              Le schéma est en retard sur le code. Depuis votre machine, avec le{' '}
+              <code>DIRECT_URL</code> de production dans{' '}
+              <code>.env.local</code> :{' '}
+              <code className="text-accent">pnpm db:push</code>, puis{' '}
+              <code>pnpm doctor</code>. Rien ne l&apos;applique au
+              déploiement&nbsp;: c&apos;est délibéré — une migration qui
+              s&apos;exécute à chaud pendant qu&apos;une ancienne version tourne
+              encore est le pire moment pour la lancer.
+            </p>
+          )}
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
             {broken.map((check) => (
               <li key={check.label}>
