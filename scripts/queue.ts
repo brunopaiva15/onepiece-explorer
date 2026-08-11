@@ -53,6 +53,49 @@ interface JobRow {
   retry_count: number
   run_id: string | null
   minutes: number | null
+  start_after: Date
+  deferred: boolean
+}
+
+/**
+ * The runs the interface is waiting on, next to the jobs that would advance them.
+ *
+ * This is the join nothing else can show. `/runs/[id]` reads our tables and says
+ * "en attente d'un worker" for any run still `pending`; the queue lives in
+ * pg-boss's schema, which the application never reads. So a run whose job was
+ * deleted, refused, or never sent looks exactly like a run waiting for a worker
+ * that simply is not running — and the remedy for the two is opposite.
+ */
+async function reportRuns(
+  sql: ReturnType<typeof postgres>,
+  jobs: JobRow[],
+): Promise<void> {
+  const runs = await sql<Array<{ id: string; chapter_id: string; status: string; minutes: number }>>`
+    SELECT id::text, chapter_id::text, status,
+           EXTRACT(EPOCH FROM (now() - created_at)) / 60 AS minutes
+    FROM ingestion_runs
+    WHERE status IN ('pending', 'running')
+    ORDER BY created_at
+  `
+
+  if (runs.length === 0) {
+    console.log('Aucun run en attente ni en cours.\n')
+    return
+  }
+
+  const byRun = new Set(jobs.map((job) => job.run_id).filter(Boolean))
+  console.log(`${runs.length} run(s) que l'interface attend :\n`)
+  for (const run of runs) {
+    const job = byRun.has(run.id)
+    console.log(
+      `  ${run.status.padEnd(8)} run ${run.id.slice(0, 8)} chapitre ${run.chapter_id.slice(0, 8)}` +
+        ` depuis ${Math.round(run.minutes)} min — ` +
+        (job
+          ? 'un job existe dans la file'
+          : 'AUCUN job dans la file : relancez le traitement, un worker ne le prendra jamais'),
+    )
+  }
+  console.log()
 }
 
 async function main(): Promise<void> {
@@ -81,11 +124,15 @@ async function main(): Promise<void> {
       singleton_key,
       retry_count,
       data->>'runId' AS run_id,
-      EXTRACT(EPOCH FROM (now() - started_on)) / 60 AS minutes
+      EXTRACT(EPOCH FROM (now() - started_on)) / 60 AS minutes,
+      start_after,
+      start_after > now() AS deferred
     FROM ${sql(schema)}.job
     WHERE name = ${QUEUE} AND state <= 'active'
     ORDER BY created_on
   `
+
+  await reportRuns(sql, jobs)
 
   if (jobs.length === 0) {
     console.log('File vide : aucun job en attente ni en cours.')
@@ -98,7 +145,9 @@ async function main(): Promise<void> {
       const suspect =
         job.state === 'active' && (job.minutes ?? 0) > PRESUMED_DEAD_MINUTES
           ? '  ← bloqué, aucun worker ne le tient'
-          : ''
+          : job.deferred
+            ? `  ← différé jusqu'à ${job.start_after.toISOString()}, aucun worker ne le prendra avant`
+            : ''
       console.log(
         `  ${job.state.padEnd(8)}${chapter}${run}${age}` +
           (job.retry_count > 0 ? ` (${job.retry_count} tentative(s))` : '') +
