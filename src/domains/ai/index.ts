@@ -1,13 +1,17 @@
 import 'server-only'
-import { effectiveModelProvider } from '@/lib/env.ts'
+import { remoteModelProvider } from '@/lib/env.ts'
 import { AnthropicProvider } from './anthropic.ts'
+import { localModelConfig, OpenAICompatibleProvider } from './openai-compatible.ts'
 import type { ModelProvider } from './provider.ts'
 import { ReplayProvider } from './replay.ts'
+import { localTiers, ROUTED_TIERS, RoutingProvider, type RoutedTier } from './routing.ts'
 import { SyntheticProvider } from './synthetic.ts'
 
 export * from './provider.ts'
 export * from './schemas.ts'
 export * from './anchoring.ts'
+export { localModelConfig } from './openai-compatible.ts'
+export { localTiers, ROUTED_TIERS, type RoutedTier } from './routing.ts'
 export { PROMPT_VERSION } from './prompts.ts'
 
 let cached: ModelProvider | null = null
@@ -25,12 +29,42 @@ let cached: ModelProvider | null = null
 export function modelProvider(): ModelProvider {
   if (cached) return cached
 
-  switch (effectiveModelProvider()) {
+  /*
+   * A self-hosted endpoint takes precedence, for the tiers it was given.
+   *
+   * Configuring one is the decision to use it; LOCAL_AI_TIERS narrows that to a
+   * subset when you want to move one step at a time. Whatever is not routed
+   * locally falls through to the provider below, which is why this cannot make
+   * the product depend on a machine being up: name no tiers and nothing
+   * changes, name some and only those need the endpoint.
+   */
+  const local = localModelConfig()
+  if (local) {
+    const localProvider = new OpenAICompatibleProvider(local)
+    const routed = localTiers()
+    const fallback = baseProvider()
+
+    cached = new RoutingProvider(
+      Object.fromEntries(
+        ROUTED_TIERS.map((tier) => [tier, routed.has(tier) ? localProvider : fallback]),
+      ) as Record<RoutedTier, ModelProvider>,
+      // Named for what does the bulk: the description tier is most of the work
+      // and most of the spend, so it is the honest label for a run.
+      routed.has('describe') ? 'local' : fallback.name,
+    )
+    return cached
+  }
+
+  cached = baseProvider()
+  return cached
+}
+
+function baseProvider(): ModelProvider {
+  switch (remoteModelProvider()) {
     case 'anthropic': {
       const key = process.env.ANTHROPIC_API_KEY
       if (!key) throw new Error('ANTHROPIC_API_KEY manquante.')
-      cached = new AnthropicProvider(key)
-      return cached
+      return new AnthropicProvider(key)
     }
 
     case 'replay': {
@@ -39,15 +73,11 @@ export function modelProvider(): ModelProvider {
       // failure — see ReplayProvider.
       const key = process.env.ANTHROPIC_API_KEY
       const recording = process.env.RECORD === '1' && key !== undefined
-      cached = new ReplayProvider(
-        recording ? { recorder: new AnthropicProvider(key) } : {},
-      )
-      return cached
+      return new ReplayProvider(recording ? { recorder: new AnthropicProvider(key) } : {})
     }
 
     case 'synthetic': {
-      cached = new SyntheticProvider()
-      return cached
+      return new SyntheticProvider()
     }
   }
 }

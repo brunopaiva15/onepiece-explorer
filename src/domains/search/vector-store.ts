@@ -240,7 +240,26 @@ export function resetVectorStore(): void {
 export function hasEmbeddingProvider(): boolean {
   const provider = process.env.MODEL_PROVIDER ?? 'anthropic'
   if (provider === 'synthetic' || provider === 'replay') return true
-  // Anthropic exposes no embeddings endpoint; a dedicated one has to be named.
+
+  /*
+   * A self-hosted endpoint is what finally makes this step real.
+   *
+   * Anthropic exposes no embeddings endpoint, which is why this step has
+   * declared itself skipped since the pipeline was written. An OpenAI-compatible
+   * server usually serves one alongside the chat model, so both conditions have
+   * to hold: the model is named, and the embed tier is actually routed there —
+   * naming a model and then routing the tier elsewhere would leave this
+   * returning true for a provider that cannot embed.
+   */
+  if (process.env.LOCAL_AI_EMBED_MODEL?.trim() && process.env.LOCAL_AI_MODEL?.trim()) {
+    const tiers = process.env.LOCAL_AI_TIERS?.trim()
+    if (!tiers) return true
+    return tiers
+      .split(',')
+      .map((tier) => tier.trim())
+      .includes('embed')
+  }
+
   return Boolean(process.env.EMBEDDING_PROVIDER)
 }
 

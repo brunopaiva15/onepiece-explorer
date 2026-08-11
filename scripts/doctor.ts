@@ -475,10 +475,105 @@ async function checkStorage(): Promise<void> {
 // Model provider
 // --------------------------------------------------------------------------
 
+/**
+ * The self-hosted endpoint, if there is one.
+ *
+ * `/v1/models` is the cheapest call that proves the whole path — the process
+ * can reach the host, the server is speaking the OpenAI dialect, and the model
+ * name in the configuration is one it actually serves. That last check earns
+ * its place: a name that does not match anything loaded fails later, per call,
+ * with a message about the request rather than about the name.
+ */
+async function checkLocalModel(): Promise<boolean> {
+  const baseUrl = process.env.LOCAL_AI_BASE_URL?.trim().replace(/\/+$/, '')
+  const model = process.env.LOCAL_AI_MODEL?.trim()
+  if (!baseUrl || !model) return false
+
+  console.log('\n\x1b[1mModèle auto-hébergé\x1b[0m')
+
+  const tiers = process.env.LOCAL_AI_TIERS?.trim()
+  record({
+    level: 'ok',
+    label: 'Paliers routés localement',
+    detail: tiers ? tiers : 'tous (classify, describe, extract, escalate, embed)',
+  })
+
+  try {
+    const response = await fetch(`${baseUrl}/models`, {
+      signal: AbortSignal.timeout(8_000),
+      headers: process.env.LOCAL_AI_API_KEY
+        ? { Authorization: `Bearer ${process.env.LOCAL_AI_API_KEY}` }
+        : {},
+    })
+
+    if (!response.ok) {
+      record({
+        level: 'fail',
+        label: `${baseUrl} a répondu ${response.status}`,
+        hint: "Le serveur répond mais refuse la requête. Clé d'API attendue ?",
+      })
+      return true
+    }
+
+    const body = (await response.json()) as { data?: Array<{ id?: string }> }
+    const served = (body.data ?? []).map((row) => String(row.id))
+
+    record({ level: 'ok', label: `${baseUrl} répond`, detail: `${served.length} modèle(s) chargé(s)` })
+
+    for (const [name, value] of [
+      ['LOCAL_AI_MODEL', model],
+      ['LOCAL_AI_EMBED_MODEL', process.env.LOCAL_AI_EMBED_MODEL?.trim()],
+    ] as const) {
+      if (!value) continue
+      record(
+        served.includes(value)
+          ? { level: 'ok', label: `${name} « ${value} »`, detail: 'chargé' }
+          : {
+              level: 'fail',
+              label: `${name} « ${value} »`,
+              detail: 'absent de la liste',
+              hint: `Modèles servis : ${served.join(', ') || 'aucun'}`,
+            },
+      )
+    }
+
+    if (!process.env.LOCAL_AI_EMBED_MODEL?.trim()) {
+      record({
+        level: 'warn',
+        label: 'LOCAL_AI_EMBED_MODEL absent',
+        detail: "l'indexation sémantique restera ignorée",
+        hint: "Un modèle d'embeddings sur la même instance débloque l'étape 9.",
+      })
+    }
+  } catch (error) {
+    record({
+      level: 'fail',
+      label: `${baseUrl} injoignable`,
+      detail: message(error),
+      hint:
+        'Cet endpoint écoute sur localhost de la machine qui héberge le modèle : ' +
+        'le worker doit tourner sur cette machine, ou passer par un tunnel vers elle.',
+    })
+  }
+
+  return true
+}
+
 async function checkModelProvider(): Promise<void> {
+  const localHandlesEverything =
+    (await checkLocalModel()) && !process.env.LOCAL_AI_TIERS?.trim()
+
   console.log('\n\x1b[1mFournisseur de modèle\x1b[0m')
 
   const key = process.env.ANTHROPIC_API_KEY
+  if (!key && localHandlesEverything) {
+    record({
+      level: 'ok',
+      label: 'Aucune clé Anthropic',
+      detail: 'inutile : tous les paliers sont servis en local',
+    })
+    return
+  }
   if (!key) {
     record({
       level: 'warn',

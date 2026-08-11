@@ -26,6 +26,13 @@ const schema = z.object({
   // --- Model provider ---
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   MODEL_PROVIDER: z.enum(['anthropic', 'replay', 'synthetic']).default('anthropic'),
+  // Self-hosted, OpenAI-compatible endpoint. Set both to use it.
+  LOCAL_AI_BASE_URL: z.string().url().optional(),
+  LOCAL_AI_MODEL: z.string().min(1).optional(),
+  LOCAL_AI_EMBED_MODEL: z.string().min(1).optional(),
+  LOCAL_AI_API_KEY: z.string().min(1).optional(),
+  LOCAL_AI_TIERS: z.string().optional(),
+  LOCAL_AI_REASONING_EFFORT: z.string().optional(),
   MODEL_CLASSIFY: z.string().default('claude-haiku-4-5'),
   MODEL_DESCRIBE: z.string().default('claude-haiku-4-5'),
   MODEL_EXTRACT: z.string().default('claude-sonnet-5'),
@@ -110,9 +117,18 @@ export function resetEnvCache(): void {
  * place this product cannot afford one.
  */
 export function hasModelCredentials(): boolean {
+  // A self-hosted endpoint is a real model reading real pages, so the synthetic
+  // banner must not appear for it. Without this the interface would announce
+  // fabricated extraction over extraction that actually happened.
+  if (hasLocalModel()) return true
   const provider = process.env.MODEL_PROVIDER ?? 'anthropic'
   if (provider === 'synthetic' || provider === 'replay') return true
   return Boolean(process.env.ANTHROPIC_API_KEY)
+}
+
+/** Is a self-hosted, OpenAI-compatible endpoint configured? */
+export function hasLocalModel(): boolean {
+  return Boolean(process.env.LOCAL_AI_BASE_URL?.trim() && process.env.LOCAL_AI_MODEL?.trim())
 }
 
 /**
@@ -153,7 +169,13 @@ export function publicLibraryOwnerId(): string | null {
   return value
 }
 
-export function effectiveModelProvider(): 'anthropic' | 'replay' | 'synthetic' {
+/**
+ * Which hosted provider serves whatever the local endpoint does not.
+ *
+ * Deliberately blind to LOCAL_AI_*: this is the fallback half of the routing
+ * table, and a fallback that could itself resolve to "local" would be a loop.
+ */
+export function remoteModelProvider(): 'anthropic' | 'replay' | 'synthetic' {
   const requested = (process.env.MODEL_PROVIDER ?? 'anthropic') as
     | 'anthropic'
     | 'replay'
@@ -162,4 +184,16 @@ export function effectiveModelProvider(): 'anthropic' | 'replay' | 'synthetic' {
     return 'synthetic'
   }
   return requested
+}
+
+/**
+ * What is recorded on a run, and shown in the interface.
+ *
+ * A local endpoint that takes only some tiers still reports 'local': its
+ * weights are the ones nobody else can reproduce, and that is what a reader of
+ * the run history needs to know when two runs of the same chapter disagree.
+ */
+export function effectiveModelProvider(): 'anthropic' | 'local' | 'replay' | 'synthetic' {
+  if (hasLocalModel()) return 'local'
+  return remoteModelProvider()
 }

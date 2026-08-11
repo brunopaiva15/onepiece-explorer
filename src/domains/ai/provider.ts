@@ -116,7 +116,7 @@ export interface EmbedRequest {
 }
 
 export interface ModelProvider {
-  readonly name: 'anthropic' | 'replay' | 'synthetic'
+  readonly name: 'anthropic' | 'local' | 'replay' | 'synthetic'
 
   /**
    * Cost of a request before making it, from a real countTokens call rather
