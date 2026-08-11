@@ -243,3 +243,83 @@ describe('what a visitor may not do', () => {
     expect(graph.boundaryChapter).toBe(40)
   })
 })
+
+describe('the gate in front of everything', () => {
+  it('sends an anonymous visitor to sign in when no public library is set', async () => {
+    const { decide } = await import('@/proxy.ts')
+
+    for (const path of ['/', '/graph', '/recherche', '/entite/abc', '/chronologie']) {
+      expect(decide(path, false, false)).toBe('sign-in')
+    }
+  })
+
+  it('lets an anonymous visitor read when a public library is set', async () => {
+    /*
+     * The test that should have existed first.
+     *
+     * Public reading shipped with the graph open at the domain level and the
+     * proxy still bouncing every anonymous visitor to the sign-in page. Ten
+     * domain tests passed and the feature did not work at all, because none of
+     * them went through the gate. A rule about who gets in needs a test of the
+     * rule.
+     */
+    const { decide } = await import('@/proxy.ts')
+
+    for (const path of [
+      '/',
+      '/graph',
+      '/graph/table',
+      '/recherche',
+      '/entite/abc',
+      '/chronologie',
+      '/delta/12',
+    ]) {
+      expect(decide(path, false, true)).toBe('allow')
+    }
+  })
+
+  it('keeps the owner’s routes shut even when reading is public', async () => {
+    const { decide } = await import('@/proxy.ts')
+
+    for (const path of [
+      '/import',
+      '/chapitres',
+      '/chapitres/abc',
+      '/runs/abc',
+      '/review/abc',
+      '/reglages',
+      '/ask',
+      '/api/export',
+    ]) {
+      expect(decide(path, false, true)).toBe('sign-in')
+    }
+  })
+
+  it('treats an unknown route as private, whatever the mode', async () => {
+    // A denylist for owner routes and an allowlist for reading ones, so a route
+    // nobody has classified yet is private rather than accidentally public.
+    const { decide } = await import('@/proxy.ts')
+
+    expect(decide('/quelque-chose-de-neuf', false, true)).toBe('sign-in')
+    expect(decide('/quelque-chose-de-neuf', false, false)).toBe('sign-in')
+  })
+
+  it('always lets the diagnostic page through', async () => {
+    /*
+     * `/etat` reports which variable is missing, and the failure it diagnoses
+     * takes down the sign-in page too. Gating it behind the thing it explains
+     * would make it useless in the only situation it exists for.
+     */
+    const { decide } = await import('@/proxy.ts')
+
+    expect(decide('/etat', false, false)).toBe('allow')
+    expect(decide('/connexion', false, false)).toBe('allow')
+  })
+
+  it('sends a signed-in owner away from the sign-in page', async () => {
+    const { decide } = await import('@/proxy.ts')
+
+    expect(decide('/connexion', true, false)).toBe('home')
+    expect(decide('/reglages', true, false)).toBe('allow')
+  })
+})

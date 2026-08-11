@@ -241,10 +241,31 @@ déverrouillage.
 
 ---
 
+## Toutes les pages renvoient une erreur serveur
+
+Ouvrez **`/etat`**. Cette page ne dépend d'aucune des choses qu'elle contrôle —
+ni configuration validée, ni session, ni client Supabase — donc elle répond
+quand rien d'autre ne répond, et elle dit quelle variable manque. Elle
+n'affiche jamais une valeur.
+
+La cause la plus fréquente sur un premier déploiement, et la plus déroutante :
+`NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` sont **insérées
+dans le bundle à la compilation**. Les ajouter au tableau de bord après un
+déploiement ne change rien à ce qui tourne : il faut **redéployer**. Vérifiez
+aussi qu'elles couvrent l'environnement servi — Production et Preview sont
+distincts.
+
+Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répond
+200 et nomme les six manques, toutes les autres pages renvoient 500.
+
+---
+
 ## Pannes courantes
 
 | Symptôme | Cause probable | Que faire |
 |---|---|---|
+| **Toutes** les pages en erreur serveur | Variables absentes au moment du build | `/etat`, puis redéployez après les avoir enregistrées |
+| Une seule page en erreur serveur | Schéma en retard sur cette table | `pnpm db:push` avec le `DIRECT_URL` de production |
 | Chapitre bloqué en « en attente d'un worker » | Worker non lancé | `pnpm worker:once` |
 | Second chapitre importé d'affilée jamais traité | Job dédupliqué par la file | Vérifiez que `singletonKey` vaut bien l'identifiant du chapitre ; un `stately` sans clé déduplique sur toute la file |
 | « Le run est créé mais n'a pas pu être mis en file » | `DIRECT_URL` absent ou pooler utilisé à sa place | pg-boss exige la connexion directe (5432), jamais le pooler (6543) |

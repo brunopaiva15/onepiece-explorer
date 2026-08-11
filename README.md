@@ -349,6 +349,19 @@ ce qui est une affirmation sur votre bibliothèque, et elle serait fausse.
 
 ---
 
+## Quand ça ne démarre pas
+
+`/etat` répond même quand tout le reste renvoie une erreur serveur : elle ne
+dépend ni de la configuration validée, ni d'une session, ni du client Supabase,
+et elle dit quelle variable manque sans jamais afficher une valeur.
+
+Le piège du premier déploiement : `NEXT_PUBLIC_SUPABASE_URL` et
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` sont insérées dans le bundle **à la
+compilation**. Les enregistrer chez l'hébergeur après coup ne suffit pas — il
+faut redéployer.
+
+---
+
 ## Tests
 
 La suite tourne sur un PostgreSQL local et sur des réponses de modèle
