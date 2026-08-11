@@ -181,6 +181,43 @@ qu'il ne peut pas soutenir. L'interface le dit.
 
 ---
 
+## Les visages
+
+Un graphe de plusieurs centaines de nœuds où tout est du texte se lit mal : on
+reconnaît un visage bien plus vite qu'on ne lit une étiquette. Trois catalogues
+publics et gratuits fournissent les illustrations — onepieceapi.com,
+api-onepiece.com et AniList — rapprochées de vos entités par leur nom.
+
+```bash
+pnpm images:catalogue   # récupère les ~1 000 illustrations disponibles, une fois
+pnpm images:enrich      # rapproche, télécharge, range dans votre bucket privé
+```
+
+Ou le bouton dans `/reglages`, qui montre d'abord la couverture par type.
+
+Trois choses à savoir, et elles ne sont pas des détails.
+
+**Une image n'est pas une source.** Elle ne prouve rien, aucune assertion ne
+peut la citer, et elle vit dans sa propre table pour que la ligne ne s'efface
+pas. La règle du projet — seul ce que vous avez importé fait foi — vaut toujours.
+
+**Une image n'apparaît pas avant le nom qui l'a trouvée.** Au chapitre 1 un
+personnage s'appelle « l'homme au tablier de cuir » et ne correspond à rien ; au
+chapitre 3 l'histoire le nomme et il correspond. Le portrait apparaît au
+chapitre 3, pas avant : sinon vous regarderiez un visage trouvé grâce à un nom
+que vous n'avez pas encore. C'est la base qui l'applique, comme le reste.
+
+**Un mauvais portrait serait pire que pas de portrait.** Une absence se lit
+« pas trouvé » ; une erreur se lit « trouvé », et personne ne revérifie un visage
+qu'il a accepté. Le rapprochement refuse donc tout signal faible, et la légende
+dit toujours quel nom a trouvé l'image et dans quel catalogue.
+
+Les fichiers sont recopiés dans votre bucket privé plutôt que chargés depuis
+chez eux : trois tiers n'ont pas à savoir quels personnages vous consultez, et
+une image ne doit pas casser le jour où un projet de fans déplace un bucket.
+
+---
+
 ## Chercher, et poser des questions
 
 ```
@@ -214,6 +251,16 @@ choix tentant et il serait faux : une relation peu sûre n'est pas une connexion
 plus *longue*, elle est moins certaine — confondre les deux ferait
 silencieusement contourner au lecteur exactement les liens qu'il devrait
 regarder.
+
+### L'assistant est éteint par défaut
+
+`/ask` se facture à la question, indéfiniment. Un explorateur de graphe n'a pas
+besoin de ça, et une clé Anthropic posée pour que le pipeline lise vos pages ne
+doit pas ouvrir en silence une boîte à compteur. L'interrupteur est donc
+distinct : `ASSISTANT_ENABLED=1`, et rien d'autre ne l'allume.
+
+La recherche cherche dans exactement les mêmes données, gratuitement, et vous
+montre les extraits sans les reformuler.
 
 ### L'assistant ne peut pas répondre de mémoire
 
@@ -331,6 +378,8 @@ const graphe = await withBoundary(
 - [Décisions d'architecture](docs/adr/) — pourquoi la frontière est en base,
   pourquoi les assertions sont immuables, pourquoi l'ontologie est une donnée,
   comment le coût IA est maîtrisé
+- [Illustrations externes](docs/adr/0007-external-illustrations.md) — pourquoi
+  une image n'est jamais une source, et pourquoi elle attend son nom
 - [Exploitation](docs/operations.md) — déployer, surveiller, sauvegarder,
   purger, et le tableau des pannes courantes avec leur diagnostic
 - [Critères d'acceptation](docs/acceptance-criteria.md) — dont les huit

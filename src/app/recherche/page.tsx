@@ -3,7 +3,9 @@ import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { search, shortestPath, type SearchHit } from '@/domains/search/index.ts'
+import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
 import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
+import { Portrait } from '@/app/components/portrait.tsx'
 
 export const metadata: Metadata = { title: 'Recherche' }
 export const dynamic = 'force-dynamic'
@@ -35,6 +37,14 @@ export default async function SearchPage({
     de && vers
       ? await shortestPath(session.userId, session.boundaryChapter, de, vers)
       : null
+
+  // One query for the whole result list. A picture per row fetched row by row
+  // would be twenty round trips to sign twenty URLs.
+  const portraits = await displayImages(
+    session.userId,
+    session.boundaryChapter,
+    [...new Set((results?.hits ?? []).map((hit) => hit.entityId).filter((id): id is string => id !== null))],
+  )
 
   return (
     <>
@@ -109,7 +119,11 @@ export default async function SearchPage({
               <ol className="mt-6 space-y-3">
                 {results.hits.map((hit) => (
                   <li key={`${hit.kind}:${hit.id}`}>
-                    <Hit hit={hit} boundary={session.boundaryChapter} />
+                    <Hit
+                      hit={hit}
+                      boundary={session.boundaryChapter}
+                      portrait={hit.entityId ? (portraits.get(hit.entityId) ?? null) : null}
+                    />
                   </li>
                 ))}
               </ol>
@@ -197,13 +211,23 @@ export default async function SearchPage({
   )
 }
 
-function Hit({ hit, boundary }: { hit: SearchHit; boundary: number }) {
+function Hit({
+  hit,
+  boundary,
+  portrait,
+}: {
+  hit: SearchHit
+  boundary: number
+  portrait: DisplayImage | null
+}) {
   const href = hit.entityId
     ? `/entite/${hit.entityId}?ch=${boundary}`
     : `/graph?ch=${boundary}`
 
   return (
-    <article className="rounded-sm border border-line bg-surface-raised p-4">
+    <article className="flex gap-3 rounded-sm border border-line bg-surface-raised p-4">
+      {portrait && <Portrait image={portrait} label={hit.title} size="small" />}
+      <div className="min-w-0 flex-1">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <Link href={href} className="font-medium text-primary hover:underline">
           {hit.title || '(sans titre)'}
@@ -224,6 +248,7 @@ function Hit({ hit, boundary }: { hit: SearchHit; boundary: number }) {
       )}
 
       <p className="mt-1 text-xs text-muted">{hit.reason}</p>
+      </div>
     </article>
   )
 }

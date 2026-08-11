@@ -8,6 +8,8 @@ import {
   type DeletionPreview,
   type DeletionResult,
 } from '@/domains/chapters/delete.ts'
+import { enrichEntityImages } from '@/domains/images/index.ts'
+import { consume } from '@/domains/observability/rate-limit.ts'
 
 export interface PreviewResult {
   ok: boolean
@@ -75,6 +77,71 @@ export async function deleteChapterAction(
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Suppression impossible.',
+    }
+  }
+}
+
+export interface EnrichImagesResult {
+  ok: boolean
+  considered?: number
+  stored?: number
+  unmatched?: number
+  failures?: number
+  catalogueSize?: number
+  notes?: string[]
+  error?: string
+}
+
+/**
+ * Fetch illustrations for the entities that have none.
+ *
+ * Rate-limited under `start_run`, not because it calls a model — it does not,
+ * and it costs nothing — but because it downloads from three free community
+ * services. A button that can be clicked in a loop is a button that can hammer
+ * someone else's server, and being polite to them is worth one shared counter.
+ */
+export async function enrichImagesAction(): Promise<EnrichImagesResult> {
+  try {
+    const session = await getReaderSession()
+
+    const allowance = await consume(session.userId, 'start_run')
+    if (!allowance.allowed) {
+      return {
+        ok: false,
+        error:
+          `Limite atteinte. Réessayez dans ${allowance.retryInMinutes} minute(s). ` +
+          allowance.explain,
+      }
+    }
+
+    const report = await enrichEntityImages(session.userId)
+
+    const notes = [
+      ...report.catalogueFailures.map(
+        (failure) => `${failure.source} injoignable : ${failure.reason}`,
+      ),
+      ...report.failures
+        .slice(0, 5)
+        .map((failure) => `« ${failure.label} » : ${failure.reason}`),
+    ]
+
+    revalidatePath('/reglages')
+    revalidatePath('/graph')
+    revalidatePath('/graph/table')
+
+    return {
+      ok: true,
+      considered: report.considered,
+      stored: report.stored,
+      unmatched: report.unmatched,
+      failures: report.failures.length,
+      catalogueSize: report.catalogueSize,
+      notes,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Enrichissement impossible.',
     }
   }
 }

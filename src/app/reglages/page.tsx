@@ -10,8 +10,14 @@ import {
 } from '@/domains/observability/costs.ts'
 import { usage, type LimitedAction } from '@/domains/observability/rate-limit.ts'
 import { hasEmbeddingProvider } from '@/domains/search/index.ts'
-import { effectiveModelProvider, hasModelCredentials } from '@/lib/env.ts'
+import {
+  effectiveModelProvider,
+  hasModelCredentials,
+  isAssistantEnabled,
+} from '@/lib/env.ts'
+import { imageCoverage } from '@/domains/images/index.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
+import { EnrichImages } from './enrich-images.tsx'
 
 export const metadata: Metadata = { title: 'Réglages et santé' }
 export const dynamic = 'force-dynamic'
@@ -27,7 +33,7 @@ export const dynamic = 'force-dynamic'
 export default async function SettingsPage() {
   const session = await getReaderSession()
 
-  const [chapters, costs, quarantine, failures, orphans, allowances] =
+  const [chapters, costs, quarantine, failures, orphans, allowances, coverage] =
     await Promise.all([
       listChapters(session.userId, session.workId),
       costSummary(session.userId),
@@ -35,6 +41,7 @@ export default async function SettingsPage() {
       failureHealth(session.userId),
       listOrphanedAssertions(session.userId),
       usage(session.userId),
+      imageCoverage(session.userId),
     ])
 
   return (
@@ -68,6 +75,15 @@ export default async function SettingsPage() {
               hasEmbeddingProvider()
                 ? undefined
                 : 'La recherche plein texte, approchante et par graphe fonctionne sans elle.'
+            }
+          />
+          <Row
+            label="Assistant conversationnel"
+            value={isAssistantEnabled() ? 'actif' : 'désactivé'}
+            note={
+              isAssistantEnabled()
+                ? 'Chaque question appelle un modèle et se facture à la question.'
+                : "Interrupteur distinct de la clé du modèle : une clé pour le pipeline n'ouvre pas une facturation à la question. ASSISTANT_ENABLED=1 pour l'activer."
             }
           />
           <Row
@@ -151,6 +167,21 @@ export default async function SettingsPage() {
             </table>
           </>
         )}
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-lg font-semibold text-primary">Illustrations</h2>
+        <p className="mt-2 max-w-2xl text-sm text-secondary">
+          Les portraits, fruits, navires et lieux viennent de trois catalogues
+          publics et gratuits — onepieceapi.com, api-onepiece.com et AniList —
+          rapprochés de vos entités par leur nom. Ce sont des illustrations, pas
+          des sources : aucune ne peut justifier un fait, et une image
+          n&apos;apparaît qu&apos;à partir du chapitre où vous apprenez le nom qui
+          l&apos;a trouvée. Les fichiers sont recopiés dans votre bucket privé
+          plutôt que chargés depuis chez eux, pour que trois tiers n&apos;aient pas
+          la liste des personnages que vous consultez.
+        </p>
+        <EnrichImages coverage={coverage} />
       </section>
 
       <section className="mt-12">

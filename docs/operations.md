@@ -124,9 +124,11 @@ la base qu'il faut restaurer.
 
 **Purge complète.** `purgeReader(userId)` efface tout ce qui appartient à un
 lecteur, y compris ce que la suppression en cascade ne couvre pas (théories,
-décisions de revue, embeddings, quarantaine, journal d'audit). Elle n'est
-exposée par aucune route : c'est une opération qu'on exécute délibérément, pas
-qu'on déclenche par un clic.
+décisions de revue, embeddings, quarantaine, journal d'audit) **et les objets du
+stockage** — pages, dérivés, illustrations. Effacer les lignes sans les octets
+laisserait vos scans dans le bucket en annonçant une suppression réussie. Elle
+n'est exposée par aucune route : c'est une opération qu'on exécute délibérément,
+pas qu'on déclenche par un clic.
 
 ---
 
@@ -136,6 +138,7 @@ qu'on déclenche par un clic.
 |---|---|---|
 | Pages et dérivés (stockage) | Jusqu'à suppression explicite | `/reglages` → supprimer un chapitre |
 | Faits, preuves, décisions de revue | Indéfiniment, en ajout seul | Suppression de chapitre en cochant « supprimer aussi les faits » |
+| Illustrations externes (bucket + lignes) | Jusqu'à suppression de l'entité | Cascade depuis l'entité ; `purgeReader` pour tout |
 | Compteurs de limitation de débit | 24 h | Automatique (passe du worker) |
 | Journal d'audit | Indéfiniment | `purgeReader` |
 | Tout | — | `purgeReader` |
@@ -147,6 +150,39 @@ chapitre pose, et qui écrit une entrée d'audit d'abord.
 
 ---
 
+## Illustrations
+
+`pnpm images:catalogue` récupère les trois catalogues (~1 000 illustrations) et
+les met en cache dans `var/cache/image-catalogue.json`, valable un mois.
+`pnpm images:enrich` rapproche vos entités, télécharge et range dans le bucket
+privé. Le bouton de `/reglages` fait la même chose, plafonné sous le compteur
+`start_run` — non pour l'argent, il n'y en a pas, mais pour ne pas marteler
+trois services gratuits.
+
+Les deux étapes sont séparées exprès : le catalogue dépend de la disponibilité
+d'autrui, le rapprochement dépend de vos données. Un catalogue déjà récupéré
+continue de fonctionner quand une des trois sources tombe, et la suite de tests
+n'ouvre jamais de socket.
+
+Points d'exploitation :
+
+- **Une source injoignable dégrade, ne casse pas.** Deux catalogues sur trois
+  illustrent encore l'essentiel ; l'échec est rapporté dans le résultat plutôt
+  que journalisé et oublié.
+- **Un catalogue vide n'écrase jamais un bon cache.** Les trois sources en échec
+  veut dire réseau coupé, pas « One Piece n'a plus de personnages ».
+- **AniList publie 30 requêtes par minute.** Le client se cale à une toutes les
+  deux secondes ; ne le réduisez pas.
+- **Rien n'est retéléchargé.** Un réenrichissement ne regarde que les entités
+  sans image. Pour réexaminer les autres, `includeIllustrated`.
+- **Une image sans correspondance est normale.** Un personnage secondaire, une
+  désignation provisoire, un lieu absent des 31 îles du catalogue : ce sont des
+  absences, pas des erreurs. La couverture par type est dans `/reglages`.
+- **Une image n'est jamais une preuve.** Si un jour l'enrichissement écrivait une
+  assertion, la promesse centrale du produit tomberait. Un test le vérifie.
+
+---
+
 ## Garde-fou de dépense
 
 Trois actions sont plafonnées par heure glissante, par lecteur :
@@ -154,8 +190,16 @@ Trois actions sont plafonnées par heure glissante, par lecteur :
 | Action | Plafond |
 |---|---|
 | Question à l'assistant | 60 / h |
-| Traitement de chapitre | 30 / h |
+| Traitement de chapitre, et enrichissement d'images | 30 / h |
 | Export complet | 10 / h |
+
+L'assistant conversationnel a en plus son propre interrupteur,
+`ASSISTANT_ENABLED`, **éteint par défaut**. C'est délibérément indépendant de la
+clé Anthropic : traiter un chapitre est un acte volontaire au coût connu, tandis
+que `/ask` facture à la question, indéfiniment. Poser une clé pour que le
+pipeline lise vos pages ne doit pas ouvrir une boîte à compteur. Sans lui,
+`/ask` le dit et renvoie vers la recherche, qui couvre les mêmes données
+gratuitement.
 
 La lecture, la navigation, le graphe et la recherche ne sont jamais comptés :
 ils ne coûtent rien à personne. Les plafonds vivent dans
@@ -183,6 +227,10 @@ déverrouillage.
 | Un réglage de session fuit d'un utilisateur à l'autre | `SET` au lieu de `SET LOCAL` | Toute variable de session doit être posée par `set_config(..., true)` dans une transaction |
 | `pnpm build` réclame une base | Un module se connecte à l'import | Les clients sont des fabriques paresseuses ; une connexion au chargement du module casse le build |
 | Recherche sémantique « désactivée » | Aucun fournisseur d'embeddings | Attendu. Le plein texte, l'approchant et le graphe fonctionnent sans |
+| `/ask` répond qu'il est désactivé | `ASSISTANT_ENABLED` absent | Attendu, et voulu. `ASSISTANT_ENABLED=1` pour l'activer, en sachant que chaque question se facture |
+| « Aucun catalogue d'images en cache » | `pnpm images:catalogue` jamais lancé | Lancez-le. L'erreur est explicite plutôt que « 0 image trouvée », qui ressemblerait à un rapprochement raté |
+| Beaucoup d'entités sans image | Couverture des catalogues, pas un bug | 369 personnages et 31 îles côté onepieceapi. Un personnage secondaire n'y est pas |
+| Un portrait manifestement faux | Rapprochement par nom trop permissif | La légende dit quel nom l'a trouvé. Supprimez la ligne d'`entity_images` ; le rapprochement ne la recréera pas si le nom reste ambigu |
 | pgvector absent | PostgreSQL local | Attendu en test : bascule automatique sur `real[]` |
 | Graphe tronqué avec un avertissement | Plus de 25 000 nœuds visibles | Le message dit combien sur combien. Filtrez par type ou baissez la frontière |
 | « no space left on device » | Dérivés d'images accumulés | Supprimez des chapitres, ou purgez les dérivés du bucket |

@@ -4,7 +4,9 @@ import { notFound } from 'next/navigation'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
+import { displayImage } from '@/domains/images/index.ts'
 import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
+import { Portrait } from '@/app/components/portrait.tsx'
 
 export const metadata: Metadata = { title: 'Fiche' }
 export const dynamic = 'force-dynamic'
@@ -23,7 +25,12 @@ export default async function EntityPage({
   const sheet = await getEntitySheet(session.userId, session.boundaryChapter, id)
   if (!sheet) notFound()
 
-  const chapters = await listChapters(session.userId, session.workId)
+  const [chapters, portrait] = await Promise.all([
+    listChapters(session.userId, session.workId),
+    // Every member of the identity component: after a merge the picture may
+    // hang off the half that is no longer the representative.
+    displayImage(session.userId, session.boundaryChapter, sheet.memberIds),
+  ])
   const outgoing = sheet.facts.filter((fact) => fact.direction === 'outgoing')
   const incoming = sheet.facts.filter((fact) => fact.direction === 'incoming')
 
@@ -45,7 +52,10 @@ export default async function EntityPage({
           </Link>
         </nav>
 
-        <header className="mt-4">
+        <header className="mt-4 flex flex-wrap items-start gap-6">
+          <Portrait image={portrait} label={sheet.displayLabel} />
+
+          <div className="min-w-64 flex-1">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">
             {sheet.nodeType}
           </p>
@@ -60,6 +70,7 @@ export default async function EntityPage({
             {sheet.memberIds.length > 1 &&
               ` ${sheet.memberIds.length} apparitions distinctes ont été identifiées comme une seule personne.`}
           </p>
+          </div>
         </header>
 
         {sheet.labels.length > 1 && (

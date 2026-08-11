@@ -1,6 +1,7 @@
 import 'server-only'
 import { modelProvider } from '../ai/index.ts'
 import { normalizeText } from '../knowledge/normalize.ts'
+import { isAssistantEnabled } from '@/lib/env.ts'
 import { consume } from '../observability/rate-limit.ts'
 import { buildContext, type AssistantContext, type ContextEntry } from './context.ts'
 
@@ -59,6 +60,25 @@ export async function ask(
 
   if (trimmed.length === 0) {
     return empty(trimmed, boundaryChapter, 'Posez une question.')
+  }
+
+  /*
+   * The switch, checked before anything else.
+   *
+   * Not in the page — here, in the only function that can reach a model. A
+   * guard in the interface would leave the expensive path one forgotten import
+   * away, and the thing being guarded is somebody's card.
+   */
+  if (!isAssistantEnabled()) {
+    return empty(
+      trimmed,
+      boundaryChapter,
+      "L'assistant conversationnel est désactivé. Chaque question appelle un " +
+        'modèle et se facture à la question, indéfiniment — ce n’est pas ce que cet ' +
+        'outil est. Pour l’activer malgré tout : ASSISTANT_ENABLED=1. La recherche ' +
+        'plein texte, approchante et par graphe, elle, ne coûte rien et cherche dans ' +
+        'les mêmes données.',
+    )
   }
 
   /*

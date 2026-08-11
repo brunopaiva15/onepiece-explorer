@@ -72,6 +72,8 @@ Mesurée contre la vérité-terrain des fixtures synthétiques :
 - [x] Journal d'audit sur les décisions de revue et les publications.
 - [x] En-têtes de sécurité sur toutes les routes ; `private, no-store` sur les assets et sur l'export.
 - [x] Les opérations coûteuses sont plafonnées par heure, par lecteur, et le plafond survit à un redémarrage — `tests/lifecycle/rate-limit.test.ts`.
+- [x] L'assistant facturé à la question a son propre interrupteur, éteint par défaut : une clé posée pour le pipeline ne l'allume pas.
+- [x] La purge complète efface aussi les octets — pages, dérivés, illustrations — et pas seulement les lignes qui les désignent.
 
 ## Performance
 
@@ -90,6 +92,19 @@ Mesurée contre la vérité-terrain des fixtures synthétiques :
 - [x] Avertit clairement des faits et résumés qui en dépendent, avant confirmation, avec les comptes.
 - [x] Recalcule proprement, ou marque les assertions orphelines pour revue. L'état d'orphelin est **dérivé** — acceptée, sans preuve — jamais stocké : un état stocké se désynchronise d'un réimport.
 - [x] Ne laisse jamais silencieusement un fait sans preuve : ils sont listés dans `/reglages`, et un réimport les recolle.
+
+## Illustrations externes
+
+Les images viennent de trois catalogues publics ; la connaissance, jamais.
+
+- [x] Une image n'est jamais une preuve : aucune assertion ne peut la citer, et l'enrichissement n'écrit ni assertion ni evidence — `tests/antispoiler/entity-images.test.ts`.
+- [x] **Bloquant** — une image n'apparaît pas avant le chapitre qui révèle le libellé l'ayant trouvée, et une lecture hors `withBoundary()` en renvoie zéro — même fichier.
+- [x] Aucun rapprochement silencieux sur un signal faible : type de nœud respecté, mononyme ambigu refusé, marge exigée sur la similarité — `tests/images/matching.test.ts`.
+- [x] Chaque image affiche sa source, son attribution et le nom qui l'a trouvée. Un visage sans provenance se lirait comme un résultat du pipeline.
+- [x] Les fichiers sont recopiés dans le bucket privé, servis par URL signée courte, jamais chargés depuis un tiers.
+- [x] L'enrichissement est rejouable : ni doublon, ni portrait principal en double.
+- [x] Les tests n'ouvrent aucune connexion réseau ; le catalogue est une fixture.
+- [ ] Couverture complète. Impossible : les catalogues gratuits plafonnent à 369 personnages, 94 fruits, 16 navires et 31 îles. Les absences sont affichées par type dans `/reglages` plutôt que passées sous silence.
 
 ## Exploitation
 

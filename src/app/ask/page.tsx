@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { ask } from '@/domains/assistant/answer.ts'
-import { hasModelCredentials } from '@/lib/env.ts'
+import { hasModelCredentials, isAssistantEnabled } from '@/lib/env.ts'
 import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
 
 export const metadata: Metadata = { title: 'Question' }
@@ -51,7 +51,44 @@ export default async function AskPage({
           Si la réponse ne s&apos;y trouve pas, elle vous le dira.
         </p>
 
-        {!hasModelCredentials() && (
+        {!isAssistantEnabled() && (
+          <div
+            role="note"
+            className="mt-5 rounded-sm border border-[var(--epi-hypothetical)] bg-surface-raised p-4 text-sm"
+          >
+            <p className="text-primary">
+              <strong className="font-medium">
+                L&apos;assistant conversationnel est désactivé.
+              </strong>{' '}
+              Il se facture à la question, indéfiniment, et cet outil est un
+              explorateur de graphe — pas un moteur de réponses payant.
+            </p>
+            <p className="mt-2 text-secondary">
+              La{' '}
+              <Link
+                href={`/recherche?ch=${session.boundaryChapter}`}
+                className="text-accent underline"
+              >
+                recherche
+              </Link>{' '}
+              cherche dans exactement les mêmes données, gratuitement, et vous
+              montre les extraits sans les reformuler. Le{' '}
+              <Link
+                href={`/recherche?ch=${session.boundaryChapter}`}
+                className="text-accent underline"
+              >
+                chemin entre deux entités
+              </Link>{' '}
+              y répond même à des questions que celui-ci ne sait pas traiter.
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              Pour l&apos;activer malgré tout : <code>ASSISTANT_ENABLED=1</code>{' '}
+              dans <code>.env.local</code>.
+            </p>
+          </div>
+        )}
+
+        {isAssistantEnabled() && !hasModelCredentials() && (
           <p
             role="note"
             className="mt-5 rounded-sm border border-[var(--epi-hypothetical)] bg-surface-raised p-4 text-sm text-primary"

@@ -90,6 +90,23 @@ export function hasModelCredentials(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY)
 }
 
+/**
+ * Is the conversational assistant switched on?
+ *
+ * A separate switch from the model key, and off by default, because the two
+ * spend money in completely different shapes. Processing a chapter is one
+ * deliberate act with a known cost; `/ask` bills per question, forever, at the
+ * speed someone can type. Having a key so the pipeline can read your pages must
+ * not silently open a metered box.
+ *
+ * Set ASSISTANT_ENABLED=1 to turn it on. Anything else, including absent, is
+ * off — fail-closed on spending, the same way the boundary fails closed on
+ * knowledge.
+ */
+export function isAssistantEnabled(): boolean {
+  return process.env.ASSISTANT_ENABLED === '1'
+}
+
 export function effectiveModelProvider(): 'anthropic' | 'replay' | 'synthetic' {
   const requested = (process.env.MODEL_PROVIDER ?? 'anthropic') as
     | 'anthropic'

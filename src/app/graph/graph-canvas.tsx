@@ -20,9 +20,22 @@ import type { GraphProjection } from '@/domains/temporal/projection.ts'
  * moving the boundary by one chapter does not reshuffle the whole picture.
  */
 
+/** What the hover card needs: a signed thumbnail and where it came from. */
+export interface NodePortrait {
+  thumbUrl: string
+  attribution: string
+}
+
 interface Props {
   projection: GraphProjection
-  /** Colour per node type, from the design tokens. */
+  /**
+   * Portraits by node id, for the hover card.
+   *
+   * Signed server-side and passed in rather than fetched here: a client
+   * component cannot mint a signed URL, and it must not be able to — that is
+   * what keeps the boundary check and the ownership check on the server.
+   */
+  portraits?: Record<string, NodePortrait>
   onSelect?: (nodeId: string) => void
 }
 
@@ -40,7 +53,7 @@ const TYPE_COLOURS: Record<string, string> = {
   mystery: '#d08c4a',
 }
 
-export function GraphCanvas({ projection, onSelect }: Props) {
+export function GraphCanvas({ projection, portraits, onSelect }: Props) {
   const container = useRef<HTMLDivElement | null>(null)
   /**
    * 'empty' is not in here on purpose: an empty projection is derived data, and
@@ -49,8 +62,18 @@ export function GraphCanvas({ projection, onSelect }: Props) {
    */
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [message, setMessage] = useState<string | null>(null)
+  /**
+   * The node under the cursor.
+   *
+   * A card in a fixed corner rather than a tooltip following the pointer: a
+   * floating element chasing the mouse across a force-directed graph covers the
+   * nodes you are trying to compare, which is the one thing you are doing when
+   * you hover them.
+   */
+  const [hovered, setHovered] = useState<string | null>(null)
   const router = useRouter()
   const empty = projection.nodes.length === 0
+  const labelOf = new Map(projection.nodes.map((node) => [node.id, node.label]))
 
   useEffect(() => {
     if (empty) return
@@ -136,6 +159,9 @@ export function GraphCanvas({ projection, onSelect }: Props) {
           else router.push(`/entite/${node}`)
         })
 
+        renderer.on('enterNode', ({ node }) => setHovered(node))
+        renderer.on('leaveNode', () => setHovered(null))
+
         sigma = renderer
         setStatus('ready')
       } catch (error) {
@@ -170,6 +196,13 @@ export function GraphCanvas({ projection, onSelect }: Props) {
         aria-label={`Graphe de ${projection.nodes.length} nœuds et ${projection.edges.length} relations au chapitre ${projection.boundaryChapter}`}
       />
 
+      {hovered && (
+        <HoverCard
+          label={labelOf.get(hovered) ?? ''}
+          portrait={portraits?.[hovered] ?? null}
+        />
+      )}
+
       {status === 'loading' && (
         <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">
           Calcul de la disposition…
@@ -186,6 +219,45 @@ export function GraphCanvas({ projection, onSelect }: Props) {
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The hovered node, named and — when there is one — shown.
+ *
+ * `aria-hidden`: this is a pointer affordance duplicating information already
+ * available to a keyboard or screen-reader user in the table view, and
+ * announcing a card that changes on every mouse move would be noise.
+ */
+function HoverCard({
+  label,
+  portrait,
+}: {
+  label: string
+  portrait: NodePortrait | null
+}) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute right-3 top-3 flex max-w-64 items-center gap-2.5 rounded-sm border border-line-strong bg-surface-overlay/95 p-2 shadow-lg"
+    >
+      {portrait && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={portrait.thumbUrl}
+          alt=""
+          width={48}
+          height={48}
+          className="h-12 w-12 shrink-0 rounded-sm border border-line object-cover"
+        />
+      )}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-primary">{label}</p>
+        <p className="truncate text-xs text-muted">
+          {portrait ? portrait.attribution : 'Aucune illustration'}
+        </p>
+      </div>
     </div>
   )
 }

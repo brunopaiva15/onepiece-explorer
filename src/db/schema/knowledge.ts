@@ -357,3 +357,45 @@ export const auditLog = pgTable(
   },
   (t) => [index('audit_log_user_idx').on(t.userId, t.createdAt)],
 )
+
+/**
+ * External illustrations, kept deliberately apart from knowledge.
+ *
+ * No assertion may cite one and no fact rests on one — see
+ * drizzle/0012_entity_images.sql for why that separation is structural rather
+ * than a convention. `revealedInChapter` is the revelation chapter of the
+ * *label* that matched, not the entity's first appearance: a portrait found by
+ * a true name must not appear before the reader learns that name.
+ */
+export const entityImages = pgTable(
+  'entity_images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    entityId: uuid('entity_id')
+      .notNull()
+      .references(() => entities.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    sourceRef: text('source_ref').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    attribution: text('attribution').notNull(),
+    storageKey: text('storage_key').notNull(),
+    thumbKey: text('thumb_key'),
+    width: integer('width'),
+    height: integer('height'),
+    mime: text('mime').notNull().default('image/webp'),
+    bytes: integer('bytes'),
+    matchedLabel: text('matched_label').notNull(),
+    matchMethod: text('match_method').notNull(),
+    matchScore: real('match_score').notNull(),
+    revealedInChapter: integer('revealed_in_chapter').notNull(),
+    isPrimary: boolean('is_primary').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique('entity_images_unique_source').on(t.entityId, t.source, t.sourceRef),
+    index('entity_images_boundary_idx').on(t.userId, t.entityId, t.revealedInChapter),
+  ],
+)

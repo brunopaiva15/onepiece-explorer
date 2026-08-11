@@ -3,11 +3,21 @@ import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
+import { displayImages } from '@/domains/images/index.ts'
 import { BoundarySlider } from './boundary-slider.tsx'
 import { GraphCanvas } from './graph-canvas.tsx'
 
 export const metadata: Metadata = { title: 'Graphe' }
 export const dynamic = 'force-dynamic'
+
+/**
+ * How many nodes get a pre-signed portrait for the hover card.
+ *
+ * Ranked by degree, so the ones covered are the ones the eye lands on. Raising
+ * this costs a signed URL per node on every page load; the cost is not in the
+ * pictures, which are cached, but in the signing.
+ */
+const HOVERABLE_NODES = 400
 
 export default async function GraphPage({
   searchParams,
@@ -25,6 +35,37 @@ export default async function GraphPage({
   const projection = await projectGraph(session.userId, session.boundaryChapter, {
     ...(nodeTypes ? { nodeTypes } : {}),
   })
+
+  /*
+   * Portraits for the nodes a reader is likely to hover, signed here.
+   *
+   * Capped by degree because each one is a signed URL with a lifetime measured
+   * in seconds: minting eight thousand of them per page load would be slow and
+   * would waste all but a handful. The hover card says "aucune illustration"
+   * for the rest, which is true of most of them anyway.
+   */
+  const hoverable = [...projection.nodes]
+    .sort((a, b) => b.degree - a.degree)
+    .slice(0, HOVERABLE_NODES)
+  const images = await displayImages(
+    session.userId,
+    session.boundaryChapter,
+    hoverable.flatMap((node) => node.memberIds),
+  )
+
+  const portraits: Record<string, { thumbUrl: string; attribution: string }> = {}
+  for (const node of hoverable) {
+    for (const memberId of node.memberIds) {
+      const found = images.get(memberId)
+      if (found) {
+        portraits[node.id] = {
+          thumbUrl: found.thumbUrl,
+          attribution: found.attribution,
+        }
+        break
+      }
+    }
+  }
 
   return (
     <>
@@ -74,7 +115,7 @@ export default async function GraphPage({
           </p>
         )}
 
-        <GraphCanvas projection={projection} />
+        <GraphCanvas projection={projection} portraits={portraits} />
 
         <p className="mt-6 text-sm text-muted">
           La taille d&apos;un nœud suit son nombre de relations. La couleur d&apos;un

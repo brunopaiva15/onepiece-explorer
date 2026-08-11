@@ -22,6 +22,7 @@ const ALL_TABLES = [
   'text_blocks',
   'entities',
   'entity_labels',
+  'entity_images',
   'assertions',
   'evidence',
   'events',

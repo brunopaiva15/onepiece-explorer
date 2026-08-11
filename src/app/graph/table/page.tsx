@@ -3,7 +3,9 @@ import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
+import { displayImages } from '@/domains/images/index.ts'
 import { BoundarySlider } from '../boundary-slider.tsx'
+import { Portrait } from '@/app/components/portrait.tsx'
 
 export const metadata: Metadata = { title: 'Graphe — vue tableau' }
 export const dynamic = 'force-dynamic'
@@ -33,6 +35,28 @@ export default async function GraphTablePage({
 
   const labelOf = new Map(projection.nodes.map((node) => [node.id, node.label]))
   const byDegree = [...projection.nodes].sort((a, b) => b.degree - a.degree)
+
+  /*
+   * Portraits for the rows that will actually be looked at.
+   *
+   * Every member id, not just the representative: a merged identity may carry
+   * its picture on the half that lost the union-find election. Capped, because
+   * signing eight thousand URLs to render a table nobody scrolls that far down
+   * would cost more than the table is worth.
+   */
+  const shown = byDegree.slice(0, 200)
+  const portraits = await displayImages(
+    session.userId,
+    session.boundaryChapter,
+    shown.flatMap((node) => node.memberIds),
+  )
+  const portraitOf = (memberIds: string[]) => {
+    for (const id of memberIds) {
+      const found = portraits.get(id)
+      if (found) return found
+    }
+    return null
+  }
 
   return (
     <>
@@ -81,10 +105,16 @@ export default async function GraphTablePage({
           ) : (
             <table className="mt-3 w-full border-collapse text-sm">
               <caption className="sr-only">
-                Entités connues au chapitre {session.boundaryChapter}, par nombre de relations
+                Entités connues au chapitre {session.boundaryChapter}, par nombre de
+                relations.
+                {projection.nodes.length > shown.length &&
+                  ` Les illustrations ne sont chargées que pour les ${shown.length} entités les plus reliées ; les autres lignes sont complètes mais sans image.`}
               </caption>
               <thead>
                 <tr className="border-b border-line-strong text-left text-muted">
+                  <th scope="col" className="w-12 py-2 pr-3 font-medium">
+                    <span className="sr-only">Illustration</span>
+                  </th>
                   <th scope="col" className="py-2 pr-3 font-medium">Nom</th>
                   <th scope="col" className="py-2 pr-3 font-medium">Type</th>
                   <th scope="col" className="py-2 pr-3 font-medium">Vue depuis</th>
@@ -95,6 +125,13 @@ export default async function GraphTablePage({
               <tbody>
                 {byDegree.map((node) => (
                   <tr key={node.id} className="border-b border-line">
+                    <td className="py-2 pr-3">
+                      <Portrait
+                        image={portraitOf(node.memberIds)}
+                        label={node.label}
+                        size="small"
+                      />
+                    </td>
                     <td className="py-2 pr-3">
                       <Link
                         href={`/entite/${node.id}?ch=${session.boundaryChapter}`}
