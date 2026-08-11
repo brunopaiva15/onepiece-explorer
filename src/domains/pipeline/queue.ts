@@ -49,13 +49,34 @@ function connectionString(): string {
 export async function boss(): Promise<PgBoss> {
   if (instance) return instance
   starting ??= (async () => {
+    /*
+     * On a serverless host, this process only ever *sends*.
+     *
+     * The web application enqueues a chapter and returns; the worker is the
+     * only thing that ever takes a job off the queue, and on Vercel there is no
+     * worker — it runs on the reader's machine against the same database.
+     *
+     * That distinction matters because pg-boss's default posture is a
+     * long-lived server: it supervises jobs, runs a scheduler, and holds a pool
+     * open. In a function that lives for the length of one request, those are
+     * background timers that never get to do anything useful and connections
+     * that are abandoned rather than closed — repeated on every cold start,
+     * against a Supabase connection limit that is not large.
+     *
+     * One connection, no supervision, no scheduler. Migrations stay on: the
+     * first enqueue against a fresh database still has to create the schema,
+     * and getting that from whichever side happens to run first is correct.
+     */
+    const sendOnly = process.env.VERCEL === '1'
+
     const created = new PgBoss({
       connectionString: connectionString(),
       schema: process.env.PGBOSS_SCHEMA ?? 'pgboss',
       // A page-heavy chapter takes minutes, not seconds. The default would
       // declare the job abandoned and hand it to a second worker, which would
       // then race the first one writing the same panels.
-      max: 4,
+      max: sendOnly ? 1 : 4,
+      ...(sendOnly ? { supervise: false, schedule: false } : {}),
     })
 
     created.on('error', (error) => {

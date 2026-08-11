@@ -6,6 +6,21 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
+ * Serverless hosts kill a function at a fixed ceiling, and this one holds a
+ * connection open on purpose.
+ *
+ * Vercel's Hobby default is 60 seconds — long enough to watch a step finish,
+ * far short of a chapter. 300 is the Hobby maximum. Asking for it here is
+ * harmless everywhere else: on a normal Node server the value is ignored, and
+ * the stream's own ten-minute ceiling still applies.
+ *
+ * What happens when the host cuts it is already handled: the client reconnects
+ * and re-reads the run's current state, because the stream reports state rather
+ * than replaying events. A dropped connection loses nothing.
+ */
+export const maxDuration = 300
+
+/**
  * Server-sent events for a run's progress.
  *
  * SSE rather than a WebSocket: the traffic is one-directional, it is a few
