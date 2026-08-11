@@ -19,6 +19,21 @@ import { NODE_TYPES, PREDICATES } from '../src/domains/knowledge/ontology.ts'
 
 const IS_TEST = process.env.TEST_DB === '1'
 
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+/**
+ * The text of a migration, independent of who checked it out.
+ *
+ * Strips the byte-order mark a Windows editor may add and folds CRLF to LF.
+ * Neither changes a single SQL statement, and both change every byte after
+ * them.
+ */
+function normalise(value: string): string {
+  return value.replace(/^﻿/, '').replaceAll('\r\n', '\n')
+}
+
 const TARGET_URL = IS_TEST
   ? (process.env.TEST_DATABASE_URL ??
     'postgresql://postgres@localhost:5432/onepiece_explorer_test')
@@ -93,8 +108,9 @@ async function main(): Promise<void> {
     )
 
     for (const file of files) {
-      const body = await readFile(path.join(MIGRATIONS_DIR, file), 'utf8')
-      const checksum = createHash('sha256').update(body).digest('hex')
+      const raw = await readFile(path.join(MIGRATIONS_DIR, file), 'utf8')
+      const body = normalise(raw)
+      const checksum = sha256(body)
       const previous = applied.get(file)
 
       if (previous === checksum) {
@@ -102,20 +118,39 @@ async function main(): Promise<void> {
         continue
       }
 
+      /*
+       * The same file, hashed on another operating system.
+       *
+       * The checksum used to be taken over the bytes as read. Git hands a
+       * Windows checkout CRLF line endings by default, so a migration applied
+       * from CI — Linux, LF — hashed differently the moment the same commit was
+       * pushed from a laptop. The guard then reported a migration "applied with
+       * different content", which is exactly what it is meant to catch, about a
+       * file nobody had touched. Two hours to see it, and no reason to see it.
+       *
+       * The hash is now taken over normalised text, and a record written under
+       * either of the old raw forms is recognised and rewritten. That is not a
+       * loosening: a genuine edit still changes the normalised text.
+       */
       if (previous !== undefined) {
-        // An applied migration changed on disk. Editing history silently would
-        // leave the database and the repository disagreeing about the schema.
-        throw new Error(
-          `La migration ${file} a déjà été appliquée avec un contenu différent.\n` +
-            `Créez une nouvelle migration plutôt que de modifier celle-ci.`,
-        )
+        const legacy = [sha256(raw), sha256(body.replaceAll('\n', '\r\n'))]
+        if (!legacy.includes(previous)) {
+          throw new Error(
+            `La migration ${file} a déjà été appliquée avec un contenu différent.\n` +
+              `Créez une nouvelle migration plutôt que de modifier celle-ci.`,
+          )
+        }
+
+        await sql`UPDATE _migrations SET checksum = ${checksum} WHERE name = ${file}`
+        console.log(`= ${file} · empreinte normalisée (fins de ligne)`)
+        continue
       }
 
       process.stdout.write(`+ ${file} … `)
       // Simple protocol: these files contain multiple statements, and Postgres
       // wraps a simple-query batch in one implicit transaction, so a failure
       // rolls the whole file back.
-      await sql.unsafe(body).simple()
+      await sql.unsafe(raw).simple()
       await sql`
         INSERT INTO _migrations (name, checksum) VALUES (${file}, ${checksum})
       `

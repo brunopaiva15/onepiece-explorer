@@ -1,0 +1,25 @@
+# Line endings are content here.
+#
+# Git hands a Windows checkout CRLF by default. For a source file that is
+# invisible; for a migration it is not, because migrations are identified by a
+# checksum of their text. The same commit applied from CI and then pushed from a
+# Windows machine produced two different checksums for a file nobody had edited,
+# and the guard correctly refused. `pnpm db:push` now normalises before hashing,
+# and this keeps the checkouts identical in the first place.
+*.sql text eol=lf
+
+# Same reasoning, less consequence: these are compared, diffed and sometimes
+# hashed by tooling that does not care to be told about \r.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+
+# Fixtures and binaries are bytes, and must never be touched.
+*.pdf  binary
+*.cbz  binary
+*.zip  binary
+*.png  binary
+*.jpg  binary
+*.webp binary
