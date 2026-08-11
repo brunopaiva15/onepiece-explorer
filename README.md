@@ -1,5 +1,7 @@
 # One Piece Explorer
 
+[![CI](https://github.com/brunopaiva15/onepiece-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/brunopaiva15/onepiece-explorer/actions/workflows/ci.yml)
+
 Un seul grand graphe de connaissances **interconnecté et sourcé**, construit à
 partir des chapitres de One Piece que vous importez vous-même : personnages,
 groupes, lieux, objets, événements, promesses, mystères. C'est là qu'on trouve
@@ -317,6 +319,18 @@ pnpm test:antispoiler  # les scénarios bloquants
 pnpm test:perf         # 8 000 nœuds / 60 000 arêtes
 pnpm typecheck && pnpm lint
 ```
+
+Tout cela tourne sur GitHub Actions à chaque push sur `main` et à chaque pull
+request — sans secret, sans clé API, sans réseau. C'est possible parce que la
+suite a été construite hermétique dès le départ : PostgreSQL local plutôt que
+Supabase, réponses de modèle enregistrées plutôt que l'API Anthropic, catalogue
+d'images en fixture plutôt que trois services communautaires. Les scénarios
+anti-spoiler tournent en premier et dans une étape à part : quand l'un d'eux
+casse, ça doit se voir en haut du journal.
+
+La base y est créée vide à chaque exécution, ce qui fait de la CI le contrôle
+permanent que les migrations s'appliquent à partir de zéro — rôles, politiques
+RLS et ontologie compris.
 
 `pnpm db:push:test` crée la base si elle n'existe pas. pgvector n'étant pas
 packagé pour PostgreSQL local, les embeddings basculent automatiquement sur

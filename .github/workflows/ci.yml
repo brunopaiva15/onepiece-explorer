@@ -1,0 +1,121 @@
+name: CI
+
+# The repository has said since day one that the eight anti-spoiler scenarios
+# are "bloquants en CI". Until this file existed, that was a claim about a CI
+# that did not run. This makes it true.
+#
+# Everything here works because the test suite was built to be hermetic: a local
+# PostgreSQL rather than Supabase, recorded model responses rather than the
+# Anthropic API, a fixture catalogue rather than three community services. No
+# secret is needed, and nothing in this workflow can reach the network for data.
+# That is precisely what lets the boundary tests block a merge instead of being
+# quietly marked flaky the first time someone else's server has a bad morning.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push supersedes the first. Nobody needs the results of a commit that
+# has already been replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Bounded so a hung job fails instead of burning an hour of runner time.
+  NODE_VERSION: '22'
+
+jobs:
+  checks:
+    name: Types, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm lint
+
+      # No environment variables at all, on purpose. The database clients are
+      # lazy factories and no module connects at import time, so a build that
+      # needs a live database here is a regression worth failing on.
+      - run: pnpm build
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        # The official image ships postgresql-contrib, which is where pg_trgm,
+        # unaccent and uuid-ossp come from. pgvector is absent, and that is
+        # covered: the vector store falls back to real[] with cosine in SQL,
+        # exactly as it does on a developer's machine.
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DB: '1'
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/onepiece_explorer_test
+      # Recorded responses. Never the real API: a suite that spends money is a
+      # suite someone eventually turns off.
+      MODEL_PROVIDER: replay
+      STORAGE_DRIVER: local
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Synthetic pages: invented characters, invented text, drawn by script.
+      # The repository contains no manga, so the fixtures are built here rather
+      # than committed — which also means the generator itself is exercised on
+      # every run.
+      - name: Generate synthetic fixtures
+        run: pnpm fixtures:generate
+
+      # A fresh database every time, so this doubles as the check that the
+      # migrations apply from zero — including the roles, the RLS policies and
+      # the ontology seed.
+      - name: Apply migrations from zero
+        run: pnpm db:push:test
+
+      # First and separately, because these eight are not like the others. When
+      # one of them fails the log should say so at the top, not two hundred
+      # passing tests later. The ~20s of overlap with the full suite below buys
+      # that, and it is worth it.
+      - name: Anti-spoiler scenarios (blocking)
+        run: pnpm test:antispoiler
+
+      - name: Full suite
+        run: pnpm test

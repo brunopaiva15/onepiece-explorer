@@ -285,6 +285,31 @@ seconde parce qu'une règle de lint se désactive en ligne.
 
 ---
 
+## Intégration continue
+
+`.github/workflows/ci.yml`, sur chaque push vers `main` et chaque pull request.
+Deux jobs : types/lint/build sans base, puis la suite complète contre un
+PostgreSQL 16 en conteneur de service.
+
+Trois choses qu'il vaut mieux savoir avant de la modifier :
+
+- **Aucun secret n'y est nécessaire, et il ne faut pas en ajouter.** Le
+  fournisseur de modèle est `replay`, le stockage est local, le catalogue
+  d'images est une fixture. Une CI qui dépense de l'argent finit par être
+  désactivée, et une CI qui dépend de la disponibilité d'un tiers finit par être
+  déclarée « instable » — après quoi la vraie régression passe inaperçue.
+- **La base est créée vide à chaque exécution.** C'est ce qui fait du job le
+  contrôle permanent que les migrations partent de zéro.
+- **Les tests anti-spoiler tournent dans une étape séparée, avant le reste.**
+  Une vingtaine de secondes de recoupement avec la suite complète, assumées :
+  quand l'un des huit casse, le journal doit le dire en haut.
+
+Les tests de performance se désactivent d'eux-mêmes en CI : le corpus 8k/60k
+n'y est pas généré, et le fichier le détecte. Pour les lancer,
+`pnpm fixtures:graph` puis `pnpm test:perf`, en local.
+
+---
+
 ## Avant de considérer une modification terminée
 
 ```bash

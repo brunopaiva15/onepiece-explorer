@@ -11,7 +11,8 @@ d'être lue.
 ## Transversaux
 
 - [x] Le code est typé (`pnpm typecheck` passe), lisible, et couvert par des tests.
-- [x] Les migrations s'appliquent sur le PostgreSQL local à partir de zéro — `pnpm db:push:test`, à chaque exécution de la suite.
+- [x] Les migrations s'appliquent sur le PostgreSQL local à partir de zéro — vérifié à chaque exécution de CI, sur une base créée vide (`.github/workflows/ci.yml`).
+- [x] La CI existe et fait échouer les scénarios bloquants — sans secret, sans clé API, sans accès réseau.
 - [ ] Les mêmes migrations s'appliquent sur Supabase à partir de zéro. Un seul jeu de migrations, mais aucun projet Supabase n'a encore été joint : à vérifier au premier déploiement, avec `pnpm doctor`.
 - [x] Chaque erreur possible a un état d'interface utile : ce qui a échoué, et l'action précise possible.
 - [x] Les jobs sont idempotents et reprenables ; rejouer une étape inchangée ne duplique rien — `tests/pipeline/run-chapter.test.ts`.
