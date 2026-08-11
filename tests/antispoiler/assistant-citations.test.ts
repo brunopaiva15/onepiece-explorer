@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { ask, groundednessScore, verifyCitations } from '@/domains/assistant/answer.ts'
-import { buildContext } from '@/domains/assistant/context.ts'
+import { buildContext, disjoin } from '@/domains/assistant/context.ts'
 import { search } from '@/domains/search/index.ts'
 import {
   addAssertion,
@@ -250,6 +250,51 @@ describe('the context is filtered before the model sees it', () => {
     const context = await buildContext(world.userId, 3, 'le passeur')
     expect(Array.isArray(context.notes)).toBe(true)
     expect(context.notes.every((note) => note.length > 0)).toBe(true)
+  })
+})
+
+describe('broadening a question does not broaden the boundary', () => {
+  it('retrieves for a question whose every word cannot all be present', async () => {
+    await seedFerryman()
+
+    /*
+     * Conjunctive full text asks for "savoir" as well as "guilde" and
+     * "marées", and no page contains all three. Without the disjunctive retry
+     * this returns nothing and the reader is told the data is insufficient
+     * about a fact sitting in chapter 2.
+     */
+    const context = await buildContext(
+      world.userId,
+      3,
+      'Que sait-on de la Guilde des Marées ?',
+    )
+
+    expect(context.entries.length).toBeGreaterThan(0)
+  })
+
+  it('still hides a later chapter when the question is broadened', async () => {
+    const { late } = await seedFerryman()
+
+    // "Bannis" is a chapter-40 name. The broadened query asks for it by
+    // disjunction — the widest retrieval this code can produce — and the
+    // database still refuses it, because widening a query cannot widen a
+    // policy.
+    const context = await buildContext(
+      world.userId,
+      3,
+      'Que sait-on des Bannis et de la Guilde des Marées ?',
+    )
+
+    expect(context.entries.every((entry) => entry.chapter <= 3)).toBe(true)
+    expect(context.entries.map((entry) => entry.assertionId)).not.toContain(late)
+  })
+
+  it('leaves a question with nothing to broaden alone', () => {
+    expect(disjoin('Bannis')).toBeNull()
+    expect(disjoin('Qui ?')).toBeNull()
+    expect(disjoin('Que sait-on de la Guilde des Marées ?')).toBe(
+      'sait-on or guilde or marees',
+    )
   })
 })
 

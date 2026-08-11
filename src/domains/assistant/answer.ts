@@ -1,6 +1,7 @@
 import 'server-only'
 import { modelProvider } from '../ai/index.ts'
 import { normalizeText } from '../knowledge/normalize.ts'
+import { consume } from '../observability/rate-limit.ts'
 import { buildContext, type AssistantContext, type ContextEntry } from './context.ts'
 
 /**
@@ -58,6 +59,23 @@ export async function ask(
 
   if (trimmed.length === 0) {
     return empty(trimmed, boundaryChapter, 'Posez une question.')
+  }
+
+  /*
+   * Rate limit before retrieving, not after.
+   *
+   * The threat here is a loop rather than an attacker — a retry firing on every
+   * render, a page that re-asks on focus. Checking after the search would still
+   * do the database work; checking after the model call would still pay for it.
+   */
+  const allowance = await consume(userId, 'ask')
+  if (!allowance.allowed) {
+    return empty(
+      trimmed,
+      boundaryChapter,
+      `Limite atteinte : ${allowance.used} questions dans l'heure. ` +
+        `Réessayez dans ${allowance.retryInMinutes} minute(s). ${allowance.explain}`,
+    )
   }
 
   const context = await buildContext(userId, boundaryChapter, trimmed)

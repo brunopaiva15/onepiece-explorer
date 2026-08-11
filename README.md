@@ -268,13 +268,29 @@ pnpm db:push:test
 pnpm test              # unitaires + intégration
 pnpm test:antispoiler  # les scénarios bloquants
 pnpm test:perf         # 8 000 nœuds / 60 000 arêtes
-pnpm test:e2e          # Playwright, parcours complet
 pnpm typecheck && pnpm lint
 ```
 
 `pnpm db:push:test` crée la base si elle n'existe pas. pgvector n'étant pas
 packagé pour PostgreSQL local, les embeddings basculent automatiquement sur
 `real[]` avec cosinus en SQL ; sur Supabase, pgvector est utilisé.
+
+Le parcours complet, sans navigateur et sans clé API :
+
+```bash
+pnpm demo
+```
+
+Trois chapitres synthétiques : import, pipeline, publication, puis le même
+graphe lu depuis trois endroits de l'histoire. Si la frontière casse, les trois
+lectures deviennent identiques et cela se voit dans la sortie. Le script vise
+toujours la base de test — il importe des chapitres inventés et accepte tout
+sans revue, ce qu'on ne veut pas voir arriver à sa vraie bibliothèque.
+
+Il n'y a **pas** de tests de navigateur. Le parcours est couvert par `pnpm demo`
+et par les tests d'intégration ; un harnais Playwright exigerait un projet
+Supabase joignable, ce qui retirerait à la suite l'hermétisme qui permet aux
+tests anti-spoiler d'être bloquants.
 
 ---
 
@@ -315,7 +331,9 @@ const graphe = await withBoundary(
 - [Décisions d'architecture](docs/adr/) — pourquoi la frontière est en base,
   pourquoi les assertions sont immuables, pourquoi l'ontologie est une donnée,
   comment le coût IA est maîtrisé
+- [Exploitation](docs/operations.md) — déployer, surveiller, sauvegarder,
+  purger, et le tableau des pannes courantes avec leur diagnostic
 - [Critères d'acceptation](docs/acceptance-criteria.md) — dont les huit
-  scénarios anti-spoiler bloquants
+  scénarios anti-spoiler bloquants, et ce qui reste explicitement non fait
 - [Ontologie v0](src/domains/knowledge/ontology.ts) — types de nœuds et
   prédicats, source de vérité du seed

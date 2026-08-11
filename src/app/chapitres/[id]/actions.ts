@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { enqueueChapter } from '@/domains/pipeline/queue.ts'
 import { createRun } from '@/domains/pipeline/runs.ts'
+import { consume } from '@/domains/observability/rate-limit.ts'
 
 export interface StartRunResult {
   ok: boolean
@@ -21,6 +22,19 @@ export interface StartRunResult {
 export async function startRunAction(chapterId: string): Promise<StartRunResult> {
   try {
     const session = await getReaderSession()
+
+    // A chapter run is the heaviest spend in the system; a script re-launching
+    // the same one in a loop is the failure mode worth bounding.
+    const allowance = await consume(session.userId, 'start_run')
+    if (!allowance.allowed) {
+      return {
+        ok: false,
+        error:
+          `Limite atteinte : ${allowance.used} traitements dans l'heure. ` +
+          `Réessayez dans ${allowance.retryInMinutes} minute(s). ${allowance.explain}`,
+      }
+    }
+
     const runId = await createRun(session.userId, chapterId)
 
     try {

@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/domains/auth/server.ts'
 import { exportEverything } from '@/domains/observability/export.ts'
+import { consume } from '@/domains/observability/rate-limit.ts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,6 +21,14 @@ export async function GET() {
   const user = await getCurrentUser()
   if (!user) {
     return new Response('Authentification requise', { status: 401 })
+  }
+
+  const allowance = await consume(user.id, 'export')
+  if (!allowance.allowed) {
+    return new Response(
+      `Limite atteinte. Réessayez dans ${allowance.retryInMinutes} minute(s).`,
+      { status: 429, headers: { 'Retry-After': String((allowance.retryInMinutes ?? 1) * 60) } },
+    )
   }
 
   const bundle = await exportEverything(user.id)

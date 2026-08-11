@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { closeConnections } from '@/db/client.ts'
 import { executeRun } from '@/domains/pipeline/execute.ts'
 import { boss, CHAPTER_QUEUE, stopQueue, type ChapterJob } from '@/domains/pipeline/queue.ts'
+import { pruneRateLimitEntries } from '@/domains/observability/rate-limit.ts'
 
 /**
  * The pipeline worker.
@@ -20,9 +21,39 @@ import { boss, CHAPTER_QUEUE, stopQueue, type ChapterJob } from '@/domains/pipel
  */
 
 let shuttingDown = false
+let maintenance: NodeJS.Timeout | null = null
+
+/** Six hours. The rows being trimmed have an hour-long useful life. */
+const MAINTENANCE_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+/**
+ * Housekeeping the web server should not do.
+ *
+ * Rate-limit counters live in `audit_log` because it is already per-user and
+ * already written on every meaningful action. The cost of that choice is that
+ * they accumulate in the same table the reader consults to see what they did,
+ * so they are trimmed here rather than left to bury the real entries.
+ *
+ * Failures are logged and swallowed: a worker that exits because a cleanup
+ * query timed out would stop processing chapters, which is worse than a few
+ * extra rows.
+ */
+async function sweep(): Promise<void> {
+  try {
+    const removed = await pruneRateLimitEntries()
+    if (removed > 0) console.log(`[worker] ${removed} compteur(s) de débit purgé(s)`)
+  } catch (error: unknown) {
+    console.error('[worker] purge des compteurs impossible :', error)
+  }
+}
 
 async function main(): Promise<void> {
   const queue = await boss()
+
+  await sweep()
+  maintenance = setInterval(() => void sweep(), MAINTENANCE_INTERVAL_MS)
+  // Do not let the timer alone keep the process alive; pg-boss decides that.
+  maintenance.unref()
 
   await queue.work<ChapterJob>(
     CHAPTER_QUEUE,
@@ -60,6 +91,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true
   console.log(`[worker] ${signal} — arrêt en cours, on laisse finir le job courant`)
   try {
+    if (maintenance) clearInterval(maintenance)
     await stopQueue()
     await closeConnections()
   } finally {

@@ -2,6 +2,7 @@ import 'server-only'
 import { and, inArray, sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
 import { assertions, entityLabels, evidence } from '@/db/schema/knowledge.ts'
+import { normalizeText } from '../knowledge/normalize.ts'
 import { search } from '../search/index.ts'
 
 /**
@@ -46,15 +47,32 @@ export async function buildContext(
   boundaryChapter: number,
   question: string,
 ): Promise<AssistantContext> {
-  const found = await search(userId, boundaryChapter, question, { limit: 20 })
+  let found = await search(userId, boundaryChapter, question, { limit: 20 })
+  let entityIds = entitiesIn(found.hits)
 
-  const entityIds = [
-    ...new Set(
-      found.hits
-        .map((hit) => hit.entityId)
-        .filter((id): id is string => id !== null),
-    ),
-  ]
+  /*
+   * A question is not a search query.
+   *
+   * `websearch_to_tsquery` conjoins terms, which is right for a search box —
+   * type two words, get rows containing both. Run a sentence through it and
+   * every word becomes mandatory, so "Que sait-on de la Guilde des Marées ?"
+   * asks for a page containing *savoir* as well as the two words that matter,
+   * and finds nothing. The reader then gets "insufficient data" about
+   * something the corpus plainly contains, which is the wrong kind of
+   * honesty: correct, unhelpful, and indistinguishable from a real gap.
+   *
+   * So: retry with the same terms disjoined. Ranking sorts out which matches
+   * are worth anything, and a broader retrieval cannot widen what the reader
+   * is allowed to see — the boundary is applied by the database on both
+   * passes, and every citation is still checked against what came back.
+   */
+  if (entityIds.length === 0) {
+    const broadened = disjoin(question)
+    if (broadened !== null) {
+      found = await search(userId, boundaryChapter, broadened, { limit: 20 })
+      entityIds = entitiesIn(found.hits)
+    }
+  }
 
   const notes = found.modes
     .filter((mode) => !mode.ran && mode.note)
@@ -158,6 +176,49 @@ export async function buildContext(
   })
 
   return { boundaryChapter, entries, entityIds, notes }
+}
+
+function entitiesIn(hits: Array<{ entityId: string | null }>): string[] {
+  return [
+    ...new Set(
+      hits.map((hit) => hit.entityId).filter((id): id is string => id !== null),
+    ),
+  ]
+}
+
+/**
+ * French question scaffolding: words a reader types to ask, never to name.
+ *
+ * Deliberately short. Dropping too much turns a specific question into a vague
+ * one, and the failure that causes — plausible neighbours retrieved instead of
+ * the right rows — is worse than the failure it fixes, because the model will
+ * happily build an answer from them.
+ */
+const QUESTION_WORDS = new Set([
+  'que', 'qui', 'quoi', 'quel', 'quelle', 'quels', 'quelles', 'quand', 'ou',
+  'comment', 'pourquoi', 'combien', 'est', 'sont', 'etait', 'etaient', 'sait',
+  'savons', 'connait', 'peux', 'peut', 'dis', 'dit', 'moi', 'nous', 'vous',
+  'les', 'des', 'une', 'aux', 'dans', 'pour', 'avec', 'sur', 'par', 'plus',
+  'tout', 'tous', 'toute', 'toutes', 'cette', 'ces', 'son', 'sa', 'ses',
+  'leur', 'leurs', 'passe', 'arrive', 'fait', 'donne', 'parle', 'raconte',
+])
+
+/**
+ * Rewrite a question as a disjunction the same search path understands.
+ *
+ * `websearch_to_tsquery` treats a bare `or` as the OR operator, so this stays
+ * inside the existing query language rather than adding a second one. Returns
+ * null when nothing is left to broaden with — a one-word question is already
+ * as broad as it gets, and re-running it would just cost a round trip.
+ */
+export function disjoin(question: string): string | null {
+  const words = normalizeText(question)
+    .split(' ')
+    .filter((word) => word.length > 2 && !QUESTION_WORDS.has(word))
+
+  const unique = [...new Set(words)]
+  if (unique.length < 2) return null
+  return unique.join(' or ')
 }
 
 function literalOf(value: unknown): string | null {

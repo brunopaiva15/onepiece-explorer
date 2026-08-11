@@ -8,6 +8,7 @@ import {
   failureHealth,
   quarantineHealth,
 } from '@/domains/observability/costs.ts'
+import { usage, type LimitedAction } from '@/domains/observability/rate-limit.ts'
 import { hasEmbeddingProvider } from '@/domains/search/index.ts'
 import { effectiveModelProvider, hasModelCredentials } from '@/lib/env.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
@@ -26,13 +27,15 @@ export const dynamic = 'force-dynamic'
 export default async function SettingsPage() {
   const session = await getReaderSession()
 
-  const [chapters, costs, quarantine, failures, orphans] = await Promise.all([
-    listChapters(session.userId, session.workId),
-    costSummary(session.userId),
-    quarantineHealth(session.userId),
-    failureHealth(session.userId),
-    listOrphanedAssertions(session.userId),
-  ])
+  const [chapters, costs, quarantine, failures, orphans, allowances] =
+    await Promise.all([
+      listChapters(session.userId, session.workId),
+      costSummary(session.userId),
+      quarantineHealth(session.userId),
+      failureHealth(session.userId),
+      listOrphanedAssertions(session.userId),
+      usage(session.userId),
+    ])
 
   return (
     <main id="contenu" className="mx-auto max-w-4xl px-6 py-12">
@@ -150,6 +153,32 @@ export default async function SettingsPage() {
         )}
       </section>
 
+      <section className="mt-12">
+        <h2 className="text-lg font-semibold text-primary">
+          Garde-fou de dépense
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm text-secondary">
+          Les opérations qui appellent un modèle sont plafonnées par heure. Ce
+          n&apos;est pas une protection contre un intrus — vous êtes seul ici —
+          mais contre une boucle : un script relancé, un onglet qui rejoue une
+          requête à chaque focus. La facture, elle, ne fait pas la différence.
+          La lecture, la navigation et le graphe ne sont jamais comptés.
+        </p>
+        <ul className="mt-4 space-y-2 text-sm">
+          {allowances.map((allowance) => (
+            <li key={allowance.action} className="flex items-baseline gap-3">
+              <span className="w-56 text-secondary">
+                {ACTION_LABELS[allowance.action]}
+              </span>
+              <span className="font-mono text-xs text-primary">
+                {allowance.used} / {allowance.max}
+              </span>
+              <span className="text-xs text-muted">sur la dernière heure</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       {(quarantine.length > 0 || failures.length > 0) && (
         <section className="mt-12">
           <h2 className="text-lg font-semibold text-primary">Santé du pipeline</h2>
@@ -258,6 +287,12 @@ export default async function SettingsPage() {
       )}
     </main>
   )
+}
+
+const ACTION_LABELS: Record<LimitedAction, string> = {
+  ask: "Questions à l'assistant",
+  start_run: 'Traitements de chapitre',
+  export: 'Exports complets',
 }
 
 function Row({
