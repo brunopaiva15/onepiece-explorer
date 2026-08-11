@@ -5,6 +5,8 @@
  * a filesystem escape on a machine holding someone's private library. They are
  * tunable through the environment but never optional.
  */
+import { isVercelRuntime } from '@/lib/hosting.ts'
+
 export interface IngestionLimits {
   /** Whole upload. */
   maxUploadBytes: number
@@ -41,13 +43,13 @@ export interface IngestionLimits {
  * requires the bytes to go straight to storage and never through a function.
  */
 export function uploadTransportLimitBytes(): number {
-  if (process.env.VERCEL === '1') return 4 * 1_024 * 1_024
+  if (isVercelRuntime()) return 4 * 1_024 * 1_024
   return ingestionLimits().maxUploadBytes
 }
 
 /** True when the host, not the configuration, is what caps an upload. */
 export function transportLimitIsHostImposed(): boolean {
-  return process.env.VERCEL === '1'
+  return isVercelRuntime()
 }
 
 export function ingestionLimits(): IngestionLimits {

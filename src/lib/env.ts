@@ -1,5 +1,6 @@
 import 'server-only'
 import { z } from 'zod'
+import { isVercelRuntime } from '@/lib/hosting.ts'
 
 /**
  * Server configuration, validated once at first use.
@@ -68,7 +69,7 @@ export class ConfigurationError extends Error {
  * wrong place, which is the whole cost of a wrong error message.
  */
 function remediation(): string {
-  if (process.env.VERCEL === '1') {
+  if (isVercelRuntime()) {
     return (
       'Renseignez ces variables dans les réglages du projet chez votre hébergeur, ' +
       'puis redéployez — une variable ajoutée après le dernier build ne se trouve ' +

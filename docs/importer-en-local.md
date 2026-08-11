@@ -63,6 +63,11 @@ pnpm dlx vercel env pull .env.local --environment=production
 
 Le fichier obtenu est ignoré par Git.
 
+**Supprimez-en les lignes `VERCEL*`.** `vercel env pull` y écrit aussi les
+variables système de la plate-forme, dont `VERCEL="1"`. Sur votre machine elles
+sont fausses, et elles sont lues : le plafond d'envoi retombe à 4,5 Mo — celui
+que tout ce montage local sert justement à contourner. `pnpm doctor` le signale.
+
 ### `--environment=production` n'est pas décoratif
 
 Sans ce drapeau, `vercel env pull` récupère l'environnement **Development**. Une

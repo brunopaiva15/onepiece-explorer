@@ -51,6 +51,24 @@ describe('connectionStringIssue', () => {
     }
   })
 
+  it('describes the shape of a rejected value without revealing it', () => {
+    // Enough to tell a line never replaced from one saved in the wrong file,
+    // and not one character of the value itself.
+    const issue = connectionStringIssue('Votre base Supabase')
+    expect(issue?.problem).toContain('19 caractères')
+    expect(issue?.problem).toContain('sans « :// »')
+    expect(issue?.problem).toContain('2 espaces')
+    expect(issue?.problem).not.toContain('Supabase Votre')
+    expect(issue?.problem).not.toContain('base')
+  })
+
+  it('names a wrong scheme rather than describing it', () => {
+    expect(connectionStringIssue('mysql://user:pw@host:3306/db')?.problem).toContain('mysql://')
+    expect(
+      connectionStringIssue(`jdbc:${GOOD}`)?.problem,
+    ).toContain('JDBC')
+  })
+
   it('reports an absent variable as absent, not as malformed', () => {
     expect(connectionStringIssue(undefined)?.problem).toContain("n'est pas définie")
     expect(connectionStringIssue('   ')?.problem).toContain("n'est pas définie")

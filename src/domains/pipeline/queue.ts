@@ -1,5 +1,6 @@
 import 'server-only'
 import { PgBoss } from 'pg-boss'
+import { isVercelRuntime } from '@/lib/hosting.ts'
 
 /**
  * The job queue, in Postgres.
@@ -67,7 +68,7 @@ export async function boss(): Promise<PgBoss> {
      * first enqueue against a fresh database still has to create the schema,
      * and getting that from whichever side happens to run first is correct.
      */
-    const sendOnly = process.env.VERCEL === '1'
+    const sendOnly = isVercelRuntime()
 
     const created = new PgBoss({
       connectionString: connectionString(),

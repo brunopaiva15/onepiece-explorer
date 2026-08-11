@@ -18,6 +18,7 @@
 import '../src/lib/load-env.ts'
 import postgres from 'postgres'
 import { connectionStringIssue, endpointOf } from '../src/lib/connection-string.ts'
+import { vercelFlagLooksPulled } from '../src/lib/hosting.ts'
 
 type Level = 'ok' | 'warn' | 'fail' | 'skip'
 
@@ -167,6 +168,17 @@ function checkVariables(): void {
   // A pooler in transaction mode on 6543 and a direct connection on 5432 are
   // two different things; using one for the other's job fails in ways that
   // look like a network problem.
+  if (vercelFlagLooksPulled()) {
+    record({
+      level: 'warn',
+      label: 'VERCEL=1 hors déploiement',
+      detail: 'vient probablement de `vercel env pull`',
+      hint:
+        "Supprimez les lignes VERCEL* de .env.local : elles plafonnent l'import à 4,5 Mo " +
+        'et mettent la file de jobs en mode envoi seul — les deux sont faux sur votre machine.',
+    })
+  }
+
   const app = process.env.DATABASE_URL
   const direct = process.env.DIRECT_URL
   if (app && direct && app === direct) {

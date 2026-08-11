@@ -23,6 +23,26 @@ const RESERVED: ReadonlyArray<readonly [string, string, string]> = [
   ['?', '%3F', 'la suite est traitée comme une requête'],
 ]
 
+/**
+ * What the value looks like, without saying what it is.
+ *
+ * Both diagnostics promise never to print a value, and they should not: a
+ * connection string carries a password. But "this is not a connection string"
+ * leaves the reader unable to tell a line they never replaced from one they
+ * saved in the wrong file — the same message for both, and no way in. Length,
+ * whether it carries a scheme, and how many spaces it holds separate those
+ * cases immediately and reveal nothing useful to anyone: this is only reached
+ * once the value has already failed to be a URL, and a credential has no
+ * spaces.
+ */
+function shapeOf(value: string): string {
+  const spaces = (value.match(/\s/g) ?? []).length
+  const parts = [`${value.length} caractères`]
+  parts.push(value.includes('://') ? 'avec « :// »' : 'sans « :// »')
+  if (spaces > 0) parts.push(`${spaces} espace${spaces > 1 ? 's' : ''}`)
+  return parts.join(', ')
+}
+
 export interface ConnectionStringIssue {
   /** What is wrong, in one line. */
   problem: string
@@ -54,10 +74,20 @@ export function connectionStringIssue(
   }
 
   if (!/^postgres(ql)?:\/\//i.test(raw)) {
-    return {
-      problem: "ce n'est pas une chaîne de connexion",
-      fix: 'Attendu : postgresql://utilisateur:motdepasse@hôte:port/postgres',
+    const expected = 'Attendu : postgresql://utilisateur:motdepasse@hôte:port/postgres'
+
+    const scheme = /^([A-Za-z][A-Za-z0-9+.-]{0,15}):\/\//.exec(raw)?.[1]
+    if (scheme) {
+      return { problem: `le schéma est « ${scheme}:// »`, fix: expected }
     }
+    if (/^jdbc:/i.test(raw)) {
+      return {
+        problem: 'la chaîne est au format JDBC',
+        fix: `Retirez le préfixe jdbc:. ${expected}`,
+      }
+    }
+
+    return { problem: `ce n'est pas une chaîne de connexion — ${shapeOf(raw)}`, fix: expected }
   }
 
   let parsed: URL | null = null

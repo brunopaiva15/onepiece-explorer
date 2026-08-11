@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import postgres from 'postgres'
 import { connectionStringIssue } from '@/lib/connection-string.ts'
+import { vercelFlagLooksPulled } from '@/lib/hosting.ts'
 
 export const metadata: Metadata = { title: 'État du déploiement' }
 export const dynamic = 'force-dynamic'
@@ -145,6 +146,26 @@ async function connects(url: string | undefined): Promise<string | null> {
   }
 }
 
+/** Why the Supabase URL is not one, in the terms of the fix. */
+function urlProblem(value: string | undefined): string | null {
+  const raw = value?.trim() ?? ''
+  if (/^["']|["']$/.test(raw)) return 'entourée de guillemets — retirez-les'
+
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return raw.includes('://')
+      ? "définie, mais ce n'est pas une URL valide — attendu https://<ref>.supabase.co"
+      : 'définie, mais sans « https:// » — attendu https://<ref>.supabase.co'
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return `schéma « ${parsed.protocol}// » — attendu https://`
+  }
+  if (!parsed.hostname.includes('.')) return 'hôte sans domaine — attendu https://<ref>.supabase.co'
+  return null
+}
+
 export default async function StatePage() {
   const checks: Check[] = []
 
@@ -156,10 +177,40 @@ export default async function StatePage() {
   ]
 
   for (const name of required) {
+    if (!presence(name)) {
+      checks.push({ label: name, state: 'fail', detail: 'ABSENTE — chaque page échouera' })
+      continue
+    }
+    /*
+     * Present is not the same as usable, and this page reported the first as
+     * though it were the second: "définie", "Tout répond", while every page
+     * returned 500 because the URL was not a URL. A diagnostic that says
+     * everything is fine while nothing works is worse than no diagnostic — it
+     * sends the search somewhere else.
+     *
+     * The two connection strings are checked by dialling them, below. The
+     * Supabase URL has no such proof, so its shape is checked here.
+     */
+    const problem = name === 'NEXT_PUBLIC_SUPABASE_URL' ? urlProblem(process.env[name]) : null
     checks.push({
       label: name,
-      state: presence(name) ? 'ok' : 'fail',
-      detail: presence(name) ? 'définie' : 'ABSENTE — chaque page échouera',
+      state: problem ? 'fail' : 'ok',
+      detail: problem ?? 'définie',
+    })
+  }
+
+  if (vercelFlagLooksPulled()) {
+    checks.push({
+      label: 'VERCEL',
+      state: 'warn',
+      /*
+       * `vercel env pull` writes the platform's system variables into the file
+       * it produces. On a laptop they are all false, and they are read: the
+       * upload ceiling drops to the 4.5 MB a serverless request can carry —
+       * the exact ceiling the local setup exists to escape.
+       */
+      detail:
+        "présente hors déploiement — vient probablement de `vercel env pull`. Supprimez les lignes VERCEL* de .env.local : elles plafonneraient l'import à 4,5 Mo.",
     })
   }
 
