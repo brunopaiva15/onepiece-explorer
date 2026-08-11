@@ -17,6 +17,7 @@
  */
 import '../src/lib/load-env.ts'
 import postgres from 'postgres'
+import { connectionStringIssue, endpointOf } from '../src/lib/connection-string.ts'
 
 type Level = 'ok' | 'warn' | 'fail' | 'skip'
 
@@ -52,16 +53,7 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Host and port only. A connection string carries a password. */
-function endpoint(url: string | undefined): string {
-  if (!url) return 'non défini'
-  try {
-    const parsed = new URL(url)
-    return `${parsed.hostname}:${parsed.port || '5432'}`
-  } catch {
-    return 'illisible'
-  }
-}
+const endpoint = endpointOf
 
 /**
  * Is the value the right *kind* of thing?
@@ -74,33 +66,34 @@ function endpoint(url: string | undefined): string {
  * "base" in it as a hostname. Both of those were real, and neither mentioned
  * which variable was at fault.
  */
-function shapeProblem(name: string, value: string): string | null {
+const GENERIC_HINT =
+  'La variable a une valeur, mais pas du bon genre. Recopiez-la depuis sa source.'
+
+function shapeProblem(
+  name: string,
+  value: string,
+): { detail: string; hint: string } | null {
   if (name === 'NEXT_PUBLIC_SUPABASE_URL') {
+    const source = 'Attendu : https://<ref>.supabase.co — Supabase → Project Settings → API.'
     let parsed: URL
     try {
       parsed = new URL(value)
     } catch {
-      return "n'est pas une URL"
+      return { detail: "n'est pas une URL", hint: source }
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      return `protocole « ${parsed.protocol} » au lieu de https:`
+      return { detail: `protocole « ${parsed.protocol} » au lieu de https:`, hint: source }
     }
-    if (!parsed.hostname.includes('.')) return `hôte « ${parsed.hostname} » sans domaine`
+    if (!parsed.hostname.includes('.')) {
+      return { detail: `hôte « ${parsed.hostname} » sans domaine`, hint: source }
+    }
     return null
   }
 
   if (name === 'DATABASE_URL' || name === 'DIRECT_URL' || name === 'TEST_DATABASE_URL') {
-    if (!/^postgres(ql)?:\/\//.test(value)) {
-      return "n'est pas une chaîne de connexion (attendu : postgresql://…)"
-    }
-    let parsed: URL
-    try {
-      parsed = new URL(value)
-    } catch {
-      return 'chaîne de connexion illisible'
-    }
-    if (!parsed.hostname) return 'chaîne de connexion sans hôte'
-    return null
+    const issue = connectionStringIssue(value)
+    if (!issue) return null
+    return { detail: issue.problem, hint: issue.fix ?? GENERIC_HINT }
   }
 
   return null
@@ -140,12 +133,7 @@ function checkVariables(): void {
       const problem = shapeProblem(name, value)
       if (problem) {
         unusable.add(name)
-        record({
-          level: 'fail',
-          label: name,
-          detail: problem,
-          hint: 'La variable a une valeur, mais pas du bon genre. Recopiez-la depuis sa source.',
-        })
+        record({ level: 'fail', label: name, detail: problem.detail, hint: problem.hint })
       } else {
         record({
           level: 'ok',

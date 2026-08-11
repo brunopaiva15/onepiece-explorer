@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import postgres from 'postgres'
+import { connectionStringIssue } from '@/lib/connection-string.ts'
 
 export const metadata: Metadata = { title: 'État du déploiement' }
 export const dynamic = 'force-dynamic'
@@ -115,10 +116,15 @@ async function schemaState(url: string | undefined): Promise<SchemaReport> {
 }
 
 async function connects(url: string | undefined): Promise<string | null> {
-  if (!url) return "la variable n'est pas définie"
+  // Before dialling: is this a connection string at all? The driver answers
+  // `Invalid URL` and names neither the variable nor the character at fault.
+  const target = url?.trim() ?? ''
+  const issue = connectionStringIssue(target)
+  if (issue) return issue.fix ? `${issue.problem}. ${issue.fix}` : issue.problem
+
   let sql: ReturnType<typeof postgres> | null = null
   try {
-    sql = postgres(url, {
+    sql = postgres(target, {
       max: 1,
       connect_timeout: 8,
       idle_timeout: 2,
@@ -285,9 +291,19 @@ export default async function StatePage() {
 
       <section className="mt-12 border-t border-line pt-8 text-sm text-secondary">
         <h2 className="text-lg font-semibold text-primary">
-          Les trois causes, dans l&apos;ordre
+          Les causes habituelles, dans l&apos;ordre
         </h2>
         <ol className="mt-3 list-decimal space-y-3 pl-5">
+          <li>
+            <strong className="font-medium text-primary">
+              Un caractère réservé dans le mot de passe.
+            </strong>{' '}
+            Une chaîne de connexion est une URL, et l&apos;URL réserve{' '}
+            <code>#</code>, <code>/</code> et <code>?</code>. Un mot de passe qui
+            en contient un rend la chaîne illisible sans que rien ne dise lequel.
+            Encodez-le dans la chaîne — <code>%23</code>, <code>%2F</code>,{' '}
+            <code>%3F</code> — sans toucher au mot de passe dans Supabase.
+          </li>
           <li>
             <strong className="font-medium text-primary">
               Une variable manquante au moment du build.
@@ -317,6 +333,14 @@ export default async function StatePage() {
             <code>DIRECT_URL</code> de production, puis <code>pnpm doctor</code>.
           </li>
         </ol>
+        <p className="mt-4">
+          La cause 2 ne concerne qu&apos;un déploiement : en local, les variables
+          sont relues à chaque démarrage — il suffit de redémarrer{' '}
+          <code>pnpm dev</code>. Et sur votre machine,{' '}
+          <code>pnpm doctor</code> dit la même chose que cette page en plus
+          détaillé : il essaie chaque connexion et affiche l&apos;hôte
+          qu&apos;il a réellement extrait.
+        </p>
       </section>
 
       <p className="mt-10 text-sm text-muted">

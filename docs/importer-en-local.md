@@ -102,6 +102,24 @@ DIRECT_URL=postgresql://postgres.abcdefgh:MOT_DE_PASSE@aws-0-eu-central-1.pooler
 | `DIRECT_URL` | migrations, worker, pipeline (pooler mode session, port 5432) |
 | `ANTHROPIC_API_KEY` | extraction |
 
+### Le mot de passe de la base, et les trois caractères qui cassent tout
+
+Une chaîne de connexion est une URL, et une URL réserve `#`, `/` et `?`. Si le
+mot de passe généré par Supabase en contient un, la chaîne devient illisible et
+le seul message obtenu est `Invalid URL` — qui ne nomme ni la variable, ni le
+caractère.
+
+Encodez-le **dans la chaîne**, sans rien changer dans Supabase :
+
+| Dans le mot de passe | Écrivez |
+|---|---|
+| `#` | `%23` |
+| `/` | `%2F` |
+| `?` | `%3F` |
+
+Un `@` dans le mot de passe est pire : la chaîne reste valide et pointe vers un
+autre hôte. Encodez-le aussi, en `%40`.
+
 ### Une ligne à vérifier avant tout le reste
 
 ```
@@ -240,6 +258,7 @@ compte.
 |---|---|---|
 | `Configuration incomplète : NEXT_PUBLIC_… undefined` | `.env.local` absent du dossier du projet, ou pull de l'environnement Development | `pnpm doctor` nomme les manquantes ; voir §3 |
 | `Invalid supabaseUrl: Must be a valid HTTP or HTTPS URL` | `NEXT_PUBLIC_SUPABASE_URL` contient autre chose qu'une URL | Attendu : `https://<ref>.supabase.co`, dans Supabase → Project Settings → API |
+| `Invalid URL` sur une connexion | Un `#`, `/` ou `?` dans le mot de passe, des guillemets autour de la valeur, ou un `psql ` en tête | `pnpm doctor` nomme le caractère et donne son encodage |
 | `getaddrinfo ENOTFOUND base` au lancement du worker | `DIRECT_URL` n'est pas une chaîne de connexion. Le pilote PostgreSQL accepte n'importe quel texte et lit le mot « base » d'une phrase française comme un nom d'hôte — d'où ce message, qui ne nomme pas la variable | `pnpm doctor` affiche l'hôte réellement extrait de chaque connexion |
 | « en attente d'un worker », indéfiniment | `pnpm worker` n'est pas lancé | Lancez-le, terminal 2 |
 | L'import réussit, Vercel n'affiche pas les images | `STORAGE_DRIVER=local` | Mettez `supabase` et réimportez |
