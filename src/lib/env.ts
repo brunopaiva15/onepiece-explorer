@@ -52,10 +52,33 @@ export class ConfigurationError extends Error {
   constructor(readonly issues: string[]) {
     super(
       `Configuration incomplète :\n${issues.map((i) => `  • ${i}`).join('\n')}\n\n` +
-        `Copiez .env.example vers .env.local et renseignez les valeurs manquantes.`,
+        remediation(),
     )
     this.name = 'ConfigurationError'
   }
+}
+
+/**
+ * Where to go and fix it — which is not the same place in the two places this
+ * error appears.
+ *
+ * On a host there is no .env.local to copy: the values live in the project's
+ * settings, and a variable added after the last build is not in the running one.
+ * Telling someone to edit a file that cannot exist sends them looking in the
+ * wrong place, which is the whole cost of a wrong error message.
+ */
+function remediation(): string {
+  if (process.env.VERCEL === '1') {
+    return (
+      'Renseignez ces variables dans les réglages du projet chez votre hébergeur, ' +
+      'puis redéployez — une variable ajoutée après le dernier build ne se trouve ' +
+      'pas dans celui qui tourne. /etat dit lesquelles sont vues par le déploiement.'
+    )
+  }
+  return (
+    'Copiez .env.example vers .env.local et renseignez les valeurs manquantes, ' +
+    'puis vérifiez avec `pnpm doctor`.'
+  )
 }
 
 export function env(): Env {

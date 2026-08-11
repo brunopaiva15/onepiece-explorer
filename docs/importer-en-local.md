@@ -58,13 +58,32 @@ quelles plutôt que de les recopier à la main :
 ```bash
 pnpm dlx vercel login
 pnpm dlx vercel link          # choisissez le projet onepiece-explorer
-pnpm dlx vercel env pull .env.local
+pnpm dlx vercel env pull .env.local --environment=production
 ```
 
-Vous obtenez un `.env.local` identique à la production. Il est ignoré par Git.
+Le fichier obtenu est ignoré par Git.
 
-**Sinon, à la main** : `cp .env.example .env.local`, puis copiez depuis Vercel
-(Settings → Environment Variables) les six valeurs :
+### `--environment=production` n'est pas décoratif
+
+Sans ce drapeau, `vercel env pull` récupère l'environnement **Development**. Une
+variable que vous n'avez attachée qu'à Production et Preview n'en descend pas :
+le fichier paraît complet, et rien ne signale les absentes. C'est la cause la
+plus fréquente de ceci, au premier `pnpm dev` :
+
+```
+Configuration incomplète :
+  • NEXT_PUBLIC_SUPABASE_URL : Invalid input: expected string, received undefined
+  • NEXT_PUBLIC_SUPABASE_ANON_KEY : Invalid input: expected string, received undefined
+```
+
+Deux corrections, au choix : cocher **Development** sur ces variables dans Vercel
+puis refaire le pull, ou ouvrir `.env.local` et coller les deux valeurs à la
+main — c'est plus court que de comprendre pourquoi elles manquaient.
+
+**À la main**, donc : `cp .env.example .env.local` (`copy` sous cmd.exe), puis
+remplissez les six valeurs. Les deux premières se lisent aussi bien dans Supabase
+→ Project Settings → API (« Project URL » et la clé `anon` / `public`) que dans
+Vercel → Settings → Environment Variables ; les autres, seulement dans Vercel.
 
 | Variable | Rôle |
 |---|---|
@@ -86,15 +105,19 @@ C'est la valeur par défaut de `.env.example`, mais vérifiez-la. Si elle vaut
 paraîtra réussir, et Vercel affichera des fiches dont les images sont
 introuvables. Rien ne vous le dira sur le moment.
 
-### Vérifiez
+### Vérifiez — avant `pnpm dev`, pas après
 
 ```bash
 pnpm doctor
 ```
 
-Tout doit être vert : les deux connexions, les migrations, et surtout
-**« Bucket "chapters" — existe et est privé »**. `doctor` n'affiche jamais une
-valeur, seulement si elle est là.
+Il lit le même `.env.local` que l'application et nomme chaque variable absente,
+ligne par ligne. Lancé maintenant, il vous épargne la découverte du problème dans
+le navigateur.
+
+Tout doit être vert : les variables, les deux connexions, les migrations, et
+surtout **« Bucket "chapters" — existe et est privé »**. `doctor` n'affiche jamais
+une valeur, seulement si elle est là et ce que l'autre bout a répondu.
 
 ---
 
@@ -207,6 +230,7 @@ compte.
 
 | Symptôme | Cause | Correction |
 |---|---|---|
+| `Configuration incomplète : NEXT_PUBLIC_… undefined` | `.env.local` absent du dossier du projet, ou pull de l'environnement Development | `pnpm doctor` nomme les manquantes ; voir §3 |
 | « en attente d'un worker », indéfiniment | `pnpm worker` n'est pas lancé | Lancez-le, terminal 2 |
 | L'import réussit, Vercel n'affiche pas les images | `STORAGE_DRIVER=local` | Mettez `supabase` et réimportez |
 | `SUPABASE_SERVICE_ROLE_KEY est requis` | La clé manque dans `.env.local` | Copiez-la depuis Vercel |
