@@ -15,6 +15,7 @@ import { modelProvider } from '@/domains/ai/index.ts'
 import type { PanelDescription } from '@/domains/ai/schemas.ts'
 import { PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { quarantineItems } from '../quarantine.ts'
+import { reanchorOrphans } from '../reanchor.ts'
 import { allowedRefs, buildRefTable } from '../refs.ts'
 import type { StepContext, StepResult } from './context.ts'
 
@@ -227,6 +228,14 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   let queued = 0
   let reapplied = 0
 
+  /*
+   * Fingerprints already decided, with the evidence this fresh run produced for
+   * them. Used to heal facts orphaned by a chapter deletion: the decision
+   * correctly suppresses the proposal, but the existing assertion still needs
+   * its citation back or replacing a bad scan leaves it uncheckable forever.
+   */
+  const decidedRefs = new Map<string, typeof filtered.accepted.assertions[number]['evidence']>()
+
   await withIngest(async (db) => {
     const rows: Array<typeof reviewItems.$inferInsert> = []
 
@@ -268,6 +277,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
 
       if (decided.has(fingerprint)) {
         reapplied++
+        decidedRefs.set(fingerprint, assertion.evidence)
         continue
       }
 
@@ -344,7 +354,17 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     }
   })
 
+  const healed = await reanchorOrphans({
+    userId,
+    chapterId,
+    refTable: table,
+    proposals: decidedRefs,
+  })
+
   const parts = [`${queued} propositions à revoir`]
+  if (healed.healed > 0) {
+    parts.push(`${healed.healed} fait(s) réancré(s) après suppression`)
+  }
   if (reapplied > 0) {
     parts.push(`${reapplied} déjà décidées lors d'un import précédent, non redemandées`)
   }

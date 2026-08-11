@@ -40,6 +40,7 @@ export default function HomePage() {
             ['/ask', 'Poser une question'],
             ['/chronologie', 'Chronologie'],
             ['/chapitres', 'Chapitres'],
+            ['/reglages', 'Réglages'],
           ] as const
         ).map(([href, label]) => (
           <Link
