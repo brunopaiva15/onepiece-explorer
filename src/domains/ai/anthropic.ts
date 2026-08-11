@@ -145,14 +145,17 @@ export class AnthropicProvider implements ModelProvider {
     request: DescribeRequest,
   ): Promise<ProviderResult<PanelDescription[]>> {
     const system = cacheable(descriptionSystem())
-    await this.warm(modelFor('extract'), system)
+    // The warm-up has to name the model the call will actually use: a prompt
+    // cache is per-model, so warming Sonnet before calling Haiku would pay for
+    // an entry nobody reads and leave the real first call to write its own.
+    await this.warm(modelFor('describe'), system)
 
     const transcribed = Object.entries(request.text)
       .map(([ref, text]) => `${ref} : ${text}`)
       .join('\n')
 
     const result = await this.structured({
-      tier: 'extract',
+      tier: 'describe',
       system,
       schema: panelDescriptionsSchema,
       maxTokens: 12_000,
@@ -353,7 +356,23 @@ export class AnthropicProvider implements ModelProvider {
       // No `temperature` or `top_p` either — Sonnet 5 and Opus 5 reject them.
     }
 
-    const message = await this.client.messages.parse(params)
+    /*
+     * Streamed, and not as a preference.
+     *
+     * The SDK refuses outright to send a non-streaming request whose expected
+     * duration — estimated from max_tokens — exceeds ten minutes: "Streaming is
+     * required for operations that may take longer than 10 minutes". Raising the
+     * extraction ceiling to 32 000 crossed that line, and the step failed in
+     * five seconds without a single token being generated.
+     *
+     * Streaming is the right posture here anyway. Every call this class makes is
+     * a large structured answer over a chapter's worth of material, which is
+     * exactly the shape that runs into request timeouts. `finalMessage()` gives
+     * the same object `parse()` would have returned, `parsed_output` included —
+     * the incremental events are of no use to a batch pipeline, only the
+     * connection staying alive is.
+     */
+    const message = await this.client.messages.stream(params).finalMessage()
     const usage = readUsage(model, message.usage)
 
     // Refusals arrive as a normal response with a distinct stop_reason. Reading

@@ -24,7 +24,7 @@ import type {
 } from './schemas.ts'
 
 /** Where a request sits on the cost/quality ladder. */
-export type ModelTier = 'classify' | 'extract' | 'escalate'
+export type ModelTier = 'classify' | 'describe' | 'extract' | 'escalate'
 
 export interface Usage {
   inputTokens: number
@@ -176,7 +176,28 @@ export function modelFor(tier: ModelTier): string {
   switch (tier) {
     case 'classify':
       return process.env.MODEL_CLASSIFY ?? 'claude-haiku-4-5'
+    case 'describe':
+      /*
+       * The bulk of the spend, and the least demanding work in the pipeline.
+       *
+       * Describing a panel is "say what is drawn, in the present tense, without
+       * interpreting" — the prompt forbids naming anyone, forbids inference, and
+       * the answer is checked against a schema. There are a hundred of these per
+       * chapter, each carrying an image, which makes this step most of the bill
+       * on its own. Haiku 4.5 is a third of Sonnet 5's price on input and half on
+       * output, and this is the step where that trade is cheapest to make: a
+       * flatter description costs a little recall at extraction, where the
+       * stronger model still reads it.
+       */
+      return process.env.MODEL_DESCRIBE ?? 'claude-haiku-4-5'
     case 'extract':
+      /*
+       * The reasoning, and where the money is worth spending. Entities,
+       * relations and events against an ontology, each anchored to a real panel
+       * or text block. A weaker model here does not hallucinate into the graph —
+       * anchoring stops that — it simply finds less, and what it misses nobody
+       * ever learns was there.
+       */
       return process.env.MODEL_EXTRACT ?? 'claude-sonnet-5'
     case 'escalate':
       return process.env.MODEL_ESCALATE ?? 'claude-opus-5'

@@ -27,6 +27,7 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   MODEL_PROVIDER: z.enum(['anthropic', 'replay', 'synthetic']).default('anthropic'),
   MODEL_CLASSIFY: z.string().default('claude-haiku-4-5'),
+  MODEL_DESCRIBE: z.string().default('claude-haiku-4-5'),
   MODEL_EXTRACT: z.string().default('claude-sonnet-5'),
   MODEL_ESCALATE: z.string().default('claude-opus-5'),
   USE_BATCH_API: z
