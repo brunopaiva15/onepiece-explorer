@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getCurrentUser } from '@/domains/auth/server.ts'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 import { StatusBadge } from '@/app/ui/status-badge.tsx'
 
 export const dynamic = 'force-dynamic'
@@ -71,6 +72,8 @@ function Tache({
 }
 
 export default async function HomePage() {
+  const dict = await getDict()
+  const t = dict.home
   const user = await getCurrentUser()
   const isOwner = user !== null
 
@@ -91,12 +94,12 @@ export default async function HomePage() {
       taches.push(
         <Tache
           key="relire"
-          titre="à relire"
+          titre={t.taskReview.title}
           compte={p.aRelire.length}
           ton="or"
           href={`/chapitres/${p.aRelire[0]!.id}`}
-          action={`Ouvrir le ${p.aRelire[0]!.number}`}
-          detail="Le traitement a produit des propositions. Rien n'entre dans le graphe avant votre décision."
+          action={t.taskReview.action(p.aRelire[0]!.number)}
+          detail={t.taskReview.detail}
         />,
       )
     }
@@ -104,12 +107,12 @@ export default async function HomePage() {
       taches.push(
         <Tache
           key="echec"
-          titre="en échec"
+          titre={t.taskFailed.title}
           compte={p.enEchec.length}
           ton="rouge"
           href={`/chapitres/${p.enEchec[0]!.id}`}
-          action="Voir la raison"
-          detail="Le traitement s'est arrêté. Les étapes réussies sont conservées : relancer reprend où ça s'est arrêté."
+          action={t.taskFailed.action}
+          detail={t.taskFailed.detail}
         />,
       )
     }
@@ -117,12 +120,12 @@ export default async function HomePage() {
       taches.push(
         <Tache
           key="cours"
-          titre="en cours"
+          titre={t.taskRunning.title}
           compte={p.enCours.length}
           ton="mer"
           href={`/chapitres/${p.enCours[0]!.id}`}
-          action="Suivre"
-          detail="Le traitement est en cours. La progression montre chaque étape, sa durée et son coût réel."
+          action={t.taskRunning.action}
+          detail={t.taskRunning.detail}
         />,
       )
     }
@@ -130,12 +133,12 @@ export default async function HomePage() {
       taches.push(
         <Tache
           key="traiter"
-          titre="à traiter"
+          titre={t.taskProcess.title}
           compte={p.aTraiter.length}
           ton="mer"
           href={`/chapitres/${p.aTraiter[0]!.id}`}
-          action="Lancer"
-          detail="Importés, pas encore analysés. Le coût est estimé avant lancement, pas après."
+          action={t.taskProcess.action}
+          detail={t.taskProcess.detail}
         />,
       )
     }
@@ -145,10 +148,10 @@ export default async function HomePage() {
     <main id="contenu" className="mx-auto max-w-6xl px-5 py-6">
       {isOwner && (
         <section>
-          <h1 className="sr-only">Poste de commandement</h1>
+          <h1 className="sr-only">{t.commandDeck}</h1>
           {taches.length > 0 ? (
             <>
-              <h2 className="font-display text-xl uppercase text-primary">Ça vous attend</h2>
+              <h2 className="font-display text-xl uppercase text-primary">{t.awaitingYou}</h2>
               <ul className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{taches}</ul>
             </>
           ) : (
@@ -156,14 +159,12 @@ export default async function HomePage() {
               className="border-[4px] border-ink bg-[var(--epi-validated)] px-4 py-3 text-white"
               style={{ boxShadow: 'var(--shadow-hard)' }}
             >
-              <p className="font-display text-2xl uppercase leading-none">Rien en attente</p>
+              <p className="font-display text-2xl uppercase leading-none">{t.nothingPending}</p>
               <p className="mt-1.5 text-sm text-white/90">
-                {chapters.length === 0
-                  ? 'La bibliothèque est vide. Importez le premier chapitre que vous avez lu.'
-                  : 'Tout est traité, relu et publié. Le chapitre suivant vous attend.'}
+                {chapters.length === 0 ? t.emptyLibrary : t.allDone}
               </p>
               <Link href="/import" className="bouton mt-3 !py-1 !text-sm">
-                Importer un chapitre
+                {t.importChapter}
               </Link>
             </div>
           )}
@@ -172,13 +173,13 @@ export default async function HomePage() {
 
       {/* The library, in four numbers. */}
       <section className={isOwner ? 'mt-8' : ''}>
-        <h2 className="font-display text-xl uppercase text-primary">La bibliothèque</h2>
+        <h2 className="font-display text-xl uppercase text-primary">{t.libraryHeading}</h2>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
-            ['Chapitres', chapters.length],
-            ['Publiés', p.publies.length],
-            ['Passages', chapters.reduce((s, c) => s + c.passageCount + c.pageCount, 0)],
-            ['Dernier', chapters.length > 0 ? Math.max(...chapters.map((c) => c.number)) : 0],
+            [t.statChapters, chapters.length],
+            [t.statPublished, p.publies.length],
+            [t.statPassages, chapters.reduce((s, c) => s + c.passageCount + c.pageCount, 0)],
+            [t.statLatest, chapters.length > 0 ? Math.max(...chapters.map((c) => c.number)) : 0],
           ].map(([label, value]) => (
             <div
               key={String(label)}
@@ -195,12 +196,12 @@ export default async function HomePage() {
       {derniers.length > 0 && (
         <section className="mt-8">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="font-display text-xl uppercase text-primary">Derniers chapitres</h2>
+            <h2 className="font-display text-xl uppercase text-primary">{t.latestChapters}</h2>
             <Link
               href="/chapitres"
               className="font-display text-sm uppercase text-accent-strong hover:underline"
             >
-              Tous →
+              {t.allChapters}
             </Link>
           </div>
           <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -214,14 +215,14 @@ export default async function HomePage() {
                 </Link>
                 <div className="min-w-0 flex-1 px-3 py-2">
                   <p className="truncate font-display text-base uppercase text-primary">
-                    {chapter.title ?? `Chapitre ${chapter.number}`}
+                    {chapter.title ?? dict.common.chapterN(chapter.number)}
                   </p>
                   <div className="mt-1 flex items-center gap-2">
                     <StatusBadge status={chapter.status} />
                     <span className="tabular text-xs text-muted">
                       {chapter.sourceKind === 'summary'
-                        ? `${chapter.passageCount} passages`
-                        : `${chapter.pageCount} p.`}
+                        ? t.passagesCount(chapter.passageCount)
+                        : t.pagesShort(chapter.pageCount)}
                     </span>
                   </div>
                 </div>
@@ -234,9 +235,9 @@ export default async function HomePage() {
       {!isOwner && (
         <section className="mt-8 grid gap-4 md:grid-cols-3">
           {[
-            ['Le graphe', '/graph', 'Tout le réseau : personnages, équipages, îles, fruits, promesses.'],
-            ['La chronologie', '/chronologie', "Dates exactes, ordres relatifs, flashbacks, et l'incertitude assumée."],
-            ['Les mystères', '/mysteres', 'Ce qui est ouvert, ce qui a été résolu, et au bout de combien de chapitres.'],
+            [t.visitorGraph.title, '/graph', t.visitorGraph.detail],
+            [t.visitorTimeline.title, '/chronologie', t.visitorTimeline.detail],
+            [t.visitorMysteries.title, '/mysteres', t.visitorMysteries.detail],
           ].map(([label, href, detail]) => (
             <Link key={href} href={href!} className="panneau no-underline">
               <p className="panneau-titre panneau-titre-vedette">{label}</p>

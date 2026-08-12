@@ -3,8 +3,12 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getNarrativeDelta } from '@/domains/temporal/timeline.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 
-export const metadata: Metadata = { title: 'Delta narratif' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.timeline.deltaMetaTitle }
+}
 export const dynamic = 'force-dynamic'
 
 /**
@@ -26,7 +30,9 @@ export default async function DeltaPage({
   if (!Number.isInteger(chapterNumber) || chapterNumber < 0) notFound()
 
   const session = await getViewerSession()
-  const delta = await getNarrativeDelta(session.userId, chapterNumber)
+  const dict = await getDict()
+  const t = dict.timeline
+  const delta = await getNarrativeDelta(session.userId, chapterNumber, session.locale)
   if (!delta) notFound()
 
   const nothing =
@@ -39,12 +45,12 @@ export default async function DeltaPage({
     <main id="contenu" className="mx-auto max-w-3xl px-6 py-12">
       <nav className="flex flex-wrap items-center gap-2 text-sm">
         <Link href="/chapitres" className="text-muted hover:text-primary">
-          Chapitres
+          {t.deltaChaptersCrumb}
         </Link>
       </nav>
 
       <h1 className="mt-4 text-4xl font-semibold text-primary">
-        Ce qu&apos;apporte le chapitre {delta.chapterNumber}
+        {t.deltaTitle(delta.chapterNumber)}
       </h1>
       {delta.chapterTitle && (
         <p className="mt-1 text-xl text-secondary">{delta.chapterTitle}</p>
@@ -52,19 +58,17 @@ export default async function DeltaPage({
 
       {nothing && (
         <p className="mt-8 rounded-sm border border-line bg-surface-raised p-6 text-secondary">
-          Rien n&apos;a encore été publié pour ce chapitre. Lancez le traitement,
-          puis revoyez les propositions.
+          {t.deltaEmpty}
         </p>
       )}
 
       {delta.refuted.length > 0 && (
         <section className="mt-10">
           <h2 className="text-lg font-semibold text-primary">
-            Ce que ce chapitre dément
+            {t.deltaRefutedHeading}
           </h2>
           <p className="mt-1 text-sm text-secondary">
-            Ces croyances restent visibles dans les chapitres où vous les teniez
-            pour vraies. Elles ne sont pas effacées — seulement fermées ici.
+            {t.deltaRefutedExplainer}
           </p>
           <ul className="mt-3 space-y-2">
             {delta.refuted.map((fact) => (
@@ -75,7 +79,7 @@ export default async function DeltaPage({
                 <span className="text-primary">{fact.subjectLabel}</span>{' '}
                 <span className="font-mono text-accent">{fact.predicate}</span>
                 <span className="ml-2 text-muted">
-                  — cru depuis le chapitre {fact.heldSince}
+                  {t.deltaHeldSince(fact.heldSince)}
                 </span>
               </li>
             ))}
@@ -85,7 +89,7 @@ export default async function DeltaPage({
 
       {delta.newNames.length > 0 && (
         <section className="mt-10">
-          <h2 className="text-lg font-semibold text-primary">Noms révélés</h2>
+          <h2 className="text-lg font-semibold text-primary">{t.deltaNamesHeading}</h2>
           <ul className="mt-3 space-y-2">
             {delta.newNames.map((name) => (
               <li key={`${name.entityId}-${name.label}`} className="text-sm">
@@ -98,7 +102,7 @@ export default async function DeltaPage({
                 {name.previous && name.previous !== name.label && (
                   <span className="text-secondary">
                     {' '}
-                    — jusqu&apos;ici « {name.previous} »
+                    {t.deltaPreviousName(name.previous)}
                   </span>
                 )}
               </li>
@@ -110,7 +114,7 @@ export default async function DeltaPage({
       {delta.newEntities.length > 0 && (
         <section className="mt-10">
           <h2 className="text-lg font-semibold text-primary">
-            Nouvelles entités ({delta.newEntities.length})
+            {t.deltaNewEntitiesHeading(delta.newEntities.length)}
           </h2>
           <ul className="mt-3 flex flex-wrap gap-2">
             {delta.newEntities.map((entity) => (
@@ -131,7 +135,7 @@ export default async function DeltaPage({
       {delta.newFacts.length > 0 && (
         <section className="mt-10">
           <h2 className="text-lg font-semibold text-primary">
-            Nouveaux faits ({delta.newFacts.length})
+            {t.deltaNewFactsHeading(delta.newFacts.length)}
           </h2>
           <ul className="mt-3 space-y-1.5 text-sm">
             {delta.newFacts.map((fact) => (
@@ -141,7 +145,7 @@ export default async function DeltaPage({
                 {fact.objectLabel ?? ''}
                 {fact.epistemicStatus !== 'explicit' && (
                   <span className="ml-2 text-xs text-muted">
-                    ({fact.epistemicStatus === 'hypothetical' ? 'hypothèse' : 'déduit'})
+                    ({dict.common.epistemic[fact.epistemicStatus]})
                   </span>
                 )}
               </li>
@@ -155,13 +159,13 @@ export default async function DeltaPage({
           href={`/graph?ch=${delta.chapterNumber}`}
           className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong"
         >
-          Voir le graphe à ce chapitre
+          {t.deltaViewGraph}
         </Link>
         <Link
           href={`/delta/${delta.chapterNumber - 1}`}
           className="rounded-sm border border-line-strong px-4 py-2 text-sm text-primary hover:bg-surface-raised"
         >
-          Chapitre précédent
+          {t.deltaPreviousChapter}
         </Link>
       </div>
     </main>

@@ -7,10 +7,11 @@ import type { Locale } from '../index.ts'
  * argument for the consolidation.
  */
 const fr = {
-  // Chapter status (status-badge, chapters list).
+  // Chapter status (status-badge, chapters list). Keys are the database
+  // values of chapter_status.
   status: {
     draft: 'brouillon',
-    imported: 'importé',
+    uploaded: 'importé',
     processing: 'en cours',
     review: 'à relire',
     published: 'publié',
@@ -48,7 +49,7 @@ const fr = {
 const en: typeof fr = {
   status: {
     draft: 'draft',
-    imported: 'imported',
+    uploaded: 'imported',
     processing: 'processing',
     review: 'to review',
     published: 'published',

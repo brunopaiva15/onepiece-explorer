@@ -1,6 +1,7 @@
 import { getCurrentUser } from '@/domains/auth/server.ts'
 import { exportEverything } from '@/domains/observability/export.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
+import { getDict, getLocale } from '@/lib/i18n/server.ts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,15 +19,21 @@ export const dynamic = 'force-dynamic'
  * single worst place for it to sit.
  */
 export async function GET() {
+  const dict = await getDict()
   const user = await getCurrentUser()
   if (!user) {
-    return new Response('Authentification requise', { status: 401 })
+    return new Response(dict.common.authRequired, { status: 401 })
   }
 
   const allowance = await consume(user.id, 'export')
   if (!allowance.allowed) {
+    // `allowance.explain` is authored in French only (rate-limit.ts), so it is
+    // appended as-is for French and omitted for English.
+    const limited = dict.errors.exportRateLimited(allowance.retryInMinutes ?? 1)
+    const message =
+      (await getLocale()) === 'fr' ? `${limited} ${allowance.explain}` : limited
     return new Response(
-      `Limite atteinte. Réessayez dans ${allowance.retryInMinutes} minute(s).`,
+      message,
       { status: 429, headers: { 'Retry-After': String((allowance.retryInMinutes ?? 1) * 60) } },
     )
   }

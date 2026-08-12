@@ -4,9 +4,14 @@ import { getViewerSession } from '@/domains/auth/session.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
 import { NODE_TYPES } from '@/domains/knowledge/ontology.ts'
+import { localizedLabel } from '@/lib/i18n/index.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 import { GraphExplorer } from './graph-explorer.tsx'
 
-export const metadata: Metadata = { title: 'Graphe' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.entity.graphTitle }
+}
 export const dynamic = 'force-dynamic'
 
 /**
@@ -28,10 +33,13 @@ export default async function GraphPage({
   // string is untrusted input, and one that widened what the reader can see
   // would be the whole product failing at once.
   const session = await getViewerSession(ch)
+  const dict = await getDict()
+  const t = dict.entity
 
   const nodeTypes = type ? type.split(',').filter(Boolean) : undefined
   const projection = await projectGraph(session.userId, session.boundaryChapter, {
     ...(nodeTypes ? { nodeTypes } : {}),
+    locale: session.locale,
   })
 
   /*
@@ -73,23 +81,23 @@ export default async function GraphPage({
        * where it is read once and then replaced by what you clicked.
        */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <h1 className="font-display text-2xl uppercase leading-none text-primary">Graphe</h1>
+        <h1 className="font-display text-2xl uppercase leading-none text-primary">{t.graphTitle}</h1>
 
         <span className="flex items-baseline gap-1.5">
           <span className="chiffre text-2xl">{projection.nodes.length}</span>
-          <span className="cartouche">nœuds</span>
+          <span className="cartouche">{t.nodesUnit}</span>
         </span>
         <span className="flex items-baseline gap-1.5">
           <span className="chiffre text-2xl">{projection.edges.length}</span>
-          <span className="cartouche">relations</span>
+          <span className="cartouche">{t.relationsUnit}</span>
         </span>
         {projection.mergedAway > 0 && (
           <span
             className="flex items-baseline gap-1.5"
-            title="Entités fusionnées par une identité révélée à ce chapitre ou avant"
+            title={t.mergedCountTitle}
           >
             <span className="chiffre text-2xl">{projection.mergedAway}</span>
-            <span className="cartouche">regroupées</span>
+            <span className="cartouche">{t.mergedUnit}</span>
           </span>
         )}
 
@@ -97,7 +105,7 @@ export default async function GraphPage({
           href={`/graph/table?ch=${session.boundaryChapter}`}
           className="bouton ml-auto !py-1 !text-sm"
         >
-          Vue tableau
+          {t.tableView}
         </Link>
       </div>
 
@@ -106,10 +114,7 @@ export default async function GraphPage({
           role="status"
           className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-1.5 text-sm text-ink"
         >
-          Graphe tronqué : {projection.truncated.shown} nœuds sur{' '}
-          {projection.truncated.total}. Les plus connectés sont conservés —
-          c&apos;est l&apos;ossature de l&apos;histoire. Filtrez par type pour
-          voir le reste.
+          {t.graphTruncated(projection.truncated.shown, projection.truncated.total)}
         </p>
       )}
 
@@ -117,9 +122,13 @@ export default async function GraphPage({
         <GraphExplorer
           projection={projection}
           portraits={portraits}
-          nodeTypes={NODE_TYPES.map((t) => ({ key: t.key, labelFr: t.labelFr }))}
+          nodeTypes={NODE_TYPES.map((type) => ({
+            key: type.key,
+            label: localizedLabel(type, session.locale),
+          }))}
           boundaryChapter={session.boundaryChapter}
           active={nodeTypes ?? []}
+          locale={session.locale}
         />
       </div>
     </main>

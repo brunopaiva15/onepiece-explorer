@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/domains/auth/server.ts'
 import { getRun } from '@/domains/pipeline/runs.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,10 +47,11 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params
+  const dict = await getDict()
 
   const user = await getCurrentUser()
   if (!user) {
-    return new Response('Authentification requise', { status: 401 })
+    return new Response(dict.common.authRequired, { status: 401 })
   }
 
   // Ownership is checked here and again on every read inside getRun(), which
@@ -57,7 +59,7 @@ export async function GET(
   // the protection — the ownership filter is.
   const initial = await getRun(user.id, id)
   if (!initial) {
-    return new Response('Introuvable', { status: 404 })
+    return new Response(dict.errors.notFound, { status: 404 })
   }
 
   const encoder = new TextEncoder()
@@ -90,7 +92,7 @@ export async function GET(
         if (Date.now() - started > MAX_DURATION_MS) {
           // Tell the client why, so it can reconnect deliberately rather than
           // showing a stalled bar.
-          send('timeout', { reason: 'Flux interrompu après dix minutes.' })
+          send('timeout', { reason: dict.errors.streamTimeout })
           break
         }
 
@@ -99,7 +101,7 @@ export async function GET(
           current = await getRun(user.id, id)
         } catch (error) {
           send('error', {
-            message: error instanceof Error ? error.message : 'Lecture impossible.',
+            message: error instanceof Error ? error.message : dict.errors.streamReadFailed,
           })
           break
         }

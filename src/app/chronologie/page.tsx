@@ -2,8 +2,13 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getTimeline, type TimelineEntry } from '@/domains/temporal/timeline.ts'
+import { getDict } from '@/lib/i18n/server.ts'
+import type { Dict } from '@/lib/i18n/dictionaries.ts'
 
-export const metadata: Metadata = { title: 'Chronologie' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.timeline.metaTitle }
+}
 export const dynamic = 'force-dynamic'
 
 export default async function TimelinePage({
@@ -13,7 +18,13 @@ export default async function TimelinePage({
 }) {
   const { ch, axe } = await searchParams
   const session = await getViewerSession(ch)
-  const timeline = await getTimeline(session.userId, session.boundaryChapter)
+  const dict = await getDict()
+  const t = dict.timeline
+  const timeline = await getTimeline(
+    session.userId,
+    session.boundaryChapter,
+    session.locale,
+  )
 
   const axis = axe === 'histoire' ? 'histoire' : 'revelation'
   const entries = axis === 'histoire' ? timeline.byStoryTime : timeline.byRevelation
@@ -22,20 +33,18 @@ export default async function TimelinePage({
     <>
 
       <main id="contenu" className="mx-auto max-w-4xl px-6 py-8">
-        <h1 className="text-3xl font-semibold text-primary">Chronologie</h1>
+        <h1 className="text-3xl font-semibold text-primary">{t.pageTitle}</h1>
 
         <p className="mt-2 max-w-2xl text-sm text-secondary">
-          Deux axes, jamais confondus. L&apos;ordre de <strong>révélation</strong>{' '}
-          est celui où vous avez appris les choses ; l&apos;ordre de{' '}
-          <strong>l&apos;histoire</strong> est celui où elles se sont produites. Un
-          flashback est loin sur l&apos;un et récent sur l&apos;autre.
+          {t.explainerLead} <strong>{t.explainerRevelation}</strong>{' '}
+          {t.explainerMid} <strong>{t.explainerStory}</strong> {t.explainerTail}
         </p>
 
-        <nav className="mt-5 flex gap-2" aria-label="Axe de la chronologie">
+        <nav className="mt-5 flex gap-2" aria-label={t.axisNavLabel}>
           {(
             [
-              ['revelation', 'Ordre de révélation'],
-              ['histoire', "Ordre de l'histoire"],
+              ['revelation', t.axisRevelation],
+              ['histoire', t.axisStory],
             ] as const
           ).map(([key, label]) => (
             <Link
@@ -56,14 +65,14 @@ export default async function TimelinePage({
         {entries.length === 0 ? (
           <p className="mt-8 rounded-sm border border-line bg-surface-raised p-6 text-secondary">
             {axis === 'histoire'
-              ? "Aucun événement n'a de position connue dans le temps de l'histoire à ce chapitre."
-              : `Rien de connu au chapitre ${session.boundaryChapter}.`}
+              ? t.emptyStoryAxis
+              : t.emptyRevelationAxis(session.boundaryChapter)}
           </p>
         ) : (
           <ol className="mt-8 space-y-3">
             {entries.map((entry) => (
               <li key={entry.entityId}>
-                <Entry entry={entry} boundary={session.boundaryChapter} axis={axis} />
+                <Entry entry={entry} boundary={session.boundaryChapter} axis={axis} t={t} />
               </li>
             ))}
           </ol>
@@ -72,12 +81,10 @@ export default async function TimelinePage({
         {axis === 'histoire' && timeline.undated.length > 0 && (
           <section className="mt-12 border-t border-line pt-6">
             <h2 className="text-lg font-semibold text-primary">
-              Sans position connue ({timeline.undated.length})
+              {t.undatedHeading(timeline.undated.length)}
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-secondary">
-              Ces événements sont connus mais les pages ne disent pas quand ils
-              se produisent. Les placer sur l&apos;axe demanderait d&apos;inventer
-              une précision que l&apos;œuvre ne donne pas.
+              {t.undatedExplainer}
             </p>
             <ul className="mt-3 space-y-2">
               {timeline.undated.map((entry) => (
@@ -89,7 +96,7 @@ export default async function TimelinePage({
                     {entry.label}
                   </Link>
                   <span className="ml-2 font-mono text-xs text-muted">
-                    connu au ch. {entry.knownFromChapter}
+                    {t.knownFromChapter(entry.knownFromChapter)}
                   </span>
                 </li>
               ))}
@@ -105,10 +112,12 @@ function Entry({
   entry,
   boundary,
   axis,
+  t,
 }: {
   entry: TimelineEntry
   boundary: number
   axis: 'revelation' | 'histoire'
+  t: Dict['timeline']
 }) {
   return (
     <article className="rounded-sm border border-line bg-surface-raised p-4">
@@ -122,23 +131,23 @@ function Entry({
 
         {entry.kind === 'mystery' && (
           <span className="rounded-sm border border-[var(--epi-hypothetical)] px-1.5 text-[0.7rem] text-[var(--epi-hypothetical)]">
-            mystère{entry.resolvedInChapter !== null && ' — résolu'}
+            {t.mysteryBadge(entry.resolvedInChapter !== null)}
           </span>
         )}
 
         {entry.isFlashback && (
           <span
             className="rounded-sm border border-line px-1.5 text-[0.7rem] text-muted"
-            title="Montré ici, survenu plus tôt dans l'histoire"
+            title={t.flashbackTitle}
           >
-            flashback
+            {t.flashbackBadge}
           </span>
         )}
 
         <span className="ml-auto font-mono text-xs text-muted">
           {axis === 'histoire' && entry.storyTime
             ? entry.storyTime.description
-            : `ch. ${entry.knownFromChapter}`}
+            : t.chapterShort(entry.knownFromChapter)}
         </span>
       </div>
 
@@ -149,13 +158,13 @@ function Entry({
       {axis === 'histoire' && entry.storyTime?.kind === 'approximate' && (
         /* The imprecision is the finding, not a gap to hide. */
         <p className="mt-1 text-xs text-muted">
-          Position approximative : c&apos;est tout ce que les pages donnent.
+          {t.approximateNote}
         </p>
       )}
 
       {entry.resolvedInChapter !== null && (
         <p className="mt-1 text-sm text-[var(--epi-validated)]">
-          Résolu au chapitre {entry.resolvedInChapter}.
+          {t.resolvedAtChapter(entry.resolvedInChapter)}
         </p>
       )}
     </article>

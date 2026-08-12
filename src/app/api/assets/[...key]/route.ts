@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getCurrentUser } from '@/domains/auth/server.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 import {
   assertSafeKey,
   keyOwner,
@@ -45,34 +46,35 @@ export async function GET(
 ) {
   const { key: segments } = await context.params
   const key = segments.map(decodeURIComponent).join('/')
+  const dict = await getDict()
 
   try {
     assertSafeKey(key)
   } catch {
-    return new NextResponse('Clé invalide', { status: 400 })
+    return new NextResponse(dict.errors.invalidKey, { status: 400 })
   }
 
   const user = await getCurrentUser()
   if (!user) {
-    return new NextResponse('Authentification requise', { status: 401 })
+    return new NextResponse(dict.common.authRequired, { status: 401 })
   }
 
   if (keyOwner(key) !== user.id) {
     // Deliberately 404, not 403: a 403 would confirm the asset exists.
-    return new NextResponse('Introuvable', { status: 404 })
+    return new NextResponse(dict.errors.notFound, { status: 404 })
   }
 
   const expires = Number(request.nextUrl.searchParams.get('exp') ?? '')
   const signature = request.nextUrl.searchParams.get('sig') ?? ''
   if (!verifySignature(localSigningSecret(), key, expires, signature)) {
-    return new NextResponse('Lien expiré ou invalide', { status: 403 })
+    return new NextResponse(dict.errors.linkExpired, { status: 403 })
   }
 
   let body: Uint8Array
   try {
     body = await storage().get(key)
   } catch {
-    return new NextResponse('Introuvable', { status: 404 })
+    return new NextResponse(dict.errors.notFound, { status: 404 })
   }
 
   const extension = key.split('.').pop()?.toLowerCase() ?? ''

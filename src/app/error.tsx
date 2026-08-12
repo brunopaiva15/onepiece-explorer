@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link'
+import type { Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 /**
  * What a server error says instead of nothing.
@@ -15,6 +17,10 @@ import Link from 'next/link'
  * configuration, because every page resolves a session and every session reads
  * the configuration — and points at the one page built to answer the question
  * without depending on any of it.
+ *
+ * An error boundary has no server parent to hand it a locale prop, so the
+ * locale is read from the `lang` attribute the root layout already sets on
+ * `<html>` — the one locale-carrying thing guaranteed to be in the document.
  */
 export default function ErrorBoundary({
   error,
@@ -23,39 +29,31 @@ export default function ErrorBoundary({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const locale: Locale =
+    typeof document !== 'undefined' && document.documentElement.lang === 'en'
+      ? 'en'
+      : 'fr'
+  const dict = getDictFor(locale)
+  const t = dict.errors
+
   return (
     <main id="contenu" className="mx-auto max-w-2xl px-6 py-24">
-      <h1 className="text-3xl font-semibold text-primary">
-        Cette page n&apos;a pas pu être rendue
-      </h1>
+      <h1 className="text-3xl font-semibold text-primary">{t.pageTitle}</h1>
+
+      <p className="mt-4 text-secondary">{t.noMessage}</p>
 
       <p className="mt-4 text-secondary">
-        Le message exact n&apos;arrive pas jusqu&apos;ici : en production il est
-        remplacé par une référence avant d&apos;atteindre le navigateur, et
-        c&apos;est voulu — une erreur peut contenir une chaîne de connexion.
-        Cette page ne sait donc pas ce qui a échoué, et ne va pas le deviner.
-      </p>
-
-      <p className="mt-4 text-secondary">
-        <strong className="font-medium text-primary">
-          Si toutes les pages échouent
-        </strong>{' '}
-        : c&apos;est la configuration ou le schéma de la base.{' '}
+        <strong className="font-medium text-primary">{t.allPagesFailLead}</strong>{' '}
+        {t.allPagesFailBody}{' '}
         <Link href="/etat" className="text-accent underline">
-          L&apos;état du déploiement
+          {t.statusPageLinkLabel}
         </Link>{' '}
-        ne dépend de rien de ce qu&apos;il contrôle, donc il répond même
-        maintenant et nomme ce qui manque.
+        {t.allPagesFailTail}
       </p>
 
       <p className="mt-4 text-secondary">
-        <strong className="font-medium text-primary">
-          Si seule cette action échoue
-        </strong>{' '}
-        : la cause est dans cette action, pas dans la configuration. Sur un
-        envoi de fichier, le suspect habituel est la taille — le corps
-        d&apos;une requête est plafonné par l&apos;hébergeur, et Next.js ne
-        transmet pas de message quand la limite est franchie.
+        <strong className="font-medium text-primary">{t.onlyActionFailLead}</strong>{' '}
+        {t.onlyActionFailBody}
       </p>
 
       <div className="mt-8 flex flex-wrap gap-3">
@@ -64,13 +62,13 @@ export default function ErrorBoundary({
           onClick={reset}
           className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
         >
-          Réessayer
+          {dict.common.retry}
         </button>
         <Link
           href="/etat"
           className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong"
         >
-          État du déploiement
+          {t.statusPageButton}
         </Link>
       </div>
 
@@ -79,9 +77,8 @@ export default function ErrorBoundary({
           {/* The digest is the only thing that survives to the browser, and it
               is what lets the real message be found in the host's runtime
               logs. Useless on its own; the whole key when it is not. */}
-          Référence : <code className="text-secondary">{error.digest}</code> — à
-          chercher dans les journaux d&apos;exécution de l&apos;hébergeur, où le
-          message complet est conservé.
+          {t.digestLead} <code className="text-secondary">{error.digest}</code>{' '}
+          {t.digestTail}
         </p>
       )}
     </main>

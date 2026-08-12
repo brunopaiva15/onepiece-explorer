@@ -1,7 +1,11 @@
 import type { Metadata } from 'next'
+import { getDict, getLocale } from '@/lib/i18n/server.ts'
 import { SignInForm } from './sign-in-form.tsx'
 
-export const metadata: Metadata = { title: 'Connexion' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.signin.metadataTitle }
+}
 
 export default async function SignInPage({
   searchParams,
@@ -9,6 +13,8 @@ export default async function SignInPage({
   searchParams: Promise<{ suite?: string }>
 }) {
   const { suite } = await searchParams
+  const locale = await getLocale()
+  const t = (await getDict()).signin
   const configured =
     Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
     Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
@@ -19,23 +25,23 @@ export default async function SignInPage({
           of an empty page, which is what a sign-in screen looks like when
           nobody decided anything about it. */}
       <section className="panneau">
-        <h1 className="panneau-titre !text-lg">Entrer dans le journal</h1>
+        <h1 className="panneau-titre !text-lg">{t.heading}</h1>
         <div className="panneau-corps">
-          <p className="text-secondary">
-            Cette bibliothèque est privée. Connectez-vous pour y accéder.
-          </p>
+          <p className="text-secondary">{t.intro}</p>
 
           {configured ? (
-            <SignInForm redirectTo={suite ?? '/'} />
+            <SignInForm redirectTo={suite ?? '/'} locale={locale} />
           ) : (
             <div className="mt-5 border border-line-strong bg-surface-sunken p-4 text-sm">
-              <p className="font-medium text-primary">Supabase n&apos;est pas configuré</p>
+              <p className="font-medium text-primary">{t.notConfiguredTitle}</p>
               <p className="mt-2 text-secondary">
-                Copiez <code className="font-mono text-xs">.env.example</code> vers{' '}
-                <code className="font-mono text-xs">.env.local</code> et renseignez{' '}
-                <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code> et{' '}
-                <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>,
-                puis appliquez le schéma avec{' '}
+                {t.setupCopy} <code className="font-mono text-xs">.env.example</code>{' '}
+                {t.setupTo} <code className="font-mono text-xs">.env.local</code>{' '}
+                {t.setupFill}{' '}
+                <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code>{' '}
+                {t.setupAnd}{' '}
+                <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>
+                {t.setupThen}{' '}
                 <code className="font-mono text-xs">pnpm db:push</code>.
               </p>
             </div>
@@ -43,10 +49,7 @@ export default async function SignInPage({
         </div>
       </section>
 
-      <p className="mt-5 text-center text-xs text-muted">
-        Aucun chapitre n&apos;est téléchargé ni récupéré en ligne : vous importez
-        des fichiers que vous possédez déjà.
-      </p>
+      <p className="mt-5 text-center text-xs text-muted">{t.footerNote}</p>
     </main>
   )
 }

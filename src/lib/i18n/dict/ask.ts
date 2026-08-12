@@ -31,6 +31,43 @@ const fr = {
     "C'est le signe d'une source inventée.",
   droppedBeyondBoundary: (chapter: number, boundary: number) =>
     `Assertion du chapitre ${chapter}, au-delà de la frontière ${boundary}.`,
+
+  // /ask page.
+  metaTitle: 'Question',
+  pageTitle: 'Poser une question',
+  intro:
+    'La réponse est construite à partir des seules assertions validées de vos ' +
+    'chapitres lus, et chaque affirmation est reliée à la case qui la prouve. ' +
+    "Si la réponse ne s'y trouve pas, elle vous le dira.",
+  // The assistant-disabled notice, split around its links and <code> blocks.
+  disabledNoticeStrong: "L'assistant conversationnel est désactivé.",
+  disabledNoticeBody:
+    'Il se facture à la question, indéfiniment, et cet outil est un ' +
+    'explorateur de graphe — pas un moteur de réponses payant.',
+  disabledAltLead: 'La',
+  disabledAltSearchLink: 'recherche',
+  disabledAltMid:
+    'cherche dans exactement les mêmes données, gratuitement, et vous ' +
+    'montre les extraits sans les reformuler. Le',
+  disabledAltPathLink: 'chemin entre deux entités',
+  disabledAltTail: 'y répond même à des questions que celui-ci ne sait pas traiter.',
+  disabledEnableLead: "Pour l'activer malgré tout :",
+  disabledEnableIn: 'dans',
+  noKeyStrong: 'Aucune clé Anthropic configurée.',
+  noKeyBody:
+    'Le mode sans modèle retrouve les assertions correspondantes et vous les ' +
+    'montre telles quelles, sans les reformuler — il ne compose pas de ' +
+    "phrases qu'il ne pourrait pas soutenir.",
+  questionPlaceholder: 'Qui a promis quoi à qui ?',
+  questionAriaLabel: 'Votre question',
+  submit: 'Demander',
+  insufficientData: 'Données insuffisantes',
+  sourcesHeading: (n: number) => `Sources (${n})`,
+  citationChapter: (n: number) => `chapitre ${n}`,
+  droppedHeading: (n: number) => `${n} source(s) écartée(s)`,
+  entitiesConsulted: 'Entités consultées :',
+  entitySheetLink: 'fiche',
+  answerCost: (amount: string) => `coût de cette réponse : ${amount} $`,
 }
 
 const en: typeof fr = {
@@ -56,6 +93,42 @@ const en: typeof fr = {
     'That is the signature of an invented source.',
   droppedBeyondBoundary: (chapter: number, boundary: number) =>
     `Assertion from chapter ${chapter}, beyond the boundary of ${boundary}.`,
+
+  metaTitle: 'Question',
+  pageTitle: 'Ask a question',
+  intro:
+    'The answer is built from the validated assertions of your read chapters ' +
+    'alone, and every claim is linked to the panel that proves it. If the ' +
+    'answer is not there, it will say so.',
+  disabledNoticeStrong: 'The conversational assistant is disabled.',
+  disabledNoticeBody:
+    'It is billed per question, indefinitely, and this tool is a graph ' +
+    'explorer — not a paid answer engine.',
+  disabledAltLead: 'The',
+  disabledAltSearchLink: 'search',
+  disabledAltMid:
+    'looks through exactly the same data, for free, and shows you the ' +
+    'excerpts without rephrasing them. The',
+  disabledAltPathLink: 'path between two entities',
+  disabledAltTail: 'even answers questions this one cannot handle.',
+  disabledEnableLead: 'To enable it anyway:',
+  disabledEnableIn: 'in',
+  noKeyStrong: 'No Anthropic key configured.',
+  noKeyBody:
+    'The model-less mode retrieves the matching assertions and shows them ' +
+    'to you as they are, without rephrasing — it does not compose sentences ' +
+    'it could not stand behind.',
+  questionPlaceholder: 'Who promised what to whom?',
+  questionAriaLabel: 'Your question',
+  submit: 'Ask',
+  insufficientData: 'Insufficient data',
+  sourcesHeading: (n: number) => `Sources (${n})`,
+  citationChapter: (n: number) => `chapter ${n}`,
+  droppedHeading: (n: number) =>
+    `${n} source${n === 1 ? '' : 's'} discarded`,
+  entitiesConsulted: 'Entities consulted:',
+  entitySheetLink: 'card',
+  answerCost: (amount: string) => `cost of this answer: $${amount}`,
 }
 
 export const ask = { fr, en } satisfies Record<Locale, typeof fr>

@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { GraphProjection } from '@/domains/temporal/projection.ts'
+import { type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { GraphCanvas } from './graph-canvas.tsx'
 
 /**
@@ -27,10 +29,12 @@ import { GraphCanvas } from './graph-canvas.tsx'
 interface Props {
   projection: GraphProjection
   portraits: Record<string, { thumbUrl: string; attribution: string }>
-  nodeTypes: Array<{ key: string; labelFr: string }>
+  /** Ontology types with their label already localized by the server parent. */
+  nodeTypes: Array<{ key: string; label: string }>
   boundaryChapter: number
   /** Types currently filtered in, from the query string. Empty means all. */
   active: string[]
+  locale: Locale
 }
 
 /**
@@ -50,7 +54,9 @@ export function GraphExplorer({
   nodeTypes,
   boundaryChapter,
   active,
+  locale,
 }: Props) {
+  const t = getDictFor(locale).entity
   const router = useRouter()
   const params = useSearchParams()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -117,14 +123,14 @@ export function GraphExplorer({
                 className={`badge ${on ? '' : 'opacity-40'}`}
                 style={on ? { background: typeColour(type.key), color: '#fff' } : undefined}
               >
-                {type.labelFr}
+                {type.label}
                 <span className="tabular opacity-80">{count}</span>
               </button>
             )
           })}
           {active.length > 0 && (
             <button type="button" onClick={() => router.replace('/graph')} className="badge badge-gris">
-              tout afficher
+              {t.showAll}
             </button>
           )}
         </div>
@@ -133,6 +139,7 @@ export function GraphExplorer({
           projection={projection}
           portraits={portraits}
           onSelect={(id) => setSelectedId(id)}
+          locale={locale}
         />
       </div>
 
@@ -140,17 +147,18 @@ export function GraphExplorer({
       <aside className="panneau self-start lg:sticky lg:top-[9.5rem]">
         {!selected ? (
           <>
-            <h2 className="panneau-titre">Sélection</h2>
+            <h2 className="panneau-titre">{t.selectionTitle}</h2>
             <div className="panneau-corps text-sm text-secondary">
-              <p>Cliquez un nœud : sa fiche s&apos;ouvre ici, sans quitter le graphe.</p>
+              <p>{t.selectionHint}</p>
               <hr className="regle my-3" />
-              <p className="cartouche">Lire le dessin</p>
+              <p className="cartouche">{t.legendTitle}</p>
               <ul className="mt-1 space-y-1">
-                <li>La taille suit le nombre de relations.</li>
+                <li>{t.legendSize}</li>
                 <li>
-                  <span style={{ color: 'var(--epi-inferred)' }}>Violet</span> : déduction.{' '}
-                  <span style={{ color: 'var(--epi-hypothetical)' }}>Ambre</span> : hypothèse.
-                  Gris : fait affirmé.
+                  <span style={{ color: 'var(--epi-inferred)' }}>{t.legendInferred}</span>
+                  {t.legendInferredTail}{' '}
+                  <span style={{ color: 'var(--epi-hypothetical)' }}>{t.legendHypothetical}</span>
+                  {t.legendHypotheticalTail}
                 </li>
               </ul>
             </div>
@@ -162,7 +170,7 @@ export function GraphExplorer({
               <button
                 type="button"
                 onClick={() => setSelectedId(null)}
-                aria-label="Fermer la sélection"
+                aria-label={t.closeSelection}
                 className="font-sans text-lg leading-none"
               >
                 ✕
@@ -192,20 +200,20 @@ export function GraphExplorer({
                     {selected.nodeType}
                   </span>
                   <p className="mt-1.5 text-sm text-secondary">
-                    <span className="cartouche block">1re apparition</span>
-                    <span className="chiffre text-xl">ch. {selected.firstSeenChapter}</span>
+                    <span className="cartouche block">{t.firstAppearance}</span>
+                    <span className="chiffre text-xl">{t.ch(selected.firstSeenChapter)}</span>
                   </p>
                 </div>
               </div>
 
               <div className="mt-3 flex gap-4">
                 <span>
-                  <span className="cartouche block">Relations</span>
+                  <span className="cartouche block">{t.relationsLabel}</span>
                   <span className="chiffre text-xl">{selected.degree}</span>
                 </span>
                 {selected.memberIds.length > 1 && (
-                  <span title="Apparitions distinctes identifiées comme une seule">
-                    <span className="cartouche block">Fusionnées</span>
+                  <span title={t.mergedNodeTitle}>
+                    <span className="cartouche block">{t.mergedLabel}</span>
                     <span className="chiffre text-xl">{selected.memberIds.length}</span>
                   </span>
                 )}
@@ -214,7 +222,7 @@ export function GraphExplorer({
               {neighbours.length > 0 && (
                 <>
                   <hr className="regle my-3" />
-                  <p className="cartouche">Relations visibles</p>
+                  <p className="cartouche">{t.visibleRelations}</p>
                   <ul className="mt-1.5 max-h-64 space-y-1.5 overflow-y-auto text-sm">
                     {neighbours.map((link) => (
                       <li key={link.edgeId} className="flex items-baseline gap-2">
@@ -236,7 +244,7 @@ export function GraphExplorer({
                               {link.other.label}
                             </button>
                           ) : (
-                            <span className="text-muted">hors du graphe affiché</span>
+                            <span className="text-muted">{t.offGraph}</span>
                           )}
                         </span>
                       </li>
@@ -249,7 +257,7 @@ export function GraphExplorer({
                 href={`/entite/${selected.id}?ch=${boundaryChapter}`}
                 className="bouton bouton-primaire mt-4 w-full !text-sm"
               >
-                Ouvrir la fiche complète
+                {t.openFullSheet}
               </Link>
             </div>
           </>

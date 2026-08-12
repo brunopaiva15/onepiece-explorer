@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { supabaseBrowser } from '@/domains/auth/client.ts'
+import { type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor, type Dict } from '@/lib/i18n/dictionaries.ts'
 
 type Mode = 'signin' | 'signup'
 
@@ -11,27 +13,31 @@ type Mode = 'signin' | 'signup'
  *
  * Errors are translated rather than passed through: Supabase returns English
  * strings whose wording changes between releases, and "Invalid login
- * credentials" is not a useful thing to show a French-speaking user.
+ * credentials" is not a useful thing to show a French-speaking user. The
+ * matching lives here; the wording lives in the dictionary, per language.
  */
-function translateError(message: string): string {
+function translateError(
+  message: string,
+  errors: Dict['signin']['authErrors'],
+): string {
   const m = message.toLowerCase()
   if (m.includes('invalid login credentials')) {
-    return 'Adresse e-mail ou mot de passe incorrect.'
+    return errors.invalidCredentials
   }
   if (m.includes('email not confirmed')) {
-    return 'Adresse e-mail non confirmée. Vérifiez votre boîte de réception.'
+    return errors.emailNotConfirmed
   }
   if (m.includes('user already registered')) {
-    return 'Un compte existe déjà avec cette adresse. Connectez-vous.'
+    return errors.alreadyRegistered
   }
   if (m.includes('password should be at least')) {
-    return 'Le mot de passe doit contenir au moins 6 caractères.'
+    return errors.passwordTooShort
   }
   if (m.includes('rate limit') || m.includes('too many')) {
-    return 'Trop de tentatives. Patientez une minute avant de réessayer.'
+    return errors.rateLimited
   }
   if (m.includes('fetch') || m.includes('network')) {
-    return 'Connexion à Supabase impossible. Vérifiez NEXT_PUBLIC_SUPABASE_URL.'
+    return errors.network
   }
   /*
    * "Invalid API key" is about the installation, not about the person typing.
@@ -41,18 +47,19 @@ function translateError(message: string): string {
    * never wrong.
    */
   if (m.includes('invalid api key') || m.includes('no api key')) {
-    return (
-      "La clé NEXT_PUBLIC_SUPABASE_ANON_KEY n'est pas acceptée par ce projet. " +
-      "Trois causes : elle vient d'un autre projet que NEXT_PUBLIC_SUPABASE_URL, " +
-      'elle a été tronquée au collage (une clé JWT fait plus de 200 caractères, ' +
-      'sur une seule ligne), ou les clés héritées sont désactivées dans Supabase ' +
-      '— auquel cas prenez la clé « publishable ». Rien à voir avec votre mot de passe.'
-    )
+    return errors.invalidApiKey
   }
   return message
 }
 
-export function SignInForm({ redirectTo }: { redirectTo: string }) {
+export function SignInForm({
+  redirectTo,
+  locale,
+}: {
+  redirectTo: string
+  locale: Locale
+}) {
+  const t = getDictFor(locale).signin
   const router = useRouter()
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
@@ -73,14 +80,12 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
         : await supabase.auth.signUp({ email, password })
 
     if (result.error) {
-      setError(translateError(result.error.message))
+      setError(translateError(result.error.message, t.authErrors))
       return
     }
 
     if (mode === 'signup' && !result.data.session) {
-      setNotice(
-        'Compte créé. Confirmez votre adresse e-mail, puis revenez vous connecter.',
-      )
+      setNotice(t.signupNotice)
       setMode('signin')
       return
     }
@@ -100,7 +105,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
     <form onSubmit={submit} className="mt-8 space-y-4">
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-primary">
-          Adresse e-mail
+          {t.emailLabel}
         </label>
         <input
           id="email"
@@ -118,7 +123,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
           htmlFor="password"
           className="block text-sm font-medium text-primary"
         >
-          Mot de passe
+          {t.passwordLabel}
         </label>
         <input
           id="password"
@@ -148,7 +153,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
         disabled={pending}
         className="bouton bouton-primaire w-full justify-center transition-colors hover:bg-accent-strong disabled:opacity-60"
       >
-        {mode === 'signin' ? 'Se connecter' : 'Créer le compte'}
+        {mode === 'signin' ? t.submitSignIn : t.submitSignUp}
       </button>
 
       <button
@@ -160,9 +165,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
         }}
         className="w-full text-sm text-secondary underline underline-offset-4 hover:text-primary"
       >
-        {mode === 'signin'
-          ? 'Pas encore de compte ? En créer un'
-          : 'Déjà un compte ? Se connecter'}
+        {mode === 'signin' ? t.toggleToSignUp : t.toggleToSignIn}
       </button>
     </form>
   )

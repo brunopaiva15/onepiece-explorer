@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { GraphProjection } from '@/domains/temporal/projection.ts'
+import { type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 /**
  * The graph, rendered in WebGL.
@@ -37,6 +39,7 @@ interface Props {
    */
   portraits?: Record<string, NodePortrait>
   onSelect?: (nodeId: string) => void
+  locale: Locale
 }
 
 /**
@@ -73,7 +76,8 @@ function typeColours(): Record<string, string> {
   )
 }
 
-export function GraphCanvas({ projection, portraits, onSelect }: Props) {
+export function GraphCanvas({ projection, portraits, onSelect, locale }: Props) {
+  const t = getDictFor(locale).entity
   const container = useRef<HTMLDivElement | null>(null)
   /**
    * 'empty' is not in here on purpose: an empty projection is derived data, and
@@ -203,8 +207,7 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
   if (empty) {
     return (
       <p className="mt-8 rounded-sm border border-line bg-surface-raised p-6 text-secondary">
-        Rien de connu à ce chapitre. Remontez le curseur, ou importez et publiez
-        un chapitre.
+        {t.emptyGraph}
       </p>
     )
   }
@@ -215,29 +218,34 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
         ref={container}
         className="h-[70vh] w-full rounded-sm border border-line bg-surface-raised"
         role="img"
-        aria-label={`Graphe de ${projection.nodes.length} nœuds et ${projection.edges.length} relations au chapitre ${projection.boundaryChapter}`}
+        aria-label={t.canvasAria(
+          projection.nodes.length,
+          projection.edges.length,
+          projection.boundaryChapter,
+        )}
       />
 
       {hovered && (
         <HoverCard
           label={labelOf.get(hovered) ?? ''}
           portrait={portraits?.[hovered] ?? null}
+          noIllustration={t.noIllustration}
         />
       )}
 
       {status === 'loading' && (
         <p className="absolute inset-0 flex items-center justify-center text-sm text-muted">
-          Calcul de la disposition…
+          {t.computingLayout}
         </p>
       )}
 
       {status === 'failed' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center">
-          <p className="text-primary">Le rendu WebGL a échoué.</p>
+          <p className="text-primary">{t.webglFailed}</p>
           <p className="max-w-md text-sm text-secondary">
             {message}
-            {' — '}la vue tableau contient exactement les mêmes données et ne
-            demande pas de GPU.
+            {' — '}
+            {t.webglFailedTail}
           </p>
         </div>
       )}
@@ -255,9 +263,11 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
 function HoverCard({
   label,
   portrait,
+  noIllustration,
 }: {
   label: string
   portrait: NodePortrait | null
+  noIllustration: string
 }) {
   return (
     <div
@@ -277,7 +287,7 @@ function HoverCard({
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-primary">{label}</p>
         <p className="truncate text-xs text-muted">
-          {portrait ? portrait.attribution : 'Aucune illustration'}
+          {portrait ? portrait.attribution : noIllustration}
         </p>
       </div>
     </div>
