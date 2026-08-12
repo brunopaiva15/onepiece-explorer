@@ -399,3 +399,39 @@ export const entityImages = pgTable(
     index('entity_images_boundary_idx').on(t.userId, t.entityId, t.revealedInChapter),
   ],
 )
+
+/**
+ * Terms whose French form you decided.
+ *
+ * The mechanism that stops the extraction step from re-inventing a name every
+ * chapter. When a model cannot tell whether a term should be translated or kept
+ * — the difference between «  the Red-Haired Pirates » and «  Going Merry » is a
+ * convention, not a fact in the text — it says so, the item goes to explicit
+ * review, and your answer lands here. Later chapters of the same work receive
+ * it as settled vocabulary.
+ *
+ * Bounded by `decidedInChapter` like everything else that carries a revelation:
+ * a glossary entry from chapter 500 handed to a chapter-3 extraction would be
+ * the reveal itself, leaked into the prompt. See migration 0016.
+ */
+export const glossaryTerms = pgTable(
+  'glossary_terms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workId: uuid('work_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    /** The wording as the source has it, quoted exactly. */
+    sourceTerm: text('source_term').notNull(),
+    normalizedSource: text('normalized_source').notNull(),
+    /** What it is called in the graph. Your decision, not a proposal. */
+    frenchTerm: text('french_term').notNull(),
+    note: text('note'),
+    decidedInChapter: integer('decided_in_chapter').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('glossary_terms_unique_source').on(t.workId, t.normalizedSource),
+    index('glossary_terms_lookup').on(t.workId, t.decidedInChapter),
+  ],
+)

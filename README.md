@@ -3,7 +3,7 @@
 [![CI](https://github.com/brunopaiva15/onepiece-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/brunopaiva15/onepiece-explorer/actions/workflows/ci.yml)
 
 Un seul grand graphe de connaissances **interconnecté et sourcé**, construit à
-partir des chapitres de One Piece que vous importez vous-même : personnages,
+partir des chapitres de One Piece que vous racontez vous-même : personnages,
 groupes, lieux, objets, événements, promesses, mystères. C'est là qu'on trouve
 les liens auxquels on n'avait pas pensé — un chemin entre deux personnages, une
 récurrence, un recoupement à trois cents chapitres d'écart.
@@ -18,12 +18,11 @@ une croyance réfutée reste visible dans le passé où elle était tenue pour v
 C'est ce qui rend le grand graphe sûr à construire pendant qu'on lit encore :
 rien ne vous gâche la lecture, et rien n'est perdu non plus.
 
-> **Outil privé.** L'application ne télécharge rien, ne récupère aucun scan en
-> ligne, ne contourne aucune protection et ne publie rien. Vous importez des
-> fichiers que vous possédez déjà ; ils restent accessibles à vous seul,
-> derrière une authentification, servis uniquement par URL signée à durée
-> courte. Le dépôt ne contient aucune page de manga : les fixtures de test sont
-> des planches synthétiques générées par script.
+> **Outil privé.** L'application ne télécharge rien, ne récupère aucun résumé
+> en ligne, ne contourne aucune protection et ne publie rien. Vous écrivez ou
+> collez vous-même le récit détaillé de chaque chapitre, et c'est la seule
+> source : ce qui n'y est pas écrit n'entre pas dans le graphe, même si le
+> modèle le sait par ailleurs. Le dépôt ne contient aucune page de manga.
 
 ---
 
@@ -42,12 +41,29 @@ quand le lecteur peut le savoir. Une correction insère une ligne et renseigne
 `superseded_by`. Un déclencheur refuse toute autre modification.
 Voir [ADR 0002](docs/adr/0002-append-only-assertions.md).
 
-**Le modèle ne peut pas répondre de mémoire.** Un modèle multimodal connaît
-déjà One Piece et compléterait volontiers les trous. Toute proposition doit
-citer un bloc de texte ou une case de la liste fournie, et l'extrait cité doit
-réellement s'y trouver — vérifié dans le code, puis à nouveau par un
-déclencheur. Ce qui échoue part en quarantaine, visible dans le centre de
-revue. Voir [ADR 0003](docs/adr/0003-evidence-anchoring.md).
+**Le modèle ne peut pas répondre de mémoire.** Un modèle entraîné connaît déjà
+One Piece et compléterait volontiers les trous. Toute proposition doit citer un
+passage de la liste fournie, et l'extrait cité doit réellement s'y trouver —
+vérifié dans le code, puis à nouveau par un déclencheur de base de données. Ce
+qui échoue part en quarantaine, visible dans le centre de revue. Voir
+[ADR 0003](docs/adr/0003-evidence-anchoring.md).
+
+**Un chapitre est un texte que vous écrivez.** Le pipeline lisait des fichiers :
+découpe en cases, transcription, une description de modèle par case. Cent vingt
+appels porteurs d'image et quatre dollars pour un chapitre, avec mille à faire.
+Les pixels n'ont jamais été l'objet — ce dont l'extraction a besoin, c'est de
+prose. Vous la fournissez directement, et l'ancrage se resserre au passage : la
+comparaison ne porte plus sur de l'OCR approximatif mais sur exactement les
+caractères que vous avez tapés. Voir
+[ADR 0008](docs/adr/0008-the-chapter-is-a-text-you-write.md).
+
+**Quand il ne sait pas, il demande.** La source peut être en anglais alors que
+le graphe se lit en français. Tout ce que le modèle rédige est français ; seul
+l'extrait cité garde la langue de la source, parce qu'une citation est une copie
+vérifiée caractère par caractère. Et quand traduire un nom relève de la
+convention plutôt que du texte — « Straw Hat Pirates » oui, « Going Merry »
+peut-être pas — le modèle le déclare au lieu de trancher, l'entité part en revue
+avec un champ modifiable, et votre réponse sert à tous les chapitres suivants.
 
 ---
 

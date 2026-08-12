@@ -97,13 +97,21 @@ describe('cutting a written chapter into citable passages', () => {
   })
 
   it('tells French from English by its function words', () => {
-    expect(detectLanguage(SUMMARY)).toBe('fr')
+    expect(detectLanguage(SUMMARY)).toMatchObject({ language: 'fr', confident: true })
     expect(
       detectLanguage(
         'The chapter opens on Fuchsia Village. A boy called Luffy begs the ' +
-          'red-haired man to take him out to sea, and the man refuses with a laugh.',
+          'red-haired man to take him out to sea, and the man refuses with a laugh. ' +
+          'Later the crew of the red-haired pirates drinks in the tavern with him.',
       ),
-    ).toBe('en')
+    ).toMatchObject({ language: 'en', confident: true })
+  })
+
+  it('admits when it cannot tell', () => {
+    // Almost nothing but proper nouns: no function words to count, so no
+    // grounds for an answer. Reporting one anyway is how an English chapter
+    // ends up stored as French with nothing on screen to reveal it.
+    expect(detectLanguage('Luffy. Shanks. Fuchsia. Higuma. Makino.').confident).toBe(false)
   })
 })
 
@@ -192,6 +200,38 @@ describe('importing a chapter written as text', () => {
     const passages = await chapterPassages(world.userId, corrected.chapterId)
     expect(passages).toHaveLength(4)
     expect(passages.at(-1)!.text).toContain('perd un bras')
+  })
+
+  it('asks rather than guessing when the language is unclear', async () => {
+    const world = await seedWorld([])
+    // Long enough to import, but almost entirely proper nouns and punctuation:
+    // nothing to count. Choosing anyway would store a language that no later
+    // screen contradicts — so it refuses and hands the question back.
+    await expect(
+      importSummary({
+        userId: world.userId,
+        workId: world.workId,
+        chapterNumber: 1,
+        text:
+          'Luffy. Shanks. Higuma. Makino. Fuchsia. Windmill. Gol D. Roger. ' +
+          'Dadan. Garp. Ace. Sabo. Zoro. Nami. Usopp. Sanji. Chopper. Robin. ' +
+          'Franky. Brook. Jinbe. Merry. Sunny. Grand Line. Raftel.',
+      }),
+    ).rejects.toThrow(/français ou en anglais/)
+
+    // The same text with the answer supplied goes through: the refusal is a
+    // question, not a wall.
+    const result = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      language: 'fr',
+      text:
+        'Luffy. Shanks. Higuma. Makino. Fuchsia. Windmill. Gol D. Roger. ' +
+        'Dadan. Garp. Ace. Sabo. Zoro. Nami. Usopp. Sanji. Chopper. Robin. ' +
+        'Franky. Brook. Jinbe. Merry. Sunny. Grand Line. Raftel.',
+    })
+    expect(result.language).toBe('fr')
   })
 
   it('refuses a paste too short to prove anything', async () => {

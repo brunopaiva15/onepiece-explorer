@@ -130,7 +130,47 @@ Deux réserves :
 Sur une source anglaise, cela donne : libellé « Chapeau de paille », extrait
 « he hands over his straw hat ». La citation reste anglaise, tout le reste est
 français.
+
+QUAND VOUS NE SAVEZ PAS, DEMANDEZ. Pour chaque entité :
+  • « source_term » : la formulation exacte de la source, quand elle diffère du
+    libellé que vous produisez. Sur une source française identique au libellé,
+    mettez null.
+  • « naming_confident » : false dès que vous hésitez sur la forme française —
+    faut-il traduire ce nom ou le garder ? existe-t-il une forme française
+    reçue ? s'agit-il d'un nom propre ou d'une description ?
+
+Mettre false n'est pas un aveu de faiblesse, c'est la bonne réponse : l'entité
+part en revue avec un champ modifiable, l'utilisateur tranche une fois, et sa
+décision vous est fournie pour tous les chapitres suivants. Trancher vous-même
+donne « Équipage du Roux » ici et « Pirates aux Cheveux Rouges » trois chapitres
+plus loin, donc deux entités là où il y a une personne — et rien ne le
+détectera, puisque les deux libellés sont honnêtement tirés de la source.
 `.trim()
+
+/**
+ * Terms the user has already settled, rendered for the prompt.
+ *
+ * Sits in the cacheable prefix beside the validated entities, and for the same
+ * reason: it is vocabulary that holds for the whole chapter. Filtered by the
+ * boundary before it gets here — a term settled at chapter 500 handed to a
+ * chapter-3 extraction is the reveal itself, leaked into the prompt.
+ */
+export function glossaryList(
+  terms: Array<{ sourceTerm: string; frenchTerm: string; note: string | null }>,
+): string {
+  if (terms.length === 0) {
+    return 'Aucun terme n’a encore été tranché pour cette œuvre.'
+  }
+  return [
+    'Termes déjà tranchés par l’utilisateur. Employez EXACTEMENT ces formes',
+    'françaises, et mettez « naming_confident » à true pour elles :',
+    ...terms.map(
+      (term) =>
+        `  - « ${term.sourceTerm} » → « ${term.frenchTerm} »` +
+        (term.note ? ` (${term.note})` : ''),
+    ),
+  ].join('\n')
+}
 
 const EVIDENCE_RULE = `
 Chaque élément que vous produisez doit citer au moins une preuve, et cette

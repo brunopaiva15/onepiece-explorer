@@ -136,6 +136,27 @@ export const candidateEntitySchema = z.object({
    */
   label: z.string().min(1).max(200),
   label_kind: z.enum(['placeholder', 'alias', 'true_name', 'epithet', 'translation']),
+  /**
+   * The wording the source used, when it differs from `label`.
+   *
+   * Set when the source is English and the label had to be authored in French.
+   * It is what makes a naming decision reusable: the answer is recorded against
+   * this term, and the next chapter that contains the same wording gets the
+   * settled form handed to it instead of asking again.
+   */
+  source_term: z.string().max(200).nullable(),
+  /**
+   * Whether the model is sure how this should be called in French.
+   *
+   * False sends the entity to explicit review with an editable name, however
+   * high its confidence. The two are different questions: `confidence` is "is
+   * this entity really there", this is "do I know what we call it". A model can
+   * be certain a ship exists and have no idea whether its name is translated —
+   * that is a convention held by the reader, not a fact in the text, and
+   * guessing produces a different name each chapter and a graph that silently
+   * splits in two.
+   */
+  naming_confident: z.boolean(),
   evidence: z.array(evidenceRefSchema).min(1).max(6),
   confidence: z.number().min(0).max(1),
 })

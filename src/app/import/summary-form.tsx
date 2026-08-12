@@ -56,11 +56,23 @@ export function SummaryForm({ suggestedNumber }: Props) {
 
   const trimmed = text.trim()
   const passages = useMemo(() => splitPassages(text), [text])
-  const detected = useMemo(
+  const guess = useMemo(
     () => (trimmed.length >= MIN_SUMMARY_CHARS ? detectLanguage(trimmed) : null),
     [trimmed],
   )
-  const effective = language === 'auto' ? detected : language
+
+  /*
+   * An unconfident guess is a question, not a default.
+   *
+   * The language decides which language every excerpt from this chapter is
+   * quoted in. Guessing wrong is invisible afterwards — the excerpts still
+   * anchor, the graph still builds, and the only trace is a column nobody
+   * reads — so the one moment it can be caught is here, before the paste is
+   * stored. `null` means the form has nothing to submit and says so.
+   */
+  const effective: SummaryLanguage | null =
+    language === 'auto' ? (guess?.confident ? guess.language : null) : language
+  const mustChooseLanguage = language === 'auto' && guess !== null && !guess.confident
 
   const tooShort = trimmed.length > 0 && trimmed.length < MIN_SUMMARY_CHARS
   const tooLong = trimmed.length > MAX_SUMMARY_CHARS
@@ -201,8 +213,8 @@ export function SummaryForm({ suggestedNumber }: Props) {
                   className="accent-[var(--accent)]"
                 />
                 {label}
-                {value === 'auto' && detected && (
-                  <span className="badge badge-gris">{detected}</span>
+                {value === 'auto' && guess?.confident && (
+                  <span className="badge badge-gris">{guess.language}</span>
                 )}
               </label>
             ))}
@@ -210,6 +222,18 @@ export function SummaryForm({ suggestedNumber }: Props) {
           {/* The resolved value is what the action reads; the radio above is a
               control over it, not the field itself. */}
           <input type="hidden" name="language" value={effective ?? ''} />
+
+          {mustChooseLanguage && (
+            <p
+              role="status"
+              className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink"
+            >
+              Je n&apos;arrive pas à trancher — {guess.french} marqueurs
+              français contre {guess.english} anglais, c&apos;est trop serré
+              pour décider à votre place. Choisissez ci-dessus.
+            </p>
+          )}
+
           <p className="mt-2 text-sm text-muted">
             Le graphe reste en français quelle que soit la réponse. Seuls les
             extraits cités gardent la langue de la source&nbsp;: une citation est
@@ -218,7 +242,11 @@ export function SummaryForm({ suggestedNumber }: Props) {
           </p>
         </fieldset>
 
-        <button type="submit" disabled={tooShort || tooLong} className="bouton bouton-primaire !text-lg">
+        <button
+          type="submit"
+          disabled={tooShort || tooLong || mustChooseLanguage}
+          className="bouton bouton-primaire !text-lg"
+        >
           {pending ? 'Enregistrement…' : 'Importer le chapitre'}
         </button>
       </fieldset>

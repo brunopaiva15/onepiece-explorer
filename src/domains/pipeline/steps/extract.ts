@@ -4,7 +4,13 @@ import { and, asc, eq, lte } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
-import { entities, entityLabels, nodeTypes, predicates } from '@/db/schema/knowledge.ts'
+import {
+  entities,
+  entityLabels,
+  glossaryTerms,
+  nodeTypes,
+  predicates,
+} from '@/db/schema/knowledge.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import {
   buildAnchorSources,
@@ -288,6 +294,30 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         ),
       )
 
+    /*
+     * Naming decisions the reader has already made, and no later ones.
+     *
+     * Same boundary as `known` above, for the same reason: learning that a term
+     * is called X is itself a revelation, dated by the chapter where it was
+     * settled. Handing a chapter-3 extraction the vocabulary of chapter 500
+     * would leak the future into the prompt just as surely as handing it the
+     * entity list would.
+     */
+    const glossary = await db
+      .select({
+        sourceTerm: glossaryTerms.sourceTerm,
+        frenchTerm: glossaryTerms.frenchTerm,
+        note: glossaryTerms.note,
+      })
+      .from(glossaryTerms)
+      .where(
+        and(
+          eq(glossaryTerms.workId, chapter.workId),
+          eq(glossaryTerms.userId, userId),
+          lte(glossaryTerms.decidedInChapter, chapterNumber),
+        ),
+      )
+
     const types = await db.select({ key: nodeTypes.key }).from(nodeTypes)
     const preds = await db
       .select({
@@ -313,7 +343,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         ),
       )
 
-    return { chapter, pageRows, panelRows, blockRows, known, types, preds, decisions }
+    return { chapter, pageRows, panelRows, blockRows, known, glossary, types, preds, decisions }
   })
 
   const table = buildRefTable({
@@ -467,6 +497,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         source: context.sourceKind,
         ontology: renderOntology(world.preds),
         knownEntities,
+        glossary: world.glossary,
         descriptions: slice.descriptions,
         textBlocks: slice.blocks,
         allowedRefs: refs,
@@ -596,6 +627,23 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         continue
       }
 
+      /*
+       * A model that does not know what to call something says so, and is
+       * believed.
+       *
+       * `naming_confident: false` is an admission, not a low score, so it
+       * overrides confidence entirely: a model can be certain a ship is there
+       * and have no idea whether its name is translated into French. Left to
+       * decide alone it decides differently each chapter, and two labels
+       * honestly derived from the source become two entities where there is one
+       * — a failure evidence anchoring cannot catch, because both are anchored.
+       *
+       * Queued above true names, because it is the cheapest question in the
+       * batch and the one whose answer is reused: the decision goes into the
+       * glossary and every later chapter is handed it.
+       */
+      const naming = entity.naming_confident === false
+
       rows.push({
         runId,
         chapterId,
@@ -603,10 +651,10 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         category: 'entity',
         // Identity-adjacent proposals go to the top of the queue: they are the
         // ones whose mistakes are hardest to undo later.
-        priority: entity.label_kind === 'true_name' ? 90 : 50,
+        priority: naming ? 95 : entity.label_kind === 'true_name' ? 90 : 50,
         payload: entity,
         proposalFingerprint: fingerprint,
-        requiresExplicitReview: entity.label_kind === 'true_name',
+        requiresExplicitReview: naming || entity.label_kind === 'true_name',
         confidence: entity.confidence,
       })
     }

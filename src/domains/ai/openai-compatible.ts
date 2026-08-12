@@ -4,6 +4,7 @@ import {
   answerSystem,
   descriptionSystem,
   extractionSystem,
+  glossaryList,
   refList,
   resolutionSystem,
   summarySystem,
@@ -209,6 +210,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       maxTokens: 16_000,
       content: [
         { type: 'text', text: known },
+        { type: 'text', text: glossaryList(request.glossary) },
         { type: 'text', text: refList(request.allowedRefs) },
         ...(request.descriptions.length > 0
           ? [{ type: 'text' as const, text: describeForPrompt(request.descriptions) }]

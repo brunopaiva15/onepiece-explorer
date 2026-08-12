@@ -114,7 +114,31 @@ export async function importSummary(
    * actually read — is the only version of that test that cannot be wrong.
    */
   const fingerprint = createHash('sha256').update(passages.join('\n\n')).digest('hex')
-  const language = request.language ?? detectLanguage(text)
+
+  /*
+   * The language is asked for when it cannot be told.
+   *
+   * Detection runs only as a fallback, and only when it is sure of itself. The
+   * alternative — pick the more likely one and move on — would store an English
+   * chapter marked French, and nothing downstream would ever contradict it: the
+   * excerpts would still anchor, the graph would still build, and the only
+   * symptom would be a `lang` column nobody reads. A refusal here is loud and
+   * costs one click.
+   */
+  let language = request.language
+  if (language === undefined) {
+    const guess = detectLanguage(text)
+    if (!guess.confident) {
+      throw new IngestionRejection(
+        'ambiguous_language',
+        "Impossible de dire si ce texte est en français ou en anglais.",
+        `Marqueurs relevés : ${guess.french} français, ${guess.english} anglais. ` +
+          'Choisissez la langue vous-même — elle décide de la langue dans laquelle ' +
+          'les extraits de ce chapitre seront cités.',
+      )
+    }
+    language = guess.language
+  }
 
   return withIngest(async (db) => {
     const [work] = await db

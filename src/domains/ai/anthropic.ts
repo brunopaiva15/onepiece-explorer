@@ -12,6 +12,7 @@ import {
   answerSystem,
   descriptionSystem,
   extractionSystem,
+  glossaryList,
   refList,
   resolutionSystem,
   summarySystem,
@@ -192,6 +193,8 @@ export class AnthropicProvider implements ModelProvider {
             ),
           ].join('\n')
 
+    const settled = glossaryList(request.glossary)
+
     /*
      * A passage is labelled by its ref alone; a bubble says which panel it sits
      * in. Telling a model reading prose that a paragraph is "hors case" would
@@ -216,7 +219,11 @@ export class AnthropicProvider implements ModelProvider {
       // every call announce a longer expected duration than it needed.
       maxTokens: 16_000,
       content: [
-        { type: 'text', text: known, cache_control: { type: 'ephemeral', ttl: CACHE_TTL } },
+        { type: 'text', text: known },
+        // The cache breakpoint sits after the settled vocabulary: system
+        // prompt, ontology, validated entities and glossary are identical for
+        // every slice of a chapter, and they are the bulk of the request.
+        { type: 'text', text: settled, cache_control: { type: 'ephemeral', ttl: CACHE_TTL } },
         { type: 'text', text: refList(request.allowedRefs) },
         // Omitted rather than sent empty when there are no panels: the API
         // rejects an empty text block, and "Cases :" followed by nothing is

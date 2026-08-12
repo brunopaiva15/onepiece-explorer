@@ -85,6 +85,15 @@ export interface ExtractRequest {
   ontology: string
   /** Entities already validated and visible at this chapter. */
   knownEntities: Array<{ id: string; label: string; nodeType: string }>
+  /**
+   * Naming decisions already made, visible at this chapter.
+   *
+   * Settled vocabulary, so the model stops re-inventing a French form every
+   * chapter and producing two entities where there is one person. Filtered by
+   * the boundary before it arrives, like knownEntities: a term settled at
+   * chapter 500 is a chapter-500 revelation.
+   */
+  glossary: Array<{ sourceTerm: string; frenchTerm: string; note: string | null }>
   /** Panel descriptions produced in this run. */
   descriptions: PanelDescription[]
   /** Text blocks, quoted verbatim, in an untrusted-data envelope. */

@@ -43,6 +43,7 @@ describe('the synthetic provider only rearranges what it was given', () => {
     source: 'summary',
     ontology: 'character, place',
     knownEntities: [],
+    glossary: [],
     descriptions: [],
     textBlocks: [
       {

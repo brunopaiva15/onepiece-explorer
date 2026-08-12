@@ -174,24 +174,62 @@ const FRENCH_MARKERS =
 const ENGLISH_MARKERS =
   /\b(the|and|of|to|in|that|is|are|with|for|on|then|his|her|their|they|but|more|all|when|after|before|from|into|about)\b/giu
 
+export interface LanguageGuess {
+  language: SummaryLanguage
+  /**
+   * Whether the guess is worth acting on.
+   *
+   * False means the counts were too close or too few to separate — a short
+   * paste, a text thick with proper nouns, a summary that quotes English
+   * dialogue inside French narration. When this is false the caller must ask
+   * rather than choose: the language decides which language every excerpt from
+   * this chapter will be quoted in, and quietly getting it wrong leaves an
+   * English citation labelled French with nothing on screen to reveal it.
+   */
+  confident: boolean
+  french: number
+  english: number
+}
+
 /**
- * Which language was pasted.
+ * How much the winner must lead by before the guess is worth acting on.
+ *
+ * A one-word margin between eleven and ten markers is noise. Half as many again
+ * is a real difference in a text of any length, and below MIN_MARKERS there is
+ * not enough evidence for any ratio to mean anything.
+ */
+const CONFIDENT_RATIO = 1.5
+const MIN_MARKERS = 8
+
+/**
+ * Which language was pasted, and whether that answer can be trusted.
  *
  * Counted on function words rather than guessed from accents, because a
  * well-written English summary of a Japanese work is full of proper nouns with
- * diacritics and an English text quoting French dialogue is not French. Function
- * words are the part of a text that its language cannot borrow.
+ * diacritics, and an English text quoting French dialogue is not French.
+ * Function words are the part of a text its language cannot borrow.
  *
- * It informs a default the form shows and you can change — never a silent
- * decision. Getting it wrong costs a wrong `lang` on the passages; getting it
- * wrong *invisibly* would be a different matter, which is why the form says
- * what it detected instead of acting on it.
+ * The answer is never applied silently. A confident guess becomes a default the
+ * form shows and you can override; an unconfident one becomes a question. That
+ * asymmetry is the point — this is a heuristic, and a heuristic that admits
+ * when it is out of its depth is worth far more than one that always answers.
  */
-export function detectLanguage(text: string): SummaryLanguage {
+export function detectLanguage(text: string): LanguageGuess {
   const sample = text.slice(0, 8_000)
   const french = (sample.match(FRENCH_MARKERS) ?? []).length
   const english = (sample.match(ENGLISH_MARKERS) ?? []).length
-  // Ties go to French: it is the language of the interface, and a French text
-  // is the case where being wrong is most visible to the person who wrote it.
-  return english > french ? 'en' : 'fr'
+
+  // Ties go to French: it is the language of the interface. But a tie is
+  // exactly the case reported as unconfident, so this decides only what the
+  // question is pre-filled with, never what gets stored.
+  const language: SummaryLanguage = english > french ? 'en' : 'fr'
+  const winner = Math.max(french, english)
+  const loser = Math.min(french, english)
+
+  return {
+    language,
+    confident: winner >= MIN_MARKERS && winner >= loser * CONFIDENT_RATIO,
+    french,
+    english,
+  }
 }

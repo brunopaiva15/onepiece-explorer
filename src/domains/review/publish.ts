@@ -10,6 +10,7 @@ import {
   entityLabels,
   events,
   evidence,
+  glossaryTerms,
   mysteries,
   occurrences,
 } from '@/db/schema/knowledge.ts'
@@ -205,6 +206,42 @@ export async function publishDecisions(
 
       result.entitiesCreated++
       result.labelsCreated++
+
+      /*
+       * The naming decision, recorded so it is never asked again.
+       *
+       * The model flagged that it did not know the French form; you supplied
+       * one. Without this the next chapter containing the same English wording
+       * gets the same question, and — worse — a different guess to review, which
+       * is how one person becomes two entities.
+       *
+       * Only written when the label was actually corrected. Accepting the
+       * model's proposal unchanged is a weaker signal: it means "close enough
+       * here", not "this is the form, use it everywhere".
+       */
+      if (
+        decision.decision === 'correct' &&
+        candidate.source_term &&
+        candidate.source_term.trim().length > 0
+      ) {
+        const sourceTerm = candidate.source_term.trim()
+        await db
+          .insert(glossaryTerms)
+          .values({
+            workId: run.workId,
+            userId,
+            sourceTerm,
+            normalizedSource: normalizeText(sourceTerm),
+            frenchTerm: candidate.label,
+            decidedInChapter: run.chapterNumber,
+          })
+          .onConflictDoUpdate({
+            target: [glossaryTerms.workId, glossaryTerms.normalizedSource],
+            // Answering again replaces the answer. Keeping the first one would
+            // make a correction of a correction impossible.
+            set: { frenchTerm: candidate.label, updatedAt: new Date() },
+          })
+      }
 
       await recordDecision(db, userId, run.workId, item, decision)
       await db

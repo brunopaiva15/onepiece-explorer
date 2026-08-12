@@ -37,6 +37,16 @@ interface Props {
 
 export function ReviewBoard({ queue }: Props) {
   const [decisions, setDecisions] = useState<Map<string, DecisionKind>>(new Map())
+  /*
+   * Names the reviewer rewrote, by item id.
+   *
+   * Held beside the decisions rather than inside them because a rename is not a
+   * decision: you can retype a label, change your mind about accepting, and
+   * retype it again. It becomes a 'correct' decision only at publish time, and
+   * only if the item was accepted — which is also when the answer is written to
+   * the glossary and stops being asked.
+   */
+  const [renames, setRenames] = useState<Map<string, string>>(new Map())
   const [cursor, setCursor] = useState(0)
   const [publishing, startPublishing] = useTransition()
   const [result, setResult] = useState<PublishResult | null>(null)
@@ -134,11 +144,29 @@ export function ReviewBoard({ queue }: Props) {
     startPublishing(async () => {
       const response = await publishDecisionsAction(
         queue.runId,
-        [...decisions].map(([reviewItemId, decision]) => ({ reviewItemId, decision })),
+        [...decisions].map(([reviewItemId, decision]) => {
+          const renamed = renames.get(reviewItemId)?.trim()
+          const item = items.find((candidate) => candidate.id === reviewItemId)
+          const payload = item?.payload as { label?: string } | undefined
+
+          if (decision !== 'accept' || !renamed || renamed === payload?.label) {
+            return { reviewItemId, decision }
+          }
+
+          // 'correct', not 'accept': the label is now yours. Downstream that
+          // difference decides whether the glossary learns the answer, and
+          // whether the row is marked as proposed by you rather than by a model.
+          return {
+            reviewItemId,
+            decision: 'correct' as DecisionKind,
+            correctedPayload: { ...(payload ?? {}), label: renamed, naming_confident: true },
+          }
+        }),
       )
       if (response.ok && response.published) {
         setResult(response.published)
         setDecisions(new Map())
+        setRenames(new Map())
       } else {
         setError(response.error ?? 'Publication impossible.')
       }
@@ -267,6 +295,10 @@ export function ReviewBoard({ queue }: Props) {
             move(1)
           }}
           onMove={move}
+          rename={renames.get(current.id) ?? null}
+          onRename={(label) =>
+            setRenames((previous) => new Map(previous).set(current.id, label))
+          }
         />
       )}
     </section>
@@ -333,6 +365,8 @@ function ProposalCard({
   decision,
   onDecide,
   onMove,
+  rename,
+  onRename,
 }: {
   item: ReviewItemView
   index: number
@@ -340,6 +374,8 @@ function ProposalCard({
   decision: DecisionKind | null
   onDecide: (decision: DecisionKind) => void
   onMove: (delta: number) => void
+  rename: string | null
+  onRename: (label: string) => void
 }) {
   return (
     <article className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
@@ -390,6 +426,8 @@ function ProposalCard({
               category={item.category}
               payload={item.payload}
               relatedLabel={item.relatedLabel}
+              rename={rename}
+              onRename={onRename}
             />
           </div>
         </div>
@@ -495,14 +533,72 @@ function ProposalBody({
   category,
   payload,
   relatedLabel,
+  rename,
+  onRename,
 }: {
   category: string
   payload: unknown
   relatedLabel: string | null
+  rename: string | null
+  onRename: (label: string) => void
 }) {
   const record = (payload ?? {}) as Record<string, unknown>
 
   if (category === 'entity') {
+    const sourceTerm =
+      typeof record.source_term === 'string' && record.source_term.length > 0
+        ? record.source_term
+        : null
+    const unsure = record.naming_confident === false
+
+    /*
+     * When the model does not know what to call something, ask.
+     *
+     * The field is editable in place rather than behind a "corriger" mode,
+     * because on a flagged item renaming *is* the review — the question is not
+     * "is this entity real" but "what do we call it". Answering here writes the
+     * decision to the glossary, and every later chapter of this work is handed
+     * it instead of being asked again.
+     */
+    if (unsure || sourceTerm) {
+      return (
+        <div className="mt-2">
+          {sourceTerm && (
+            <p className="text-sm text-secondary">
+              <span className="cartouche block">Dans la source</span>
+              <span className="text-base text-primary">« {sourceTerm} »</span>
+            </p>
+          )}
+
+          <label className="mt-3 block">
+            <span className="cartouche block">
+              {unsure ? 'Comment on l’appelle en français' : 'Nom dans le graphe'}
+            </span>
+            <input
+              type="text"
+              value={rename ?? String(record.label ?? '')}
+              onChange={(event) => onRename(event.target.value)}
+              maxLength={200}
+              className="mt-1 w-full border-[3px] border-ink bg-surface-raised px-2.5 py-1.5 text-lg text-primary"
+            />
+          </label>
+
+          <p className="mt-1.5 text-sm text-secondary">
+            {String(record.node_type ?? '')} ·{' '}
+            {labelKindLabel(String(record.label_kind ?? ''))}
+          </p>
+
+          {unsure && (
+            <p className="mt-2 text-sm text-muted">
+              Le modèle ne sait pas trancher — traduire ou garder tel quel est une
+              convention, pas un fait du texte. Votre réponse est enregistrée pour
+              toute l’œuvre : la question ne sera plus posée.
+            </p>
+          )}
+        </div>
+      )
+    }
+
     return (
       <div className="mt-2">
         <p className="text-lg text-primary">{String(record.label ?? '')}</p>

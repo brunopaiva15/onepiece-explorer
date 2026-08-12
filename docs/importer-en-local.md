@@ -3,12 +3,17 @@
 Vercel sert la lecture ; votre machine importe. Ce document est la marche à
 suivre complète, sans rien supposer d'installé.
 
-**Pourquoi cette séparation.** Un chapitre arrive dans le corps d'une requête
-HTTP, et une plate-forme serverless plafonne ce corps — 4,5 Mo sur Vercel, sans
-réglage possible. Un chapitre fait dix à cent fois cela. Le worker du pipeline,
-lui, n'existe pas non plus sur Vercel : c'est un processus long, et il n'y a que
-des fonctions. Les deux se règlent au même endroit, votre machine, qui écrit dans
-**la même base Supabase**. Vous importez d'un côté, vous consultez de l'autre.
+> **Depuis que le chapitre est un texte** (ADR 0008), l'import lui-même n'a plus
+> besoin de votre machine : quelques milliers de caractères passent sans peine
+> dans une requête, et `/import` fonctionne directement sur Vercel. Ce document
+> ne reste nécessaire que pour **faire tourner le worker**, qui exécute le
+> pipeline. La partie « import de fichiers » ci-dessous concerne les chapitres
+> importés avant ce changement.
+
+**Pourquoi cette séparation.** Le worker du pipeline n'existe pas sur Vercel :
+c'est un processus long, et il n'y a que des fonctions. Il tourne donc sur votre
+machine, qui écrit dans **la même base Supabase**. Vous lancez les traitements
+d'un côté, vous consultez de l'autre.
 
 ---
 

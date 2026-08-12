@@ -129,6 +129,11 @@ export class SyntheticProvider implements ModelProvider {
           // uses this word. Whether it is a real name, a nickname or a place is
           // exactly what a model would be for.
           label_kind: 'alias',
+          // Copied out of the text, so there is nothing to translate and
+          // nothing to be unsure about. A provider that derives labels by
+          // slicing the source has no naming judgement to offer.
+          source_term: null,
+          naming_confident: true,
           evidence: [{ ref: block.ref, kind: 'text', excerpt: excerptAround(block.text, name) }],
           confidence: 0.25,
         })
