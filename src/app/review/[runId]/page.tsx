@@ -9,6 +9,12 @@ import { ReviewBoard } from './review-board.tsx'
 export const metadata: Metadata = { title: 'Centre de revue' }
 /** Signed evidence URLs expire within the minute; never cache this render. */
 export const dynamic = 'force-dynamic'
+/**
+ * The ceiling applies to this page's server actions too, and publishing needs
+ * it: closing a chapter writes a batch of decisions and then illustrates the
+ * entities it opened, downloading and re-encoding pictures after the response.
+ */
+export const maxDuration = 300
 
 export default async function ReviewPage({
   params,

@@ -51,6 +51,13 @@ export interface Catalogue {
   candidates: ImageCandidate[]
   /** Sources that could not be reached, so a thin catalogue explains itself. */
   failures: Array<{ source: SourceName; reason: string }>
+  /**
+   * Why this catalogue was not kept on disk, when it was not.
+   *
+   * A deployment whose filesystem is read-only refetches on every cold start.
+   * That works, and it must be visible rather than merely slow.
+   */
+  cacheNote?: string
 }
 
 /**

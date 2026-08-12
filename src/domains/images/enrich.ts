@@ -30,6 +30,8 @@ export interface EnrichReport {
   /** Sources that could not be reached while building the catalogue. */
   catalogueFailures: Array<{ source: string; reason: string }>
   catalogueSize: number
+  /** Set when the catalogue could not be cached — see cataloguePath(). */
+  cacheNote?: string
 }
 
 export interface EnrichOptions extends LoadOptions {
@@ -70,6 +72,7 @@ export async function enrichEntityImages(
     failures: [],
     catalogueFailures: catalogue.failures,
     catalogueSize: index.size,
+    ...(catalogue.cacheNote ? { cacheNote: catalogue.cacheNote } : {}),
   }
 
   if (index.size === 0) return report
@@ -147,6 +150,41 @@ export async function enrichEntityImages(
   }
 
   return report
+}
+
+/**
+ * How many entities one automatic pass will try to illustrate.
+ *
+ * A chapter contributes a handful of new characters, and the pass runs on every
+ * chapter, so a small number keeps up with the library while leaving the
+ * invocation time to finish. It also bounds what an automatic download does to
+ * three free services on somebody else's servers.
+ */
+const AUTOMATIC_LIMIT = 15
+
+/**
+ * Give a face to what the chapter just opened, without being asked.
+ *
+ * The settings page has a button for this, and a button is the wrong place for
+ * it: nobody publishes a chapter thinking « now let me go and fetch the
+ * portraits ». Illustration is not knowledge — nothing here writes an assertion
+ * and no picture can be cited — so it does not need a decision, only a moment,
+ * and the moment a chapter becomes readable is the obvious one.
+ *
+ * Swallows everything. This runs after the response, beside work that already
+ * succeeded; three community APIs being down must not turn a published chapter
+ * into an error message. What it does return is what it did, for the caller
+ * that cares to log it.
+ */
+export async function illustrateQuietly(
+  userId: string,
+  limit: number = AUTOMATIC_LIMIT,
+): Promise<EnrichReport | null> {
+  try {
+    return await enrichEntityImages(userId, { limit })
+  } catch {
+    return null
+  }
 }
 
 /**

@@ -17,10 +17,12 @@ import { closeDb, raw, resetDatabase, seedWorld } from '../helpers/db.ts'
  *
  * These tests pin the two things that make that safe to run unattended. A name
  * left unanswered holds back the relations that need it, rather than publishing
- * them against an entity that does not exist. And a category publication cannot
- * apply is parked rather than accepted, because an item accepted into nothing
- * stays proposed for ever — and a chapter with a proposal left is a chapter that
- * never opens.
+ * them against an entity that does not exist. An identity question is left
+ * standing for the same reason a naming one is — accepting an entity whose
+ * rapprochement is still open is how a duplicate node is created. And a
+ * contradiction, which publication still cannot apply, is parked rather than
+ * accepted, because an item accepted into nothing stays proposed for ever — and
+ * a chapter with a proposal left is a chapter that never opens.
  */
 
 const SUMMARY = [
@@ -149,23 +151,82 @@ describe('the automatic pass', () => {
     expect((await statuses(runId)).proposed ?? 0).toBe(0)
   })
 
-  it('parks a category publication cannot apply instead of accepting it', async () => {
+  it('parks a contradiction, which publication still cannot apply', async () => {
     const prepared = await run()
 
-    // A rapprochement has no publication path: accepting it would leave it
-    // proposed for ever, and a chapter with a proposal left never opens.
+    // Accepting one would leave it proposed for ever, and a chapter with a
+    // proposal left never opens.
     await raw`
       INSERT INTO review_items
         (run_id, chapter_id, user_id, category, priority, payload,
          proposal_fingerprint, requires_explicit_review, confidence, status)
-      SELECT ${prepared.runId}, ${prepared.chapterId}, ${prepared.userId}, 'resolution', 95,
-             ${raw.json({ candidateLabel: 'Shanks', existingEntityId: 'x', signals: [] })},
-             'fp-resolution', true, 0.5, 'proposed'`
+      SELECT ${prepared.runId}, ${prepared.chapterId}, ${prepared.userId}, 'conflict', 95,
+             ${raw.json({ explanation: 'Deux lectures possibles.', options: [] })},
+             'fp-conflict', true, 0.5, 'proposed'`
 
     const result = await autoReview(prepared.userId, prepared.runId)
 
     expect(result.deferred).toBe(1)
     expect(result.accepted).toBe(0)
     expect((await statuses(prepared.runId)).proposed ?? 0).toBe(0)
+  })
+
+  it('holds a rapprochement and the proposal it is about', async () => {
+    /*
+     * The question this pass refuses to answer on its own. Accepting the entity
+     * while its rapprochement sleeps is how a second Zoro enters a graph that
+     * will never join the two back — and no score routes an identity past a
+     * human, which is a rule this mode narrows and does not repeal.
+     */
+    const world = await seedWorld([])
+    const { chapterId } = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      language: 'en',
+      text: SUMMARY,
+    })
+    const runId = await createRun(world.userId, chapterId)
+    // The run's own automatic step has to stay out of the way: the
+    // rapprochement must be in place before the pass sees the entity it is
+    // about, and the flag is what decides whether that step does anything.
+    delete process.env.AUTO_REVIEW_NAMES_ONLY
+    await executeRun(world.userId, chapterId, runId)
+    process.env.AUTO_REVIEW_NAMES_ONLY = '1'
+
+    const [entity] = await raw<
+      Array<{ id: string; fingerprint: string; payload: { local_id: string } }>
+    >`SELECT id, proposal_fingerprint AS fingerprint, payload FROM review_items
+        WHERE run_id = ${runId} AND category = 'entity' LIMIT 1`
+
+    await raw`
+      INSERT INTO review_items
+        (run_id, chapter_id, user_id, category, priority, payload,
+         proposal_fingerprint, requires_explicit_review, confidence, status)
+      SELECT ${runId}, ${chapterId}, ${world.userId}, 'resolution', 95,
+             ${raw.json({
+               candidateLabel: 'Shanks',
+               candidateFingerprint: entity!.fingerprint,
+               existingEntityId: '00000000-0000-4000-8000-000000000000',
+               signals: [],
+             })},
+             'fp-resolution', true, 0.5, 'proposed'`
+
+    const result = await autoReview(world.userId, runId)
+
+    expect(result.heldForIdentity).toBe(1)
+    expect(result.deferred).toBe(0)
+
+    // Both still standing, and the chapter with them: who this is has not been
+    // answered, so the chapter has not been read to the end.
+    const open = await raw<Array<{ category: string }>>`
+      SELECT category FROM review_items
+        WHERE run_id = ${runId} AND status = 'proposed'`
+    expect(open.map((row) => row.category).sort()).toContain('resolution')
+    expect(open.map((row) => row.category)).toContain('entity')
+
+    const [chapter] = await raw<Array<{ status: string }>>`
+      SELECT status FROM chapters WHERE id = ${chapterId}`
+    expect(chapter!.status).not.toBe('published')
   })
 })

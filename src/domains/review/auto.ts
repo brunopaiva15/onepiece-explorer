@@ -36,9 +36,14 @@ import { publishDecisions, type Decision, type PublishResult } from './publish.t
  *   it. Publishing it now would fail — its entity does not exist yet — and the
  *   failure would be silent in an automatic pass.
  *
- *   Rapprochements and contradictions cannot be accepted at all: publication has
- *   no path for them, so an "accept" would leave them proposed for ever and the
- *   chapter would never count as read. They are deferred, and the note says so.
+ *   A contradiction cannot be accepted at all: publication has no path for one,
+ *   so an "accept" would leave it proposed for ever and the chapter would never
+ *   count as read. Those are deferred, and the note says so.
+ *
+ *   A rapprochement is neither accepted nor deferred but left standing, with
+ *   the proposal it is about. It is publishable now — accepting one folds the
+ *   proposal into the entity you already have — and it is the last question
+ *   this pass refuses to take on its own.
  */
 
 /**
@@ -56,6 +61,8 @@ export interface AutoReviewResult {
   accepted: number
   /** Naming questions left for the reviewer. */
   heldForNaming: number
+  /** Identity questions left for the reviewer, with what they hold up. */
+  heldForIdentity: number
   /** Relations left waiting on one of those names. */
   heldByName: number
   /** Categories publication cannot apply, parked rather than accepted. */
@@ -67,10 +74,11 @@ interface Pending {
   id: string
   category: string
   payload: Record<string, unknown>
+  fingerprint: string
 }
 
-/** Categories nothing knows how to publish. See the note above. */
-const UNPUBLISHABLE = new Set(['resolution', 'conflict'])
+/** The one category nothing knows how to publish. See the note above. */
+const UNPUBLISHABLE = new Set(['conflict'])
 
 export async function autoReview(
   userId: string,
@@ -82,6 +90,7 @@ export async function autoReview(
         id: reviewItems.id,
         category: reviewItems.category,
         payload: reviewItems.payload,
+        fingerprint: reviewItems.proposalFingerprint,
       })
       .from(reviewItems)
       .where(
@@ -97,6 +106,7 @@ export async function autoReview(
   const result: AutoReviewResult = {
     accepted: 0,
     heldForNaming: 0,
+    heldForIdentity: 0,
     heldByName: 0,
     deferred: 0,
     published: null,
@@ -121,12 +131,52 @@ export async function autoReview(
     if (localId.length > 0) heldLocalIds.add(localId)
   }
 
+  /*
+   * The other question that stays human: is this someone we already know?
+   *
+   * A rapprochement is now publishable — accepting it folds the proposal into
+   * the entity you already have — which makes deferring it the wrong answer
+   * rather than the only one. It is also the last question this pass may take
+   * on its own: accepting the entity while its rapprochement sleeps is how a
+   * second Zoro enters a graph that will never join the two back, and no score
+   * routes an identity past a human.
+   *
+   * So the rapprochement is held, and so are the proposal it is about and the
+   * relations naming it. The chapter stays in review until it is answered —
+   * which is correct: it has not been read to the end while the question of who
+   * this is remains open.
+   */
+  const contested = new Set<string>()
+  for (const item of pending) {
+    if (item.category !== 'resolution') continue
+    const fingerprint = item.payload.candidateFingerprint
+    if (typeof fingerprint === 'string') contested.add(fingerprint)
+  }
+
+  for (const item of pending) {
+    if (item.category !== 'entity') continue
+    if (!contested.has(item.fingerprint)) continue
+    const localId = typeof item.payload.local_id === 'string' ? item.payload.local_id : ''
+    if (localId.length > 0) heldLocalIds.add(localId)
+  }
+
   const decisions: Decision[] = []
 
   for (const item of pending) {
     if (UNPUBLISHABLE.has(item.category)) {
       decisions.push({ reviewItemId: item.id, decision: 'defer' })
       result.deferred++
+      continue
+    }
+
+    if (item.category === 'resolution') {
+      result.heldForIdentity++
+      continue
+    }
+
+    if (item.category === 'entity' && contested.has(item.fingerprint)) {
+      // Held with its rapprochement, not counted twice: the question is the
+      // rapprochement's, and this card follows it.
       continue
     }
 
@@ -166,9 +216,15 @@ export function autoReviewNote(result: AutoReviewResult): string {
         (result.heldByName > 0 ? ` (+ ${result.heldByName} relation(s) en attente)` : ''),
     )
   }
+  if (result.heldForIdentity > 0) {
+    parts.push(
+      `${result.heldForIdentity} rapprochement(s) laissé(s) à trancher — ` +
+        `personne d'autre ne décide d'une identité`,
+    )
+  }
   if (result.deferred > 0) {
     parts.push(
-      `${result.deferred} rapprochement(s)/contradiction(s) reporté(s) — ` +
+      `${result.deferred} contradiction(s) reportée(s) — ` +
         `leur publication n'est pas implémentée`,
     )
   }

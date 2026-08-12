@@ -248,9 +248,13 @@ export async function getNarrativeDelta(
       .select({
         id: entities.id,
         nodeType: entities.nodeType,
+        // `entities.id` written out, never interpolated: a `${entities.id}`
+        // renders unqualified here and binds to `entity_labels`' own `id`,
+        // which matches nothing and reads as an unnamed entity. See
+        // entity-sheet.ts for the full account.
         label: sql<string | null>`(
           SELECT l.label FROM entity_labels l
-          WHERE l.entity_id = ${entities.id}
+          WHERE l.entity_id = entities.id
           ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
         )`,
       })
@@ -264,12 +268,12 @@ export async function getNarrativeDelta(
         epistemicStatus: assertions.epistemicStatus,
         subjectLabel: sql<string | null>`(
           SELECT l.label FROM entity_labels l
-          WHERE l.entity_id = ${assertions.subjectEntityId}
+          WHERE l.entity_id = assertions.subject_entity_id
           ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
         )`,
         objectLabel: sql<string | null>`(
           SELECT l.label FROM entity_labels l
-          WHERE l.entity_id = ${assertions.objectEntityId}
+          WHERE l.entity_id = assertions.object_entity_id
           ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
         )`,
       })
@@ -293,7 +297,7 @@ export async function getNarrativeDelta(
             heldSince: assertions.knowledgeFromChapter,
             subjectLabel: sql<string | null>`(
               SELECT l.label FROM entity_labels l
-              WHERE l.entity_id = ${assertions.subjectEntityId}
+              WHERE l.entity_id = assertions.subject_entity_id
               ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
             )`,
           })

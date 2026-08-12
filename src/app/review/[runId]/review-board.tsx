@@ -644,6 +644,10 @@ export function ReviewBoard({ queue }: Props) {
           }
           twins={twinsOfCurrent}
           onJump={jumpTo}
+          onJumpToItem={(itemId) => {
+            const position = items.findIndex((candidate) => candidate.id === itemId)
+            if (position >= 0) jumpTo(position)
+          }}
           settled={autoDeferred.has(current.id)}
           renamedLabels={renamedLabels}
         />
@@ -675,6 +679,12 @@ function PublishSummary({
       </p>
       <ul className="mt-2 space-y-0.5 text-sm text-secondary">
         {result.entitiesCreated > 0 && <li>{result.entitiesCreated} entité(s)</li>}
+        {result.entitiesMerged > 0 && (
+          <li>
+            {result.entitiesMerged} rapprochée(s) avec une entité déjà connue —
+            rien de créé, les faits du chapitre sont allés sur elle
+          </li>
+        )}
         {result.assertionsCreated > 0 && <li>{result.assertionsCreated} relation(s)</li>}
         {result.eventsCreated > 0 && <li>{result.eventsCreated} événement(s)</li>}
         {result.mysteriesCreated > 0 && <li>{result.mysteriesCreated} mystère(s)</li>}
@@ -732,6 +742,7 @@ function ProposalCard({
   onRename,
   twins,
   onJump,
+  onJumpToItem,
   settled,
   renamedLabels,
 }: {
@@ -745,6 +756,7 @@ function ProposalCard({
   onRename: (label: string) => void
   twins: Twin[]
   onJump: (position: number) => void
+  onJumpToItem: (itemId: string) => void
   /** Deferred by an accept on one of its copies rather than by hand. */
   settled: boolean
   renamedLabels: RenamePair[]
@@ -793,6 +805,12 @@ function ProposalCard({
               >
                 Revue explicite obligatoire
               </p>
+            )}
+            {item.mergeSuggestion && (
+              <MergeNotice
+                suggestion={item.mergeSuggestion}
+                onJumpToItem={onJumpToItem}
+              />
             )}
             {item.duplicate && (
               <DuplicateNotice
@@ -857,6 +875,48 @@ function ProposalCard({
         </div>
       </div>
     </article>
+  )
+}
+
+/**
+ * « C'est peut-être quelqu'un que vous connaissez déjà », said on the card.
+ *
+ * A chapter names again someone already in the graph — « Zoro » where you
+ * settled « Roronoa Zoro » — and two cards are produced: this entity, and a
+ * rapprochement asking whether they are the same. Deciding this one alone is
+ * how a second Zoro is created, and the two can be forty apart in the queue.
+ *
+ * The notice does not decide anything and does not hide the buttons: judging
+ * that the rapprochement is wrong and accepting a genuinely new character is a
+ * legitimate answer. It says where the question that settles this one lives.
+ */
+function MergeNotice({
+  suggestion,
+  onJumpToItem,
+}: {
+  suggestion: NonNullable<ReviewItemView['mergeSuggestion']>
+  onJumpToItem: (itemId: string) => void
+}) {
+  return (
+    <div className="mb-3 border-[3px] border-ink bg-[var(--epi-hypothetical)] px-2 py-1.5 text-ink">
+      <p className="font-display text-sm uppercase">
+        Peut-être une entité déjà connue
+      </p>
+      <p className="mt-1 text-sm">
+        Un rapprochement propose que ce soit
+        {suggestion.existingLabel ? ` « ${suggestion.existingLabel} »` : ' une entité déjà publiée'}
+        . C&apos;est là-bas que ça se décide : accepter le rapprochement rattache
+        les faits de ce chapitre à l&apos;entité existante, sans créer de second
+        nœud. Accepter cette carte-ci sans lui, c&apos;est créer le doublon.
+      </p>
+      <button
+        type="button"
+        onClick={() => onJumpToItem(suggestion.reviewItemId)}
+        className="bouton mt-1.5 !py-0.5 !text-xs"
+      >
+        Aller au rapprochement
+      </button>
+    </div>
   )
 }
 

@@ -239,7 +239,12 @@ pnpm images:catalogue   # récupère les ~1 000 illustrations disponibles, une f
 pnpm images:enrich      # rapproche, télécharge, range dans votre bucket privé
 ```
 
-Ou le bouton dans `/reglages`, qui montre d'abord la couverture par type.
+Ou le bouton dans `/reglages`, qui montre d'abord la couverture par type. En
+temps normal vous n'aurez ni l'un ni l'autre à lancer : chaque chapitre ouvert
+à la lecture illustre une quinzaine d'entités au passage, après la réponse. Une
+illustration n'est pas une connaissance — elle ne demande pas de décision,
+seulement un moment, et le moment évident est celui où le chapitre devient
+lisible.
 
 Trois choses à savoir, et elles ne sont pas des détails.
 

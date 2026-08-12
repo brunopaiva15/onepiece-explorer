@@ -159,9 +159,22 @@ export async function getEntitySheet(
             .select({
               id: entities.id,
               nodeType: entities.nodeType,
+              /*
+               * Qualified by hand, and it must stay that way.
+               *
+               * `${entities.id}` inside a raw fragment renders as a bare
+               * `"id"`: Drizzle qualifies the columns in the clauses it builds,
+               * not the SQL you write. Inside this subquery `"id"` then
+               * resolves to `entity_labels`' own `id` — the inner scope is
+               * searched first and that table has such a column — so the
+               * correlation silently became `l.entity_id = l.id`, matched
+               * nothing, and every related entity read « entité sans nom
+               * révélé » while its link led to a page carrying the name. No
+               * error either, because both sides are uuid.
+               */
               label: sql<string | null>`(
                 SELECT l.label FROM entity_labels l
-                WHERE l.entity_id = ${entities.id}
+                WHERE l.entity_id = entities.id
                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
                 LIMIT 1
               )`,

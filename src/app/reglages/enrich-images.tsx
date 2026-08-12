@@ -90,11 +90,17 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
                 : `Chercher une image pour ${missing} entité(s)`}
           </button>
 
-          {pending && (
+          {pending ? (
             <p className="mt-2 text-sm text-muted" role="status">
               Une requête par image, à un rythme volontairement lent : les trois
               catalogues sont gratuits et ne nous doivent rien. Comptez quelques
               minutes sur une grande bibliothèque.
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-muted">
+              Une quinzaine d&apos;entités sont illustrées automatiquement à
+              chaque chapitre ouvert à la lecture. Ce bouton sert à rattraper le
+              reste d&apos;un coup.
             </p>
           )}
         </>

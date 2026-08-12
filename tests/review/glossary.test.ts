@@ -130,6 +130,64 @@ describe('answering a naming question', () => {
     expect(labels.map((row) => row.label)).toContain('Équipage du Roux')
   })
 
+  it('keeps the source wording as a name the entity can be found by', async () => {
+    /*
+     * « Foosha Village » is what the chapter says; « Village de Fuchsia » is
+     * what we call it. Storing only the second costs twice: a reader searching
+     * the English name they read in a scan finds nothing, and the illustration
+     * catalogues — English to the last row — cannot match a French label, which
+     * left half the graph faceless with no explanation.
+     */
+    const prepared = await prepareRun(1)
+    const itemId = await flagAsUnsure(prepared.runId, 'Red-Haired Pirates')
+    const [before] = await raw<Array<{ payload: Record<string, unknown> }>>`
+      SELECT payload FROM review_items WHERE id = ${itemId}`
+
+    await publishDecisions(prepared.userId, prepared.runId, [
+      {
+        reviewItemId: itemId,
+        decision: 'correct',
+        correctedPayload: { ...before!.payload, label: 'Équipage du Roux' },
+      },
+    ])
+
+    const labels = await raw<Array<{ label: string; precedence: number }>>`
+      SELECT l.label, l.precedence FROM entity_labels l
+        JOIN entities e ON e.id = l.entity_id
+       WHERE l.user_id = ${prepared.userId}
+       ORDER BY l.precedence DESC`
+
+    const french = labels.find((row) => row.label === 'Équipage du Roux')
+    const source = labels.find((row) => row.label === 'Red-Haired Pirates')
+    expect(french).toBeDefined()
+    expect(source).toBeDefined()
+    // Findable by, never called by: the displayed name is the highest
+    // precedence, and this one sits below every kind there is.
+    expect(source!.precedence).toBeLessThan(french!.precedence)
+  })
+
+  it('does not store the source wording twice when it is already the name', async () => {
+    const prepared = await prepareRun(1)
+    const [item] = await raw<Array<{ id: string; payload: { label: string } }>>`
+      SELECT id, payload FROM review_items
+        WHERE run_id = ${prepared.runId} AND category = 'entity'
+        ORDER BY priority DESC LIMIT 1`
+    const label = item!.payload.label
+
+    await raw`
+      UPDATE review_items
+         SET payload = ${raw.json({ ...item!.payload, source_term: label })}
+       WHERE id = ${item!.id}`
+
+    await publishDecisions(prepared.userId, prepared.runId, [
+      { reviewItemId: item!.id, decision: 'accept' },
+    ])
+
+    const labels = await raw<Array<{ label: string }>>`
+      SELECT label FROM entity_labels WHERE user_id = ${prepared.userId}`
+    expect(labels.filter((row) => row.label === label)).toHaveLength(1)
+  })
+
   it('records the form you accepted on an entity the model asked about', async () => {
     const prepared = await prepareRun(1)
     const itemId = await flagAsUnsure(prepared.runId, 'Red-Haired Pirates')

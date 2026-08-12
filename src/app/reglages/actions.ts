@@ -117,6 +117,7 @@ export async function enrichImagesAction(): Promise<EnrichImagesResult> {
     const report = await enrichEntityImages(session.userId)
 
     const notes = [
+      ...(report.cacheNote ? [report.cacheNote] : []),
       ...report.catalogueFailures.map(
         (failure) => `${failure.source} injoignable : ${failure.reason}`,
       ),

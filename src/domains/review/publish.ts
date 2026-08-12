@@ -66,6 +66,15 @@ export interface Decision {
 
 export interface PublishResult {
   entitiesCreated: number
+  /**
+   * Proposals that turned out to be an entity you already have.
+   *
+   * Counted apart from `entitiesCreated` because nothing was created: the
+   * chapter's facts were attached to an existing character. Reporting a merge
+   * as a creation would say the graph grew by a node when the point of the
+   * operation is that it did not.
+   */
+  entitiesMerged: number
   assertionsCreated: number
   eventsCreated: number
   mysteriesCreated: number
@@ -94,6 +103,7 @@ export interface PublishResult {
 export function mergePublishResults(a: PublishResult, b: PublishResult): PublishResult {
   return {
     entitiesCreated: a.entitiesCreated + b.entitiesCreated,
+    entitiesMerged: a.entitiesMerged + b.entitiesMerged,
     assertionsCreated: a.assertionsCreated + b.assertionsCreated,
     eventsCreated: a.eventsCreated + b.eventsCreated,
     mysteriesCreated: a.mysteriesCreated + b.mysteriesCreated,
@@ -114,6 +124,7 @@ export async function publishDecisions(
 ): Promise<PublishResult> {
   const result: PublishResult = {
     entitiesCreated: 0,
+    entitiesMerged: 0,
     assertionsCreated: 0,
     eventsCreated: 0,
     mysteriesCreated: 0,
@@ -191,10 +202,76 @@ export async function publishDecisions(
       if (row.localId !== null) localToEntity.set(row.localId, row.id)
     }
 
+    /*
+     * The rapprochements you accepted, read before anything is written.
+     *
+     * « Zoro » at chapter 3 is Roronoa Zoro, settled at chapter 2. Accepting
+     * that used to be impossible — publication answered « pas encore
+     * implémenté, reportez ou rejetez » — which left one bad choice and one
+     * worse: accept the entity and get a second Zoro that nothing will ever
+     * join back, or defer it and lose the chapter's facts about him, since
+     * every relation naming him fails on a subject that does not exist.
+     *
+     * So an accepted rapprochement is a merge. The proposal stops being a new
+     * entity and becomes another appearance of the one you already have: its
+     * local id points at the existing row, and the chapter's relations, events
+     * and mysteries land on the character the reader already knows.
+     *
+     * Keyed by the candidate's fingerprint because that is what the resolution
+     * payload carries — the identity of the *proposal*, which survives the
+     * review item ids being unknown to each other.
+     */
+    const mergeInto = new Map<string, string>()
+    /** Fingerprints a merge was really applied to, for the resolution loop. */
+    const merged = new Set<string>()
+    for (const item of items) {
+      if (item.category !== 'resolution') continue
+      if (item.status !== 'proposed') continue
+      const decision = byId.get(item.id)
+      if (decision?.decision !== 'accept') continue
+
+      const payload = (item.payload ?? {}) as Record<string, unknown>
+      const fingerprint = payload.candidateFingerprint
+      const existingId = payload.existingEntityId
+      if (typeof fingerprint !== 'string' || typeof existingId !== 'string') continue
+      mergeInto.set(fingerprint, existingId)
+    }
+
     // Entities first.
     for (const item of items) {
       if (item.category !== 'entity') continue
       const decision = byId.get(item.id)
+
+      /*
+       * A merged proposal needs no decision of its own.
+       *
+       * Answering « oui, c'est bien lui » on the rapprochement is the decision;
+       * asking for the entity card to be accepted as well would be asking the
+       * same question twice, and the two cards can be forty apart in the queue.
+       */
+      const mergeTarget = mergeInto.get(item.fingerprint)
+      if (mergeTarget !== undefined && item.status === 'proposed') {
+        const candidate = (decision?.correctedPayload ?? item.payload) as CandidateEntity
+        localToEntity.set(candidate.local_id, mergeTarget)
+
+        const added = await addMergedLabel(db, {
+          userId,
+          entityId: mergeTarget,
+          label: candidate.label,
+          kind: candidate.label_kind,
+          chapterNumber: run.chapterNumber,
+        })
+        if (added) result.labelsCreated++
+
+        await db
+          .update(reviewItems)
+          .set({ status: 'accepted' })
+          .where(eq(reviewItems.id, item.id))
+        merged.add(item.fingerprint)
+        result.entitiesMerged++
+        continue
+      }
+
       if (!decision) continue
 
       // Idempotency: an item already decided is not decided again. A second
@@ -258,6 +335,38 @@ export async function publishDecisions(
 
       result.entitiesCreated++
       result.labelsCreated++
+
+      /*
+       * The wording the source used, kept as a name of its own.
+       *
+       * « Foosha Village » is what the chapter says and « Village de Fuchsia »
+       * is what we call it, and until now only the second was stored. That cost
+       * twice: a reader searching the English name they read in a scan found
+       * nothing, and the illustration catalogues — which are English to the
+       * last row — could not match a French label, so half the graph stayed
+       * faceless with no explanation.
+       *
+       * Precedence 5, below every kind in LABEL_PRECEDENCE, so it can never
+       * become the displayed name: this is the name the entity is *findable*
+       * by, not the name it is called by. Its revelation chapter is this one,
+       * like the label it accompanies, so it is bounded exactly the same way.
+       */
+      const sourceWording = candidate.source_term?.trim() ?? ''
+      if (
+        sourceWording.length > 0 &&
+        normalizeText(sourceWording) !== normalizeText(candidate.label)
+      ) {
+        await db.insert(entityLabels).values({
+          entityId: entity.id,
+          userId,
+          label: sourceWording,
+          normalizedLabel: normalizeText(sourceWording),
+          kind: 'alias',
+          revealedInChapter: run.chapterNumber,
+          precedence: 5,
+        })
+        result.labelsCreated++
+      }
 
       /*
        * The naming decision, recorded so it is never asked again.
@@ -544,19 +653,22 @@ export async function publishDecisions(
         .where(eq(reviewItems.id, item.id))
     }
 
-    result.chapterPublished = await openIfReviewed(db, userId, run.chapterId)
-
     /*
-     * Categories with no publication path, decided rather than ignored.
+     * Rapprochements and contradictions, decided rather than ignored.
      *
-     * Rapprochements and contradictions are proposals about the graph, not rows
-     * to insert: accepting one means writing a `same_as` assertion or closing an
-     * earlier belief, and neither is built. Until it is, a decision on one was
-     * silently dropped — the item stayed 'proposed', which now also means the
-     * chapter can never count as read.
+     * A rapprochement is now applied where it belongs — in the entity loop
+     * above, as a merge — so accepting one here is a matter of recording it,
+     * unless the merge could not run: an entity proposal already published as
+     * its own row in an earlier batch cannot be un-published, and saying so is
+     * more use than a silent success.
      *
-     * So refusing and postponing work, and accepting says plainly that it does
-     * not. A failure the reviewer can read beats a click that does nothing.
+     * A contradiction still has no publication path. Accepting one means
+     * closing an earlier belief or keeping both, and neither is built. Saying
+     * that plainly beats a click that does nothing — the item would stay
+     * 'proposed', which also means the chapter could never count as read.
+     *
+     * Before openIfReviewed, so a batch whose last undecided items are these
+     * finishes the chapter instead of leaving it one publication short.
      */
     for (const item of items) {
       if (item.category !== 'resolution' && item.category !== 'conflict') continue
@@ -582,18 +694,42 @@ export async function publishDecisions(
         continue
       }
 
+      if (item.category === 'resolution') {
+        const payload = (item.payload ?? {}) as Record<string, unknown>
+        const fingerprint =
+          typeof payload.candidateFingerprint === 'string'
+            ? payload.candidateFingerprint
+            : ''
+
+        if (merged.has(fingerprint)) {
+          await recordDecision(db, userId, run.workId, item, decision)
+          await db
+            .update(reviewItems)
+            .set({ status: 'accepted' })
+            .where(eq(reviewItems.id, item.id))
+          continue
+        }
+
+        result.failures.push({
+          reviewItemId: item.id,
+          reason:
+            'Le rapprochement n’a pas pu être appliqué : la proposition d’entité ' +
+            'correspondante a déjà été décidée dans un lot précédent, et une entité ' +
+            'publiée ne se replie pas sur une autre. Rejetez ce rapprochement.',
+        })
+        continue
+      }
+
       result.failures.push({
         reviewItemId: item.id,
         reason:
-          item.category === 'resolution'
-            ? 'Accepter un rapprochement demande d’écrire une assertion « same_as » ' +
-              'datée du chapitre qui la révèle : ce n’est pas encore implémenté. ' +
-              'Reportez-la ou rejetez-la.'
-            : 'Trancher une contradiction demande de fermer la croyance antérieure ' +
-              'ou de garder les deux : ce n’est pas encore implémenté. ' +
-              'Reportez-la ou rejetez-la.',
+          'Trancher une contradiction demande de fermer la croyance antérieure ' +
+          'ou de garder les deux : ce n’est pas encore implémenté. ' +
+          'Reportez-la ou rejetez-la.',
       })
     }
+
+    result.chapterPublished = await openIfReviewed(db, userId, run.chapterId)
 
     await db.insert(auditLog).values({
       userId,
@@ -791,6 +927,62 @@ async function insertEvidence(
  * moment anything better is revealed — while remaining in the table, because at
  * an earlier boundary it is still the only thing the reader knew.
  */
+/**
+ * Add the name a merged proposal came in under, without renaming anything.
+ *
+ * Chapter 3 calls him « Zoro » and you settled on « Roronoa Zoro » at chapter
+ * 2. Both are names of the same person and the graph should know both — a
+ * reader searching either must find him — but the one you settled is the one he
+ * is called, and a merge must never quietly change a displayed name behind the
+ * reviewer's back. So the new label enters strictly below the entity's current
+ * highest precedence, whatever kind it claims to be, and the display is
+ * unmoved.
+ *
+ * Its revelation chapter is the chapter that used it, like every other label:
+ * a name is dated by when it was heard, and « Zoro » being known from chapter 3
+ * is exactly the sort of thing the boundary exists to keep straight.
+ *
+ * Returns whether a row was written — a name already on the entity is not a
+ * failure, it is the ordinary case of a character named twice.
+ */
+async function addMergedLabel(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    userId: string
+    entityId: string
+    label: string
+    kind: string
+    chapterNumber: number
+  },
+): Promise<boolean> {
+  const normalized = normalizeText(input.label)
+
+  const existing = await db
+    .select({
+      normalizedLabel: entityLabels.normalizedLabel,
+      precedence: entityLabels.precedence,
+    })
+    .from(entityLabels)
+    .where(eq(entityLabels.entityId, input.entityId))
+
+  if (existing.some((row) => row.normalizedLabel === normalized)) return false
+
+  const highest = existing.reduce((top, row) => Math.max(top, row.precedence), 0)
+  const precedence = Math.max(1, Math.min(precedenceFor(input.kind), highest - 1))
+
+  await db.insert(entityLabels).values({
+    entityId: input.entityId,
+    userId: input.userId,
+    label: input.label,
+    normalizedLabel: normalized,
+    kind: input.kind as 'placeholder' | 'alias' | 'true_name' | 'epithet' | 'translation',
+    revealedInChapter: input.chapterNumber,
+    precedence,
+  })
+
+  return true
+}
+
 function precedenceFor(kind: string): number {
   switch (kind) {
     case 'true_name':

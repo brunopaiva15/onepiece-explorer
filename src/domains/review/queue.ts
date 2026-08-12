@@ -50,6 +50,15 @@ export interface ReviewItemView {
   /** For resolution items: the existing entity's current display label. */
   relatedLabel: string | null
   /**
+   * For entity items: a rapprochement in this run that says who this already is.
+   *
+   * « Zoro » proposed at chapter 3 when Roronoa Zoro is already in the graph.
+   * The two cards can be forty apart in the queue, and deciding this one alone
+   * is how a second Zoro gets created — so the card says where the real
+   * question is.
+   */
+  mergeSuggestion: { reviewItemId: string; existingLabel: string | null } | null
+  /**
    * Names for the identifiers this proposal mentions.
    *
    * A relation stores its two ends as identifiers, and which kind depends on
@@ -155,6 +164,7 @@ export async function getReviewQueue(
         category: reviewItems.category,
         payload: reviewItems.payload,
         status: reviewItems.status,
+        fingerprint: reviewItems.proposalFingerprint,
       })
       .from(reviewItems)
       .where(and(eq(reviewItems.runId, runId), eq(reviewItems.userId, userId)))
@@ -195,6 +205,7 @@ export async function getReviewQueue(
   // Over the whole run, not the page: a relation shown here routinely names an
   // entity whose own card was published in an earlier batch.
   const names = await resolveNames(data.rows, data.forGrouping)
+  const merges = await pendingMerges(data.forGrouping)
 
   return {
     runId,
@@ -228,6 +239,8 @@ export async function getReviewQueue(
         ? (labelById.get(relatedEntityId(row.payload)!) ?? null)
         : null,
       duplicate: duplicates.get(row.id) ?? null,
+      mergeSuggestion:
+        row.category === 'entity' ? (merges.get(row.fingerprint) ?? null) : null,
       names: Object.fromEntries(
         referencedIds(row.payload)
           .map((id) => [id, names.get(id)] as const)
@@ -369,6 +382,61 @@ async function resolveEvidence(
   }
 
   return { evidenceByRef, labelById }
+}
+
+/**
+ * The rapprochements still open, by the proposal each one is about.
+ *
+ * A resolution names its candidate by fingerprint, which is what lets an entity
+ * card point at the question that actually decides it. Only the undecided ones:
+ * a rapprochement already answered is not something to send the reviewer to.
+ */
+async function pendingMerges(
+  proposals: Array<{
+    id: string
+    category: string
+    payload: unknown
+    status: string
+    fingerprint: string
+  }>,
+): Promise<Map<string, { reviewItemId: string; existingLabel: string | null }>> {
+  const open = proposals.filter(
+    (row) => row.category === 'resolution' && row.status === 'proposed',
+  )
+  if (open.length === 0) return new Map()
+
+  const targets = new Map<string, { reviewItemId: string; entityId: string }>()
+  for (const row of open) {
+    const payload = (row.payload ?? {}) as Record<string, unknown>
+    const fingerprint = payload.candidateFingerprint
+    const entityId = payload.existingEntityId
+    if (typeof fingerprint !== 'string' || typeof entityId !== 'string') continue
+    // The first one shown wins: two rapprochements about one proposal is a
+    // question the reviewer answers by opening them, not one to summarise here.
+    if (!targets.has(fingerprint)) targets.set(fingerprint, { reviewItemId: row.id, entityId })
+  }
+  if (targets.size === 0) return new Map()
+
+  const labels = await withIngest((db) =>
+    db
+      .select({ entityId: entityLabels.entityId, label: entityLabels.label })
+      .from(entityLabels)
+      .where(inArray(entityLabels.entityId, [...targets.values()].map((t) => t.entityId)))
+      .orderBy(desc(entityLabels.precedence)),
+  )
+
+  const labelById = new Map<string, string>()
+  for (const row of labels) if (!labelById.has(row.entityId)) labelById.set(row.entityId, row.label)
+
+  return new Map(
+    [...targets].map(([fingerprint, target]) => [
+      fingerprint,
+      {
+        reviewItemId: target.reviewItemId,
+        existingLabel: labelById.get(target.entityId) ?? null,
+      },
+    ]),
+  )
 }
 
 /** What a stored entity id looks like, as opposed to a per-response local id. */

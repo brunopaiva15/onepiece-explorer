@@ -1,7 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { requireOwner } from '@/domains/auth/session.ts'
+import { illustrateQuietly } from '@/domains/images/enrich.ts'
 import { autoReview, autoReviewEnabled } from '@/domains/review/auto.ts'
 import {
   markChapterReviewed,
@@ -51,16 +53,29 @@ export async function publishDecisionsAction(
      */
     const swept = autoReviewEnabled() ? await autoReview(session.userId, runId) : null
 
+    const result = swept?.published
+      ? mergePublishResults(published, swept.published)
+      : published
+
+    /*
+     * A chapter that has just become readable, illustrated on the way out.
+     *
+     * `after()` for the same reason the pipeline uses it: this downloads and
+     * re-encodes pictures, and the reviewer who clicked « publier » should not
+     * wait for it. Only when the chapter actually opened — publishing a batch
+     * mid-review would run it several times over the same entities for nothing.
+     */
+    if (result.chapterPublished !== null) {
+      // No revalidation on the way out: /graph is force-dynamic, so the next
+      // visit reads the pictures this just stored.
+      after(() => illustrateQuietly(session.userId))
+    }
+
     revalidatePath(`/review/${runId}`)
     revalidatePath('/chapitres')
     revalidatePath('/graph')
 
-    return {
-      ok: true,
-      published: swept?.published
-        ? mergePublishResults(published, swept.published)
-        : published,
-    }
+    return { ok: true, published: result }
   } catch (error) {
     return {
       ok: false,
@@ -83,6 +98,12 @@ export async function markChapterReviewedAction(
   try {
     const session = await requireOwner()
     const chapterNumber = await markChapterReviewed(session.userId, runId)
+
+    if (chapterNumber !== null) {
+      // No revalidation on the way out: /graph is force-dynamic, so the next
+      // visit reads the pictures this just stored.
+      after(() => illustrateQuietly(session.userId))
+    }
 
     revalidatePath(`/review/${runId}`)
     revalidatePath('/chapitres')

@@ -73,6 +73,71 @@ function typeColours(): Record<string, string> {
   )
 }
 
+/**
+ * The label box under the cursor, drawn in the theme rather than in white.
+ *
+ * Sigma's own hover renderer fills the box with a hard-coded `#FFF` and then
+ * writes the label in `labelColor` — which here is the body text colour, ivory
+ * on a dark ground. White on white: hovering any node produced a blank
+ * rectangle, and the name it was supposed to make readable was the one thing it
+ * hid.
+ *
+ * Painted like the rest of the interface: the overlay surface, the hard ink
+ * shadow of the panels and an accent border, so a hovered name reads as a
+ * cartouche rather than as a browser tooltip. The tokens are read once, when
+ * the renderer is built — this runs on every frame the pointer moves, which is
+ * no place to interrogate the stylesheet.
+ */
+function hoverPainter(): (
+  context: CanvasRenderingContext2D,
+  data: { x: number; y: number; size: number; label: string | null },
+  settings: { labelSize: number; labelFont: string; labelWeight: string },
+) => void {
+  const style = getComputedStyle(document.documentElement)
+  const read = (key: string, fallback: string) =>
+    style.getPropertyValue(key).trim() || fallback
+
+  const ink = read('--ink', '#000000')
+  const surface = read('--surface-overlay', '#2e2e2e')
+  const accent = read('--accent', '#F5C542')
+  const text = read('--text-primary', '#FFF8E7')
+
+  return (context, data, settings) => {
+    const size = settings.labelSize
+    context.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`
+
+    const padding = 5
+    const label = typeof data.label === 'string' ? data.label : ''
+
+    if (label.length > 0) {
+      const width = context.measureText(label).width + padding * 2
+      const height = size + padding * 2
+      const left = data.x + data.size + 3 - padding
+      const top = data.y - height / 2
+
+      context.fillStyle = ink
+      context.fillRect(left + 3, top + 3, width, height)
+      context.fillStyle = surface
+      context.fillRect(left, top, width, height)
+      context.lineWidth = 2
+      context.strokeStyle = accent
+      context.strokeRect(left, top, width, height)
+
+      context.fillStyle = text
+      context.fillText(label, left + padding, data.y + size / 3)
+    }
+
+    // The node itself, ringed so the cursor's target is unambiguous when two
+    // of them overlap.
+    context.beginPath()
+    context.arc(data.x, data.y, data.size + 3, 0, Math.PI * 2)
+    context.closePath()
+    context.lineWidth = 2
+    context.strokeStyle = accent
+    context.stroke()
+  }
+}
+
 export function GraphCanvas({ projection, portraits, onSelect }: Props) {
   const container = useRef<HTMLDivElement | null>(null)
   /**
@@ -170,6 +235,7 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
           labelColor: { color: getComputedStyle(document.body).color },
           labelSize: 12,
           labelWeight: '500',
+          defaultDrawNodeHover: hoverPainter(),
           // Below this zoom, labels would overlap into an unreadable mat.
           labelRenderedSizeThreshold: 7,
           minCameraRatio: 0.05,
