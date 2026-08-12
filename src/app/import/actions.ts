@@ -6,6 +6,11 @@ import { importChapter } from '@/domains/ingestion/import.ts'
 import { IngestionRejection } from '@/domains/ingestion/limits.ts'
 import { MAX_SUMMARY_CHARS, type SummaryLanguage } from '@/domains/ingestion/passages.ts'
 import { reorderPages } from '@/domains/ingestion/persist.ts'
+import {
+  chapterNumberFrom,
+  fetchChapterSummaries,
+  type FandomLanguage,
+} from '@/domains/ingestion/fandom.ts'
 import { importSummary } from '@/domains/ingestion/summary.ts'
 import { startChapterRun } from '@/domains/pipeline/start.ts'
 
@@ -308,4 +313,60 @@ function isFile(value: FormDataEntryValue): value is File {
 
 function isImageFile(file: File): boolean {
   return /\.(jpe?g|png|webp|avif)$/i.test(file.name)
+}
+
+export interface FandomActionResult {
+  ok: boolean
+  chapterNumber?: number
+  /** The citable text: French when the wiki has it, English otherwise. */
+  primary?: { language: FandomLanguage; text: string; url: string }
+  /** The other language, for naming. Absent when the wiki has only one. */
+  parallel?: { language: FandomLanguage; text: string; url: string }
+  /** What was not found, in the words the reviewer needs. */
+  problems?: string[]
+  error?: string
+}
+
+/**
+ * Fetch a chapter's summaries from the wiki, in both languages.
+ *
+ * The field accepts a URL and nothing in that URL is requested: `chapterNumberFrom`
+ * reads its digits and discards the rest, and the endpoints are constants in the
+ * domain module. That is what keeps "no request built from an address found in
+ * input" true while adding a feature that looks exactly like breaking it.
+ *
+ * French is the citable text when it exists, because the graph is read in French
+ * and an excerpt is quoted in the language of its source. English then rides
+ * along as the naming aid — which is the pair the extraction step was taught to
+ * read in migration 0017.
+ */
+export async function fetchFandomAction(input: string): Promise<FandomActionResult> {
+  try {
+    await requireOwner()
+
+    const chapterNumber = chapterNumberFrom(input)
+    const fetched = await fetchChapterSummaries(chapterNumber)
+
+    const french = fetched.summaries.find((summary) => summary.language === 'fr')
+    const english = fetched.summaries.find((summary) => summary.language === 'en')
+    const primary = french ?? english!
+    const parallel = french ? english : undefined
+
+    return {
+      ok: true,
+      chapterNumber,
+      primary: { language: primary.language, text: primary.text, url: primary.url },
+      ...(parallel
+        ? { parallel: { language: parallel.language, text: parallel.text, url: parallel.url } }
+        : {}),
+      problems: fetched.problems.map(
+        (problem) => `${problem.language === 'fr' ? 'Français' : 'Anglais'} : ${problem.reason}`,
+      ),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Récupération impossible.',
+    }
+  }
 }

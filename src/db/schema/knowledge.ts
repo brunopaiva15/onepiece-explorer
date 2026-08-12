@@ -76,6 +76,18 @@ export const entities = pgTable(
       .references(() => nodeTypes.key),
     firstSeenChapter: integer('first_seen_chapter').notNull(),
     reviewStatus: reviewStatusEnum('review_status').notNull().default('proposed'),
+    /**
+     * Which proposal produced this entity.
+     *
+     * Assertions have carried their provenance from the start; entities did
+     * not, and it was free while a chapter was published in one transaction —
+     * the map from the model's local id to the row it created lived in memory
+     * for exactly that long. Publishing a chapter in two batches, which is what
+     * holding back a naming question does, made a relation arrive with a
+     * subject of « e1 » and no way to resolve it. See migration 0018.
+     */
+    runId: uuid('run_id'),
+    proposalLocalId: text('proposal_local_id'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

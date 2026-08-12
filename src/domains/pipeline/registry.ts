@@ -41,6 +41,7 @@ export type StepKey =
   | 'detect_conflicts'
   | 'summarize_chapter'
   | 'embed'
+  | 'auto_publish'
 
 export interface StepDefinition {
   key: StepKey
@@ -150,6 +151,18 @@ export const STEPS: readonly StepDefinition[] = [
       + 'l’étape se déclare ignorée : la recherche plein texte, approchante et par graphe '
       + 'fonctionne sans elle.',
     usesModel: true,
+    implemented: true,
+    appliesTo: BOTH,
+  },
+  {
+    key: 'auto_publish',
+    label: 'Publication automatique',
+    detail:
+      'Ignorée sauf si AUTO_REVIEW_NAMES_ONLY=1. Accepte alors les propositions sans les soumettre, '
+      + 'et ne laisse en revue que les questions de nom — '
+      + 'plus les relations qui en dépendent. Rapprochements et contradictions sont reportés : '
+      + 'leur publication n’est pas implémentée. Le chapitre s’ouvre dès qu’il ne reste rien à trancher.',
+    usesModel: false,
     implemented: true,
     appliesTo: BOTH,
   },

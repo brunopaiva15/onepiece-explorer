@@ -18,9 +18,10 @@ une croyance réfutée reste visible dans le passé où elle était tenue pour v
 C'est ce qui rend le grand graphe sûr à construire pendant qu'on lit encore :
 rien ne vous gâche la lecture, et rien n'est perdu non plus.
 
-> **Outil privé.** L'application ne télécharge rien, ne récupère aucun résumé
-> en ligne, ne contourne aucune protection et ne publie rien. Vous écrivez ou
-> collez vous-même le récit détaillé de chaque chapitre, et c'est la seule
+> **Outil privé.** L'application ne récupère un résumé que si vous le demandez,
+> chapitre par chapitre, auprès de l'API publique d'un seul wiki dont l'adresse
+> est codée en dur ; elle ne contourne aucune protection et ne publie rien. Le
+> récit détaillé d'un chapitre — récupéré ou écrit par vous — est la seule
 > source : ce qui n'y est pas écrit n'entre pas dans le graphe, même si le
 > modèle le sait par ailleurs. Le dépôt ne contient aucune page de manga.
 
@@ -64,6 +65,13 @@ vérifiée caractère par caractère. Et quand traduire un nom relève de la
 convention plutôt que du texte — « Straw Hat Pirates » oui, « Going Merry »
 peut-être pas — le modèle le déclare au lieu de trancher, l'entité part en revue
 avec un champ modifiable, et votre réponse sert à tous les chapitres suivants.
+
+Le chapitre peut être **récupéré depuis le One Piece Fandom** par son numéro :
+les deux versions arrivent d'un coup, la française comme texte citable et
+l'anglaise en regard pour les noms ([ADR 0009](docs/adr/0009-fetching-the-chapter-from-the-wiki.md)).
+Le champ accepte une URL par confort, mais aucune requête n'en est construite —
+seuls ses chiffres sont lus, et les points d'entrée sont des constantes. Le texte
+récupéré reste modifiable avant l'import, et l'écrire soi-même reste possible.
 
 Si vous avez le chapitre dans les deux langues, collez la seconde version au
 même endroit : elle est fournie au modèle **pour les noms seulement**. La mise

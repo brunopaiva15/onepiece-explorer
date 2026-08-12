@@ -1,6 +1,6 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, ne } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { ingestionRuns, ingestionSteps, runCheckpoints } from '@/db/schema/ingestion.ts'
@@ -233,13 +233,27 @@ export async function markRunFinished(
       await db
         .update(chapters)
         .set({
-          // 'review' rather than 'published': a successful pipeline produces
-          // proposals, not canon. Nothing joins the graph without a human
-          // decision, so success here means "ready to be looked at".
+          // 'review' rather than 'published': a pipeline produces proposals,
+          // not canon. Success here means "ready to be looked at".
           status: outcome.status === 'succeeded' ? 'review' : 'failed',
           updatedAt: new Date(),
         })
-        .where(eq(chapters.id, run.chapterId))
+        .where(
+          and(
+            eq(chapters.id, run.chapterId),
+            /*
+             * Never take an opened chapter back.
+             *
+             * The last step of a run can finish its review and publish it, and
+             * this line ran afterwards — putting it back to 'review' and
+             * dropping the reader's boundary below it, so the facts published
+             * seconds earlier disappeared again. Re-processing a published
+             * chapter is the same case: its new proposals wait in the queue,
+             * and what was already read stays readable.
+             */
+            ne(chapters.status, 'published'),
+          ),
+        )
     }
   })
 }

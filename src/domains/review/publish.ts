@@ -90,6 +90,22 @@ export interface PublishResult {
   chapterPublished: number | null
 }
 
+/** Two publications reported as one, for a step that runs a sweep after yours. */
+export function mergePublishResults(a: PublishResult, b: PublishResult): PublishResult {
+  return {
+    entitiesCreated: a.entitiesCreated + b.entitiesCreated,
+    assertionsCreated: a.assertionsCreated + b.assertionsCreated,
+    eventsCreated: a.eventsCreated + b.eventsCreated,
+    mysteriesCreated: a.mysteriesCreated + b.mysteriesCreated,
+    labelsCreated: a.labelsCreated + b.labelsCreated,
+    rejected: a.rejected + b.rejected,
+    deferred: a.deferred + b.deferred,
+    failures: [...a.failures, ...b.failures],
+    // Whichever pass finished the chapter; only one of them can have.
+    chapterPublished: a.chapterPublished ?? b.chapterPublished,
+  }
+}
+
 export async function publishDecisions(
   userId: string,
   runId: string,
@@ -155,8 +171,25 @@ export async function publishDecisions(
      * Local ids from the extraction response map to real entity ids as this
      * loop creates them. Entities are published before assertions for exactly
      * this reason — an assertion naming `syn-3` needs `syn-3` to exist.
+     *
+     * Seeded from the entities this run has already produced, because a chapter
+     * is no longer necessarily published in one go: a naming question holds its
+     * entity back and the relations that name it with it, and both arrive in a
+     * later batch with a different map. Without this the relation would fail on
+     * a subject « e1 » whose entity was accepted a moment earlier — the failure
+     * that says "son entité a été rejetée ou reportée" about an entity that was
+     * neither.
      */
     const localToEntity = new Map<string, string>()
+
+    const alreadyPublished = await db
+      .select({ id: entities.id, localId: entities.proposalLocalId })
+      .from(entities)
+      .where(and(eq(entities.runId, runId), eq(entities.userId, userId)))
+
+    for (const row of alreadyPublished) {
+      if (row.localId !== null) localToEntity.set(row.localId, row.id)
+    }
 
     // Entities first.
     for (const item of items) {
@@ -197,6 +230,10 @@ export async function publishDecisions(
           nodeType: candidate.node_type,
           firstSeenChapter: run.chapterNumber,
           reviewStatus: 'accepted',
+          // Provenance, so a relation published in a later batch can still find
+          // this row from the id the model gave it.
+          runId,
+          proposalLocalId: candidate.local_id,
         })
         .returning({ id: entities.id })
 
@@ -440,6 +477,7 @@ export async function publishDecisions(
           nodeType,
           firstSeenChapter: run.chapterNumber,
           reviewStatus: 'accepted',
+          runId,
         })
         .returning({ id: entities.id })
 
@@ -507,6 +545,55 @@ export async function publishDecisions(
     }
 
     result.chapterPublished = await openIfReviewed(db, userId, run.chapterId)
+
+    /*
+     * Categories with no publication path, decided rather than ignored.
+     *
+     * Rapprochements and contradictions are proposals about the graph, not rows
+     * to insert: accepting one means writing a `same_as` assertion or closing an
+     * earlier belief, and neither is built. Until it is, a decision on one was
+     * silently dropped — the item stayed 'proposed', which now also means the
+     * chapter can never count as read.
+     *
+     * So refusing and postponing work, and accepting says plainly that it does
+     * not. A failure the reviewer can read beats a click that does nothing.
+     */
+    for (const item of items) {
+      if (item.category !== 'resolution' && item.category !== 'conflict') continue
+      const decision = byId.get(item.id)
+      if (!decision || item.status !== 'proposed') continue
+
+      if (decision.decision === 'reject') {
+        await recordDecision(db, userId, run.workId, item, decision)
+        await db
+          .update(reviewItems)
+          .set({ status: 'rejected' })
+          .where(eq(reviewItems.id, item.id))
+        result.rejected++
+        continue
+      }
+
+      if (decision.decision === 'defer') {
+        await db
+          .update(reviewItems)
+          .set({ status: 'deferred' })
+          .where(eq(reviewItems.id, item.id))
+        result.deferred++
+        continue
+      }
+
+      result.failures.push({
+        reviewItemId: item.id,
+        reason:
+          item.category === 'resolution'
+            ? 'Accepter un rapprochement demande d’écrire une assertion « same_as » ' +
+              'datée du chapitre qui la révèle : ce n’est pas encore implémenté. ' +
+              'Reportez-la ou rejetez-la.'
+            : 'Trancher une contradiction demande de fermer la croyance antérieure ' +
+              'ou de garder les deux : ce n’est pas encore implémenté. ' +
+              'Reportez-la ou rejetez-la.',
+      })
+    }
 
     await db.insert(auditLog).values({
       userId,

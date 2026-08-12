@@ -4,6 +4,7 @@ import { withIngest } from '@/db/boundary.ts'
 import { chapters, documents, pages } from '@/db/schema/documents.ts'
 import { ingestionRuns } from '@/db/schema/ingestion.ts'
 import { isProviderChoice, modelProvider, type ProviderChoice } from '@/domains/ai/index.ts'
+import { autoReview, autoReviewEnabled, autoReviewNote } from '@/domains/review/auto.ts'
 import { runnableSteps, stepsFor, type StepKey } from './registry.ts'
 import {
   inputHash,
@@ -172,6 +173,31 @@ export async function executeRun(
   }
 }
 
+/**
+ * Decide what does not need a person, and open the chapter if nothing is left.
+ *
+ * A step rather than a hook on the run's end, so it appears in the progress
+ * view with its own note and its own row: an automatic publication that left no
+ * trace would be the same work done invisibly, and the one thing a reviewer
+ * needs to be able to check afterwards is what was accepted without them.
+ */
+async function runAutoPublish(context: StepContext): Promise<StepResult> {
+  if (!autoReviewEnabled()) {
+    return {
+      note:
+        'Revue manuelle : chaque proposition attend une décision. ' +
+        'AUTO_REVIEW_NAMES_ONLY=1 pour ne garder que les questions de nom.',
+      status: 'skipped',
+    }
+  }
+
+  const result = await autoReview(context.userId, context.runId)
+  if (result.accepted === 0 && result.heldForNaming === 0 && result.deferred === 0) {
+    return { note: 'Aucune proposition en attente.', status: 'skipped' }
+  }
+  return { note: autoReviewNote(result) }
+}
+
 async function runStep(key: StepKey, context: StepContext): Promise<StepResult> {
   switch (key) {
     case 'panel_detect': {
@@ -216,6 +242,9 @@ async function runStep(key: StepKey, context: StepContext): Promise<StepResult> 
 
     case 'embed':
       return runEmbed(context)
+
+    case 'auto_publish':
+      return runAutoPublish(context)
 
     default:
       throw new Error(`Étape non implémentée : ${key}`)

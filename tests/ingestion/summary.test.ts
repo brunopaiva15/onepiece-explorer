@@ -288,12 +288,17 @@ describe('running the pipeline on a written chapter', () => {
     expect(outcome.status).toBe('succeeded')
 
     /*
-     * Four steps, not nine.
+     * Five steps, not nine.
      *
      * Panel detection, text detection, OCR and panel description are not
      * "skipped" on a written chapter — they do not exist for it. Recording them
      * as skipped rows would leave a permanent line of noise on every run of a
      * product that no longer reads images.
+     *
+     * The publication step is the exception that earns its skipped row: it
+     * exists for every chapter and does nothing unless this instance is set to
+     * review only the names, so "ignorée : revue manuelle" is the answer to a
+     * question someone will ask.
      */
     const view = await getRun(world.userId, runId)
     expect(view!.steps.map((step) => step.key)).toEqual([
@@ -301,6 +306,7 @@ describe('running the pipeline on a written chapter', () => {
       'resolve_entities',
       'detect_conflicts',
       'embed',
+      'auto_publish',
     ])
 
     const items = await raw<Array<{ payload: unknown }>>`

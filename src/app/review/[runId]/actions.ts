@@ -2,8 +2,10 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireOwner } from '@/domains/auth/session.ts'
+import { autoReview, autoReviewEnabled } from '@/domains/review/auto.ts'
 import {
   markChapterReviewed,
+  mergePublishResults,
   publishDecisions,
   type Decision,
   type PublishResult,
@@ -38,10 +40,27 @@ export async function publishDecisionsAction(
 
     const published = await publishDecisions(session.userId, runId, decisions)
 
+    /*
+     * Release what was waiting on the answers you just gave.
+     *
+     * The run's automatic pass holds back a naming question and every relation
+     * whose subject it names — publishing those without their entity would fail
+     * on a subject that does not exist. Answering the name here is what makes
+     * them publishable, so the same pass runs again on the way out rather than
+     * leaving them in a queue nothing will come back to.
+     */
+    const swept = autoReviewEnabled() ? await autoReview(session.userId, runId) : null
+
     revalidatePath(`/review/${runId}`)
     revalidatePath('/chapitres')
+    revalidatePath('/graph')
 
-    return { ok: true, published }
+    return {
+      ok: true,
+      published: swept?.published
+        ? mergePublishResults(published, swept.published)
+        : published,
+    }
   } catch (error) {
     return {
       ok: false,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useId, useMemo, useState } from 'react'
+import { useActionState, useId, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import {
   MAX_SUMMARY_CHARS,
@@ -9,7 +9,12 @@ import {
   splitPassages,
   type SummaryLanguage,
 } from '@/domains/ingestion/passages.ts'
-import { importSummaryAction, type SummaryActionResult } from './actions.ts'
+import {
+  fetchFandomAction,
+  importSummaryAction,
+  type FandomActionResult,
+  type SummaryActionResult,
+} from './actions.ts'
 
 /**
  * Import a chapter by writing it out.
@@ -54,6 +59,17 @@ export function SummaryForm({ suggestedNumber }: Props) {
    * instead of guessed one chapter at a time.
    */
   const [parallel, setParallel] = useState('')
+  /*
+   * The wiki fetch: what was asked for, what came back.
+   *
+   * Held beside the text rather than replacing it. What the fetch produces is a
+   * filled form you can still read and correct before submitting — the summaries
+   * are someone else's prose, and the graph is built from whichever version is
+   * actually stored.
+   */
+  const [source, setSource] = useState('')
+  const [fetched, setFetched] = useState<FandomActionResult | null>(null)
+  const [fetching, startFetching] = useTransition()
   const [language, setLanguage] = useState<SummaryLanguage | 'auto'>('auto')
   const [autoRun, setAutoRun] = useState(true)
   /*
@@ -72,6 +88,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
   const titleId = useId()
   const volumeId = useId()
   const summaryId = useId()
+  const sourceId = useId()
 
   /*
    * Clear and advance the moment an import lands.
@@ -86,8 +103,24 @@ export function SummaryForm({ suggestedNumber }: Props) {
     setLastImport(state)
     setText('')
     setParallel('')
+    setSource('')
+    setFetched(null)
     setLanguage('auto')
     setNextNumber((current) => current + 1)
+  }
+
+  function retrieve(): void {
+    if (source.trim().length === 0) return
+    startFetching(async () => {
+      const result = await fetchFandomAction(source)
+      setFetched(result)
+      if (!result.ok || !result.primary) return
+
+      setText(result.primary.text)
+      setParallel(result.parallel?.text ?? '')
+      setLanguage(result.primary.language)
+      if (result.chapterNumber !== undefined) setNextNumber(result.chapterNumber)
+    })
   }
 
   const trimmed = text.trim()
@@ -142,6 +175,77 @@ export function SummaryForm({ suggestedNumber }: Props) {
   return (
     <form action={submit} className="mt-8 space-y-7">
       <fieldset disabled={pending} className="space-y-7">
+        {/* --- One chapter, fetched ------------------------------------- */}
+        <div className="border-[3px] border-ink bg-surface-raised p-4" style={{ boxShadow: 'var(--shadow-hard)' }}>
+          <label htmlFor={sourceId} className="font-display text-lg uppercase text-primary">
+            Récupérer le chapitre
+          </label>
+          <p className="mt-1 text-sm text-secondary">
+            L’adresse d’un chapitre sur le wiki One Piece, ou son numéro. Les deux
+            versions sont récupérées&nbsp;: la française devient le texte citable,
+            l’anglaise sert aux noms.
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <input
+              id={sourceId}
+              type="text"
+              value={source}
+              onChange={(event) => setSource(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  // A form with one text field submits on Enter; here Enter means
+                  // "fetch", and submitting an empty summary would be the wrong
+                  // half of the operation.
+                  event.preventDefault()
+                  retrieve()
+                }
+              }}
+              placeholder="https://onepiece.fandom.com/wiki/Chapter_1 — ou 1"
+              className="min-w-0 flex-1 border-[3px] border-ink bg-surface-overlay px-3 py-2 text-primary placeholder:text-muted/70"
+            />
+            <button
+              type="button"
+              onClick={retrieve}
+              disabled={fetching || source.trim().length === 0}
+              className="bouton bouton-primaire"
+            >
+              {fetching ? 'Récupération…' : 'Récupérer'}
+            </button>
+          </div>
+
+          {fetched && !fetched.ok && (
+            <p role="alert" className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
+              {fetched.error}
+            </p>
+          )}
+
+          {fetched?.ok && fetched.primary && (
+            <div role="status" className="mt-3 border-[3px] border-ink bg-[var(--epi-validated)] px-3 py-2 text-sm text-ink">
+              <p>
+                Chapitre {fetched.chapterNumber} · texte citable en{' '}
+                {fetched.primary.language === 'fr' ? 'français' : 'anglais'} (
+                {fetched.primary.text.length} caractères)
+                {fetched.parallel
+                  ? ` · version ${fetched.parallel.language === 'fr' ? 'française' : 'anglaise'} en regard pour les noms`
+                  : ' · pas de seconde langue'}
+                .
+              </p>
+              {(fetched.problems ?? []).length > 0 && (
+                <ul className="mt-1 list-disc pl-5">
+                  {fetched.problems!.map((problem) => (
+                    <li key={problem}>{problem}</li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-1">
+                Relisez ci-dessous si vous voulez, puis lancez l’import. Le texte
+                stocké est celui qui sera cité.
+              </p>
+            </div>
+          )}
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-[7rem_1fr_7rem]">
           <label className="block">
             <span className="text-sm font-medium text-primary" id={numberId}>
@@ -188,17 +292,28 @@ export function SummaryForm({ suggestedNumber }: Props) {
           </label>
         </div>
 
-        <div>
-          <label
-            htmlFor={summaryId}
-            className="font-display text-lg uppercase text-primary"
-          >
+        {/*
+          * Writing it yourself, kept and folded away.
+          *
+          * The wiki path is the one used a thousand times; this is the one used
+          * when the wiki has nothing, or has it wrong. Open by default only when
+          * there is nothing in it, so an empty form is never a hidden empty form.
+          */}
+        <details open={trimmed.length === 0} className="rounded-sm border border-line p-4">
+          <summary className="cursor-pointer font-display text-lg uppercase text-primary">
+            Le chapitre, raconté
+            <span className="ml-2 font-sans text-sm normal-case text-muted">
+              {trimmed.length > 0
+                ? `${passages.length} passage${passages.length > 1 ? 's' : ''} citable${passages.length > 1 ? 's' : ''} · relire ou corriger`
+                : 'écrire le résumé soi-même'}
+            </span>
+          </summary>
+          <label htmlFor={summaryId} className="sr-only">
             Le chapitre, raconté
           </label>
           <textarea
             id={summaryId}
             name="summary"
-            required
             value={text}
             onChange={(event) => setText(event.target.value)}
             maxLength={MAX_SUMMARY_CHARS}
@@ -250,7 +365,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
               importez-le en deux chapitres.
             </p>
           )}
-        </div>
+        </details>
 
         {/* --- Language ---------------------------------------------------- */}
         <fieldset className="rounded-sm border border-line p-4">
@@ -381,6 +496,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
           <button
             type="submit"
             disabled={
+              trimmed.length === 0 ||
               tooShort ||
               tooLong ||
               mustChooseLanguage ||
