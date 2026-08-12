@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import type { Coverage } from '@/domains/images/index.ts'
+import type { Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { enrichImagesAction, type EnrichImagesResult } from './actions.ts'
 
 /**
@@ -17,14 +19,14 @@ import { enrichImagesAction, type EnrichImagesResult } from './actions.ts'
  * than hidden behind a spinner.
  */
 
-const TYPE_LABELS: Record<string, string> = {
-  character: 'Personnages',
-  power: 'Fruits du démon et pouvoirs',
-  object: 'Objets et navires',
-  place: 'Lieux et îles',
-}
-
-export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
+export function EnrichImages({
+  coverage,
+  locale,
+}: {
+  coverage: Coverage[]
+  locale: Locale
+}) {
+  const t = getDictFor(locale).settings
   const [result, setResult] = useState<EnrichImagesResult | null>(null)
   const [pending, start] = useTransition()
 
@@ -36,11 +38,7 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
   return (
     <div className="mt-4">
       {coverage.length === 0 ? (
-        <p className="text-sm text-secondary">
-          Aucune entité illustrable pour l&apos;instant. Importez et publiez un
-          chapitre, et les personnages, fruits, navires et lieux qu&apos;il révèle
-          apparaîtront ici.
-        </p>
+        <p className="text-sm text-secondary">{t.enrichEmpty}</p>
       ) : (
         <ul className="space-y-2 text-sm">
           {coverage.map((line) => {
@@ -49,7 +47,7 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
             return (
               <li key={line.nodeType} className="flex items-center gap-3">
                 <span className="w-56 text-secondary">
-                  {TYPE_LABELS[line.nodeType] ?? line.nodeType}
+                  {t.typeLabels[line.nodeType] ?? line.nodeType}
                 </span>
                 <span className="font-mono text-xs text-primary">
                   {line.illustrated}/{line.total}
@@ -57,14 +55,14 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
                 <span
                   className="h-1.5 w-32 overflow-hidden rounded-full bg-surface-overlay"
                   role="img"
-                  aria-label={`${share} % illustrés`}
+                  aria-label={t.enrichShareAria(share)}
                 >
                   <span
                     className="block h-full bg-accent"
                     style={{ width: `${share}%` }}
                   />
                 </span>
-                <span className="text-xs text-muted">{share} %</span>
+                <span className="text-xs text-muted">{t.enrichShare(share)}</span>
               </li>
             )
           })}
@@ -84,17 +82,15 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
             className="mt-4 rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong disabled:opacity-40"
           >
             {pending
-              ? 'Recherche des illustrations…'
+              ? t.enrichSearching
               : missing === 0
-                ? 'Tout est illustré'
-                : `Chercher une image pour ${missing} entité(s)`}
+                ? t.enrichAllIllustrated
+                : t.enrichButton(missing)}
           </button>
 
           {pending && (
             <p className="mt-2 text-sm text-muted" role="status">
-              Une requête par image, à un rythme volontairement lent : les trois
-              catalogues sont gratuits et ne nous doivent rien. Comptez quelques
-              minutes sur une grande bibliothèque.
+              {t.enrichPacing}
             </p>
           )}
         </>
@@ -112,17 +108,14 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
           className="mt-4 rounded-sm border border-line bg-surface-raised p-4 text-sm"
         >
           <p className="text-primary">
-            {result.stored} image(s) récupérée(s) sur {result.considered} entité(s)
-            examinée(s).
+            {t.enrichStored(result.stored ?? 0, result.considered ?? 0)}
           </p>
           <p className="mt-1 text-secondary">
-            {result.unmatched} sans correspondance dans les {result.catalogueSize}{' '}
-            illustrations du catalogue — c&apos;est le cas normal pour un
-            personnage secondaire ou une désignation provisoire, pas une erreur.
+            {t.enrichUnmatched(result.unmatched ?? 0, result.catalogueSize ?? 0)}
           </p>
           {result.failures ? (
             <p className="mt-1 text-[var(--epi-contradicted)]">
-              {result.failures} échec(s) de téléchargement.
+              {t.enrichFailures(result.failures)}
             </p>
           ) : null}
           {result.notes && result.notes.length > 0 && (

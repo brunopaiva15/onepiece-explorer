@@ -8,7 +8,7 @@ import {
   failureHealth,
   quarantineHealth,
 } from '@/domains/observability/costs.ts'
-import { usage, type LimitedAction } from '@/domains/observability/rate-limit.ts'
+import { usage } from '@/domains/observability/rate-limit.ts'
 import { hasEmbeddingProvider } from '@/domains/search/index.ts'
 import {
   effectiveModelProvider,
@@ -17,10 +17,14 @@ import {
   publicLibraryOwnerId,
 } from '@/lib/env.ts'
 import { imageCoverage } from '@/domains/images/index.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
 import { EnrichImages } from './enrich-images.tsx'
 
-export const metadata: Metadata = { title: 'Réglages et santé' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.settings.metaTitle }
+}
 export const dynamic = 'force-dynamic'
 
 /**
@@ -33,6 +37,8 @@ export const dynamic = 'force-dynamic'
  */
 export default async function SettingsPage() {
   const session = await getReaderSession()
+  const dict = await getDict()
+  const t = dict.settings
 
   const [chapters, costs, quarantine, failures, orphans, allowances, coverage] =
     await Promise.all([
@@ -49,97 +55,85 @@ export default async function SettingsPage() {
     <main id="contenu" className="mx-auto max-w-4xl px-6 py-12">
       <nav className="text-sm">
         <Link href="/" className="text-muted hover:text-primary">
-          Journal d&apos;exploration
+          {t.breadcrumb}
         </Link>
       </nav>
 
-      <h1 className="mt-4 text-4xl font-semibold text-primary">
-        Réglages et santé
-      </h1>
+      <h1 className="mt-4 text-4xl font-semibold text-primary">{t.title}</h1>
 
       <section className="mt-10">
-        <h2 className="text-lg font-semibold text-primary">Configuration</h2>
+        <h2 className="text-lg font-semibold text-primary">{t.configHeading}</h2>
         <dl className="mt-3 divide-y divide-[var(--border)] text-sm">
           <Row
-            label="Fournisseur de modèle"
+            label={t.modelProviderLabel}
             value={effectiveModelProvider()}
-            note={
-              hasModelCredentials()
-                ? undefined
-                : "Aucune clé Anthropic : l'extraction affichée est dérivée du texte, pas d'une lecture des pages."
-            }
+            note={hasModelCredentials() ? undefined : t.modelProviderNote}
           />
           <Row
-            label="Recherche sémantique"
-            value={hasEmbeddingProvider() ? 'active' : 'désactivée'}
-            note={
-              hasEmbeddingProvider()
-                ? undefined
-                : 'La recherche plein texte, approchante et par graphe fonctionne sans elle.'
-            }
+            label={t.semanticSearchLabel}
+            value={hasEmbeddingProvider() ? t.semanticActive : t.semanticDisabled}
+            note={hasEmbeddingProvider() ? undefined : t.semanticNote}
           />
           <Row
-            label="Assistant conversationnel"
-            value={isAssistantEnabled() ? 'actif' : 'désactivé'}
-            note={
-              isAssistantEnabled()
-                ? 'Chaque question appelle un modèle et se facture à la question.'
-                : "Interrupteur distinct de la clé du modèle : une clé pour le pipeline n'ouvre pas une facturation à la question. ASSISTANT_ENABLED=1 pour l'activer."
-            }
+            label={t.assistantLabel}
+            value={isAssistantEnabled() ? t.assistantActive : t.assistantDisabled}
+            note={isAssistantEnabled() ? t.assistantOnNote : t.assistantOffNote}
           />
           <Row
-            label="Position de lecture"
+            label={t.readingPositionLabel}
             value={
               session.followingLatest
-                ? `tout (jusqu'au chapitre ${session.maxChapter})`
-                : `chapitre ${session.boundaryChapter} sur ${session.maxChapter}`
+                ? t.readingAll(session.maxChapter)
+                : t.readingAt(session.boundaryChapter, session.maxChapter)
             }
           />
         </dl>
       </section>
 
       <section className="mt-12">
-        <h2 className="text-lg font-semibold text-primary">Coût de l&apos;IA</h2>
+        <h2 className="text-lg font-semibold text-primary">{t.costHeading}</h2>
 
         {costs.chaptersProcessed === 0 ? (
-          <p className="mt-3 text-sm text-secondary">
-            Aucun traitement encore lancé.
-          </p>
+          <p className="mt-3 text-sm text-secondary">{t.costNone}</p>
         ) : (
           <>
             <p className="mt-2 text-sm text-secondary">
-              {(costs.totalCents / 100).toFixed(2)} $ au total ·{' '}
-              {(costs.averagePerChapterCents / 100).toFixed(3)} $ par chapitre en
-              moyenne, sur {costs.chaptersProcessed} chapitre(s).
+              {t.costTotals(
+                (costs.totalCents / 100).toFixed(2),
+                (costs.averagePerChapterCents / 100).toFixed(3),
+                costs.chaptersProcessed,
+              )}
               {costs.estimateAccuracy !== null && (
                 <>
-                  {' '}L&apos;estimation était{' '}
-                  {costs.estimateAccuracy > 1.15
-                    ? `optimiste d'un facteur ${costs.estimateAccuracy.toFixed(2)}`
-                    : costs.estimateAccuracy < 0.85
-                      ? `pessimiste d'un facteur ${(1 / costs.estimateAccuracy).toFixed(2)}`
-                      : 'juste'}
-                  .
+                  {' '}
+                  {t.estimateSentence(
+                    costs.estimateAccuracy > 1.15
+                      ? t.estimateOptimistic(costs.estimateAccuracy.toFixed(2))
+                      : costs.estimateAccuracy < 0.85
+                        ? t.estimatePessimistic(
+                            (1 / costs.estimateAccuracy).toFixed(2),
+                          )
+                        : t.estimateFair,
+                  )}
                 </>
               )}
               {costs.cacheHitRate !== null && costs.cacheHitRate > 0 && (
                 <>
                   {' '}
-                  {Math.round(costs.cacheHitRate * 100)} % des tokens d&apos;entrée
-                  sont venus du cache.
+                  {t.cacheHits(Math.round(costs.cacheHitRate * 100))}
                 </>
               )}
             </p>
 
             <table className="mt-4 w-full border-collapse text-sm">
-              <caption className="sr-only">Coût par étape du pipeline</caption>
+              <caption className="sr-only">{t.costTableCaption}</caption>
               <thead>
                 <tr className="border-b border-line-strong text-left text-muted">
-                  <th scope="col" className="py-2 pr-3 font-medium">Étape</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Exécutions</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Total</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Tokens</th>
-                  <th scope="col" className="py-2 font-medium">Modèle</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.costColStep}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.costColRuns}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.costColTotal}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.costColTokens}</th>
+                  <th scope="col" className="py-2 font-medium">{t.costColModel}</th>
                 </tr>
               </thead>
               <tbody>
@@ -152,7 +146,7 @@ export default async function SettingsPage() {
                     <td className="py-2 pr-3 text-secondary">
                       {step.totalCents === 0
                         ? '—'
-                        : `${(step.totalCents / 100).toFixed(4)} $`}
+                        : t.dollars((step.totalCents / 100).toFixed(4))}
                     </td>
                     <td className="py-2 pr-3 text-secondary">
                       {step.tokensIn + step.tokensOut === 0
@@ -171,84 +165,70 @@ export default async function SettingsPage() {
       </section>
 
       <section className="mt-12">
-        <h2 className="text-lg font-semibold text-primary">Lecture publique</h2>
+        <h2 className="text-lg font-semibold text-primary">{t.publicHeading}</h2>
         <p className="mt-2 max-w-2xl text-sm text-secondary">
           {publicLibraryOwnerId() === session.userId ? (
             <>
-              <strong className="font-medium text-primary">Ouverte.</strong>{' '}
-              N&apos;importe qui peut explorer le graphe, la chronologie, les
-              fiches et la recherche, et d&eacute;placer le curseur o&ugrave; il
-              en est de sa lecture. Les pages de manga, elles, restent derri&egrave;re
-              l&apos;authentification : un visiteur voit la r&eacute;f&eacute;rence
-              de la case et l&apos;extrait cit&eacute;, jamais l&apos;image.
-              L&apos;import, la revue, la suppression, l&apos;export,
-              l&apos;enrichissement et l&apos;assistant restent &agrave; vous seul.
+              <strong className="font-medium text-primary">
+                {t.publicOpenStrong}
+              </strong>{' '}
+              {t.publicOpenBody}
             </>
           ) : publicLibraryOwnerId() === null ? (
             <>
-              <strong className="font-medium text-primary">Ferm&eacute;e.</strong>{' '}
-              Chaque page exige une connexion. Pour ouvrir la lecture, posez la
-              variable d&apos;environnement{' '}
-              <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code> sur
-              l&apos;identifiant ci-dessous, et red&eacute;ployez.
+              <strong className="font-medium text-primary">
+                {t.publicClosedStrong}
+              </strong>{' '}
+              {t.publicClosedBeforeCode}{' '}
+              <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code>{' '}
+              {t.publicClosedAfterCode}
             </>
           ) : (
             <>
               <strong className="font-medium text-[var(--epi-contradicted)]">
-                Ouverte sur une autre biblioth&egrave;que.
+                {t.publicMismatchStrong}
               </strong>{' '}
-              <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code> ne
-              correspond pas &agrave; la v&ocirc;tre : les visiteurs ne voient
-              donc rien de ce qui suit. C&apos;est presque toujours une faute de
-              frappe.
+              <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code>{' '}
+              {t.publicMismatchAfterCode}
             </>
           )}
         </p>
         <dl className="mt-4 divide-y divide-[var(--border)] text-sm">
           <Row
-            label="Identifiant de votre bibliothèque"
+            label={t.libraryIdLabel}
             value={session.userId}
-            note="À coller dans PUBLIC_LIBRARY_OWNER_ID pour ouvrir la lecture publique. Ce n'est pas un secret : c'est un identifiant, et il ne donne aucun droit d'écriture."
+            note={t.libraryIdNote}
           />
         </dl>
       </section>
 
       <section className="mt-12">
-        <h2 className="text-lg font-semibold text-primary">Illustrations</h2>
+        <h2 className="text-lg font-semibold text-primary">
+          {t.illustrationsHeading}
+        </h2>
         <p className="mt-2 max-w-2xl text-sm text-secondary">
-          Les portraits, fruits, navires et lieux viennent de trois catalogues
-          publics et gratuits — onepieceapi.com, api-onepiece.com et AniList —
-          rapprochés de vos entités par leur nom. Ce sont des illustrations, pas
-          des sources : aucune ne peut justifier un fait, et une image
-          n&apos;apparaît qu&apos;à partir du chapitre où vous apprenez le nom qui
-          l&apos;a trouvée. Les fichiers sont recopiés dans votre bucket privé
-          plutôt que chargés depuis chez eux, pour que trois tiers n&apos;aient pas
-          la liste des personnages que vous consultez.
+          {t.illustrationsBody}
         </p>
-        <EnrichImages coverage={coverage} />
+        <EnrichImages coverage={coverage} locale={session.locale} />
       </section>
 
       <section className="mt-12">
         <h2 className="text-lg font-semibold text-primary">
-          Garde-fou de dépense
+          {t.spendGuardHeading}
         </h2>
         <p className="mt-2 max-w-2xl text-sm text-secondary">
-          Les opérations qui appellent un modèle sont plafonnées par heure. Ce
-          n&apos;est pas une protection contre un intrus — vous êtes seul ici —
-          mais contre une boucle : un script relancé, un onglet qui rejoue une
-          requête à chaque focus. La facture, elle, ne fait pas la différence.
-          La lecture, la navigation et le graphe ne sont jamais comptés.
+          {t.spendGuardBody}
         </p>
         <ul className="mt-4 space-y-2 text-sm">
           {allowances.map((allowance) => (
             <li key={allowance.action} className="flex items-baseline gap-3">
               <span className="w-56 text-secondary">
-                {ACTION_LABELS[allowance.action]}
+                {t.actionLabels[allowance.action]}
               </span>
               <span className="font-mono text-xs text-primary">
                 {allowance.used} / {allowance.max}
               </span>
-              <span className="text-xs text-muted">sur la dernière heure</span>
+              <span className="text-xs text-muted">{t.lastHour}</span>
             </li>
           ))}
         </ul>
@@ -256,16 +236,19 @@ export default async function SettingsPage() {
 
       {(quarantine.length > 0 || failures.length > 0) && (
         <section className="mt-12">
-          <h2 className="text-lg font-semibold text-primary">Santé du pipeline</h2>
+          <h2 className="text-lg font-semibold text-primary">
+            {t.pipelineHeading}
+          </h2>
 
           {quarantine.length > 0 && (
             <>
-              <h3 className="mt-4 text-sm font-medium text-primary">Quarantaine</h3>
+              <h3 className="mt-4 text-sm font-medium text-primary">
+                {t.quarantineHeading}
+              </h3>
               <p className="mt-1 text-sm text-secondary">
                 {/* The distribution is the diagnostic: thirty of one reason is
                     systematic, one each of thirty is an ordinary bad day. */}
-                Une même raison qui domine indique un problème systématique, pas
-                une mauvaise passe du modèle.
+                {t.quarantineBody}
               </p>
               <ul className="mt-2 space-y-1 text-sm">
                 {quarantine.map((entry) => (
@@ -281,7 +264,7 @@ export default async function SettingsPage() {
           {failures.length > 0 && (
             <>
               <h3 className="mt-6 text-sm font-medium text-[var(--epi-contradicted)]">
-                Échecs d&apos;étape
+                {t.stepFailuresHeading}
               </h3>
               <ul className="mt-2 space-y-2 text-sm">
                 {failures.map((entry) => (
@@ -290,7 +273,7 @@ export default async function SettingsPage() {
                       {entry.stepKey}
                     </span>
                     <span className="ml-2 text-muted">
-                      {entry.attempts} tentative(s)
+                      {t.attempts(entry.attempts)}
                     </span>
                     <p className="text-secondary">{entry.lastError}</p>
                   </li>
@@ -304,18 +287,18 @@ export default async function SettingsPage() {
       {orphans.length > 0 && (
         <section className="mt-12">
           <h2 className="text-lg font-semibold text-primary">
-            Faits sans source ({orphans.length})
+            {t.orphansHeading(orphans.length)}
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-secondary">
-            Ces faits restent dans votre graphe mais leur chapitre a été supprimé :
-            ils ne sont plus vérifiables. Réimportez le chapitre concerné et la
-            preuve se rattache d&apos;elle-même.
+            {t.orphansBody}
           </p>
           <ul className="mt-3 space-y-1 text-sm text-secondary">
             {orphans.slice(0, 20).map((orphan) => (
               <li key={orphan.id}>
                 <span className="font-mono text-accent">{orphan.predicate}</span>
-                <span className="ml-2 text-muted">chapitre {orphan.chapter}</span>
+                <span className="ml-2 text-muted">
+                  {t.orphanChapter(orphan.chapter)}
+                </span>
               </li>
             ))}
           </ul>
@@ -323,33 +306,23 @@ export default async function SettingsPage() {
       )}
 
       <section className="mt-12">
-        <h2 className="text-lg font-semibold text-primary">Vos données</h2>
-        <p className="mt-2 max-w-2xl text-sm text-secondary">
-          L&apos;export contient tout : chapitres, entités, assertions, preuves,
-          vos théories et chacune de vos décisions de revue. Pas les pages
-          elles-mêmes — ce sont vos fichiers, vous les avez déjà, et un export
-          qui les embarquerait ferait de cet outil un canal de redistribution.
-        </p>
+        <h2 className="text-lg font-semibold text-primary">{t.dataHeading}</h2>
+        <p className="mt-2 max-w-2xl text-sm text-secondary">{t.dataBody}</p>
         <a
           href="/api/export"
           download
           className="mt-4 inline-block rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong"
         >
-          Télécharger l&apos;export complet (JSON)
+          {t.dataDownload}
         </a>
       </section>
 
       {chapters.length > 0 && (
         <section className="mt-12 border-t border-line pt-8">
           <h2 className="text-lg font-semibold text-primary">
-            Supprimer un chapitre
+            {t.deleteHeading}
           </h2>
-          <p className="mt-2 max-w-2xl text-sm text-secondary">
-            Les pages et leurs dérivés sont effacés du stockage. Les faits
-            appris, eux, sont conservés : vous les avez appris, et les effacer
-            réécrirait votre graphe à votre place. Ils apparaîtront ci-dessus
-            comme non vérifiables jusqu&apos;à un réimport.
-          </p>
+          <p className="mt-2 max-w-2xl text-sm text-secondary">{t.deleteBody}</p>
           <DeleteChapter
             chapters={chapters.map((chapter) => ({
               id: chapter.id,
@@ -357,17 +330,12 @@ export default async function SettingsPage() {
               title: chapter.title,
               pageCount: chapter.pageCount,
             }))}
+            locale={session.locale}
           />
         </section>
       )}
     </main>
   )
-}
-
-const ACTION_LABELS: Record<LimitedAction, string> = {
-  ask: "Questions à l'assistant",
-  start_run: 'Traitements de chapitre',
-  export: 'Exports complets',
 }
 
 function Row({

@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import type { DeletionPreview, DeletionResult } from '@/domains/chapters/delete.ts'
+import type { Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { deleteChapterAction, previewDeletionAction } from './actions.ts'
 
 /**
@@ -24,7 +26,14 @@ interface Chapter {
   pageCount: number
 }
 
-export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
+export function DeleteChapter({
+  chapters,
+  locale,
+}: {
+  chapters: Chapter[]
+  locale: Locale
+}) {
+  const t = getDictFor(locale).settings
   const [selected, setSelected] = useState<string>('')
   const [preview, setPreview] = useState<DeletionPreview | null>(null)
   const [confirmation, setConfirmation] = useState('')
@@ -44,7 +53,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
     start(async () => {
       const response = await previewDeletionAction(chapterId)
       if (response.ok && response.preview) setPreview(response.preview)
-      else setError(response.error ?? 'Aperçu impossible.')
+      else setError(response.error ?? t.previewFailed)
     })
   }
 
@@ -58,7 +67,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
         setSelected('')
         setConfirmation('')
       } else {
-        setError(response.error ?? 'Suppression impossible.')
+        setError(response.error ?? t.deleteFailed)
       }
     })
   }
@@ -66,7 +75,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
   return (
     <div className="mt-4">
       <label className="block text-sm">
-        <span className="font-medium text-primary">Chapitre à supprimer</span>
+        <span className="font-medium text-primary">{t.deleteSelectLabel}</span>
         <select
           value={selected}
           onChange={(event) => choose(event.target.value)}
@@ -75,8 +84,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
           <option value="">—</option>
           {chapters.map((chapter) => (
             <option key={chapter.id} value={chapter.id}>
-              Chapitre {chapter.number}
-              {chapter.title ? ` — ${chapter.title}` : ''} ({chapter.pageCount} p.)
+              {t.deleteOption(chapter.number, chapter.title, chapter.pageCount)}
             </option>
           ))}
         </select>
@@ -84,32 +92,35 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
 
       {pending && !preview && (
         <p className="mt-2 text-sm text-muted" role="status">
-          Calcul des conséquences…
+          {t.deleteComputing}
         </p>
       )}
 
       {preview && (
         <div className="mt-4 rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-4">
           <p className="font-medium text-primary">
-            Supprimer le chapitre {preview.chapterNumber} effacera :
+            {t.deleteWillErase(preview.chapterNumber)}
           </p>
           <ul className="mt-2 space-y-0.5 text-sm text-secondary">
-            <li>{preview.pageCount} page(s) et {preview.storageKeys} objet(s) stockés</li>
-            <li>{preview.panelCount} case(s) et {preview.textBlockCount} bloc(s) de texte</li>
+            <li>{t.deletePagesObjects(preview.pageCount, preview.storageKeys)}</li>
+            <li>{t.deletePanelsBlocks(preview.panelCount, preview.textBlockCount)}</li>
           </ul>
 
           <p className="mt-3 text-sm text-primary">
             {keepKnowledge ? (
               <>
-                {preview.assertionsRevealed} fait(s) resteront dans votre graphe
-                mais deviendront <strong>non vérifiables</strong> — leur preuve
-                aura disparu. Un réimport les recolle.
+                {t.deleteKeptLead(preview.assertionsRevealed)}{' '}
+                <strong>{t.deleteKeptStrong}</strong>
+                {t.deleteKeptTail}
               </>
             ) : (
               <>
-                {preview.assertionsRevealed} fait(s) et{' '}
-                {preview.entitiesIntroduced} entité(s) seront{' '}
-                <strong>définitivement supprimés</strong>.
+                {t.deletePurgedLead(
+                  preview.assertionsRevealed,
+                  preview.entitiesIntroduced,
+                )}{' '}
+                <strong>{t.deletePurgedStrong}</strong>
+                {t.deletePurgedTail}
               </>
             )}
           </p>
@@ -121,16 +132,13 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
               onChange={(event) => setKeepKnowledge(!event.target.checked)}
               className="mt-0.5 accent-[var(--epi-contradicted)]"
             />
-            <span>
-              Supprimer aussi les faits appris dans ce chapitre. Irréversible :
-              vos décisions de revue les concernant sont conservées, mais les
-              assertions elles-mêmes ne le seront pas.
-            </span>
+            <span>{t.deleteAlsoLabel}</span>
           </label>
 
           <label className="mt-4 block text-sm">
             <span className="text-primary">
-              Tapez <strong>{preview.chapterNumber}</strong> pour confirmer
+              {t.deleteTypeLead} <strong>{preview.chapterNumber}</strong>{' '}
+              {t.deleteTypeTail}
             </span>
             <input
               value={confirmation}
@@ -146,7 +154,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
             disabled={pending || confirmation.trim() !== String(preview.chapterNumber)}
             className="mt-4 rounded-sm bg-[var(--epi-contradicted)] px-4 py-2 text-sm font-medium text-inverted disabled:opacity-40"
           >
-            {pending ? 'Suppression…' : 'Supprimer définitivement'}
+            {pending ? t.deleting : t.deleteConfirmButton}
           </button>
         </div>
       )}
@@ -163,18 +171,17 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
           className="mt-4 rounded-sm border border-line bg-surface-raised p-4 text-sm"
         >
           <p className="font-medium text-primary">
-            Chapitre {result.chapterNumber} supprimé.
+            {t.deleteDone(result.chapterNumber)}
           </p>
           <ul className="mt-2 space-y-0.5 text-secondary">
-            <li>{result.pagesDeleted} page(s), {result.objectsDeleted} objet(s) effacés</li>
+            <li>
+              {t.deleteDonePagesObjects(result.pagesDeleted, result.objectsDeleted)}
+            </li>
             {result.assertionsOrphaned > 0 && (
-              <li>{result.assertionsOrphaned} fait(s) désormais sans preuve</li>
+              <li>{t.deleteDoneOrphaned(result.assertionsOrphaned)}</li>
             )}
             {result.assertionsStillSourced > 0 && (
-              <li>
-                {result.assertionsStillSourced} fait(s) toujours vérifiables — ils
-                citaient aussi un autre chapitre
-              </li>
+              <li>{t.deleteDoneStillSourced(result.assertionsStillSourced)}</li>
             )}
           </ul>
         </div>

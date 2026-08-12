@@ -3,8 +3,16 @@ import Link from 'next/link'
 import postgres from 'postgres'
 import { connectionStringIssue } from '@/lib/connection-string.ts'
 import { vercelFlagLooksPulled } from '@/lib/hosting.ts'
+// The only i18n imports this page may use: getDict degrades to the cookie and
+// then to French rather than throwing, so it cannot take this page down with
+// the very failure it diagnoses. No session imports here.
+import { getDict } from '@/lib/i18n/server.ts'
+import type { Dict } from '@/lib/i18n/dictionaries.ts'
 
-export const metadata: Metadata = { title: 'État du déploiement' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.etat.metaTitle }
+}
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -147,26 +155,26 @@ async function connects(url: string | undefined): Promise<string | null> {
 }
 
 /** Why the Supabase URL is not one, in the terms of the fix. */
-function urlProblem(value: string | undefined): string | null {
+function urlProblem(value: string | undefined, t: Dict['etat']): string | null {
   const raw = value?.trim() ?? ''
-  if (/^["']|["']$/.test(raw)) return 'entourée de guillemets — retirez-les'
+  if (/^["']|["']$/.test(raw)) return t.urlQuoted
 
   let parsed: URL
   try {
     parsed = new URL(raw)
   } catch {
-    return raw.includes('://')
-      ? "définie, mais ce n'est pas une URL valide — attendu https://<ref>.supabase.co"
-      : 'définie, mais sans « https:// » — attendu https://<ref>.supabase.co'
+    return raw.includes('://') ? t.urlNotUrl : t.urlNoScheme
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    return `schéma « ${parsed.protocol}// » — attendu https://`
+    return t.urlBadScheme(parsed.protocol)
   }
-  if (!parsed.hostname.includes('.')) return 'hôte sans domaine — attendu https://<ref>.supabase.co'
+  if (!parsed.hostname.includes('.')) return t.urlNoDomain
   return null
 }
 
 export default async function StatePage() {
+  const dict = await getDict()
+  const t = dict.etat
   const checks: Check[] = []
 
   const required = [
@@ -178,7 +186,7 @@ export default async function StatePage() {
 
   for (const name of required) {
     if (!presence(name)) {
-      checks.push({ label: name, state: 'fail', detail: 'ABSENTE — chaque page échouera' })
+      checks.push({ label: name, state: 'fail', detail: t.requiredMissing })
       continue
     }
     /*
@@ -191,11 +199,12 @@ export default async function StatePage() {
      * The two connection strings are checked by dialling them, below. The
      * Supabase URL has no such proof, so its shape is checked here.
      */
-    const problem = name === 'NEXT_PUBLIC_SUPABASE_URL' ? urlProblem(process.env[name]) : null
+    const problem =
+      name === 'NEXT_PUBLIC_SUPABASE_URL' ? urlProblem(process.env[name], t) : null
     checks.push({
       label: name,
       state: problem ? 'fail' : 'ok',
-      detail: problem ?? 'définie',
+      detail: problem ?? t.present,
     })
   }
 
@@ -209,28 +218,25 @@ export default async function StatePage() {
        * upload ceiling drops to the 4.5 MB a serverless request can carry —
        * the exact ceiling the local setup exists to escape.
        */
-      detail:
-        "présente hors déploiement — vient probablement de `vercel env pull`. Supprimez les lignes VERCEL* de .env.local : elles plafonneraient l'import à 4,5 Mo.",
+      detail: t.vercelWarn,
     })
   }
 
   checks.push({
     label: 'SUPABASE_SERVICE_ROLE_KEY',
     state: presence('SUPABASE_SERVICE_ROLE_KEY') ? 'ok' : 'warn',
-    detail: presence('SUPABASE_SERVICE_ROLE_KEY')
-      ? 'définie'
-      : "absente — l'import et l'affichage des pages échoueront, la lecture du graphe non",
+    detail: presence('SUPABASE_SERVICE_ROLE_KEY') ? t.present : t.serviceRoleMissing,
   })
 
   for (const [name, note] of [
-    ['ANTHROPIC_API_KEY', "absente — extraction synthétique, avec bannière"],
-    ['ASSISTANT_ENABLED', 'absente — /ask est éteint, et rien ne se facture'],
-    ['PUBLIC_LIBRARY_OWNER_ID', 'absente — le site est privé'],
+    ['ANTHROPIC_API_KEY', t.anthropicMissing],
+    ['ASSISTANT_ENABLED', t.assistantMissing],
+    ['PUBLIC_LIBRARY_OWNER_ID', t.publicIdMissing],
   ] as const) {
     checks.push({
       label: name,
       state: 'ok',
-      detail: presence(name) ? 'définie' : note,
+      detail: presence(name) ? t.present : note,
     })
   }
 
@@ -249,25 +255,24 @@ export default async function StatePage() {
   ])
 
   checks.push({
-    label: 'Connexion applicative (DATABASE_URL)',
+    label: t.appConnectionLabel,
     state: appConnection === null ? 'ok' : 'fail',
-    detail: appConnection === null ? 'répond' : appConnection,
+    detail: appConnection === null ? t.answers : appConnection,
   })
   checks.push({
-    label: 'Connexion directe (DIRECT_URL)',
+    label: t.directConnectionLabel,
     state: directConnection === null ? 'ok' : 'fail',
-    detail: directConnection === null ? 'répond' : directConnection,
+    detail: directConnection === null ? t.answers : directConnection,
   })
 
   if (schema.reachable) {
     checks.push({
-      label: 'Schéma de la base',
+      label: t.schemaLabel,
       state: schema.missingTables.length === 0 ? 'ok' : 'fail',
       detail:
         schema.missingTables.length === 0
-          ? `à jour — ${schema.appliedCount} migration(s), la dernière étant ${schema.lastMigration ?? 'inconnue'}`
-          : `EN RETARD — table(s) absente(s) : ${schema.missingTables.join(', ')}. ` +
-            `Dernière migration appliquée : ${schema.lastMigration ?? 'aucune'}.`,
+          ? t.schemaUpToDate(schema.appliedCount, schema.lastMigration)
+          : t.schemaBehind(schema.missingTables, schema.lastMigration),
     })
   }
 
@@ -275,37 +280,29 @@ export default async function StatePage() {
 
   return (
     <main id="contenu" className="mx-auto max-w-3xl px-6 py-16">
-      <h1 className="text-3xl font-semibold text-primary">État du déploiement</h1>
-      <p className="mt-3 max-w-2xl text-secondary">
-        Cette page ne dépend d&apos;aucune des choses qu&apos;elle contrôle : ni
-        de la configuration validée, ni d&apos;une session, ni du client
-        Supabase. C&apos;est ce qui lui permet de répondre quand tout le reste
-        renvoie une erreur serveur. Elle n&apos;affiche jamais une valeur —
-        seulement si elle est là.
-      </p>
+      <h1 className="text-3xl font-semibold text-primary">{t.title}</h1>
+      <p className="mt-3 max-w-2xl text-secondary">{t.intro}</p>
 
       {broken.length === 0 ? (
         <p className="mt-8 rounded-sm border border-line bg-surface-raised p-4 text-primary">
-          Tout répond et le schéma est à jour. Si une page échoue malgré ça, le
-          message complet est dans les journaux d&apos;exécution de
-          l&apos;hébergeur — la page en erreur affiche une référence à y
-          chercher.
+          {t.allOk}
         </p>
       ) : (
         <div className="mt-8 rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-4">
           <p className="font-medium text-primary">
-            {broken.length} problème(s) à corriger.
+            {t.problemCount(broken.length)}
           </p>
           {schema.missingTables.length > 0 && (
             <p className="mt-2 text-sm text-primary">
-              Le schéma est en retard sur le code. Depuis votre machine, avec le{' '}
-              <code>DIRECT_URL</code> de production dans{' '}
-              <code>.env.local</code> :{' '}
-              <code className="text-accent">pnpm db:push</code>, puis{' '}
-              <code>pnpm doctor</code>. Rien ne l&apos;applique au
-              déploiement&nbsp;: c&apos;est délibéré — une migration qui
-              s&apos;exécute à chaud pendant qu&apos;une ancienne version tourne
-              encore est le pire moment pour la lancer.
+              {t.schemaFixLead}{' '}
+              <code>DIRECT_URL</code>{' '}
+              {t.schemaFixMid}{' '}
+              <code>.env.local</code>
+              {t.schemaFixColon}{' '}
+              <code className="text-accent">pnpm db:push</code>
+              {t.schemaFixThen}{' '}
+              <code>pnpm doctor</code>
+              {t.schemaFixTail}
             </p>
           )}
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
@@ -341,62 +338,46 @@ export default async function StatePage() {
       </dl>
 
       <section className="mt-12 border-t border-line pt-8 text-sm text-secondary">
-        <h2 className="text-lg font-semibold text-primary">
-          Les causes habituelles, dans l&apos;ordre
-        </h2>
+        <h2 className="text-lg font-semibold text-primary">{t.causesHeading}</h2>
         <ol className="mt-3 list-decimal space-y-3 pl-5">
           <li>
-            <strong className="font-medium text-primary">
-              Un caractère réservé dans le mot de passe.
-            </strong>{' '}
-            Une chaîne de connexion est une URL, et l&apos;URL réserve{' '}
-            <code>#</code>, <code>/</code> et <code>?</code>. Un mot de passe qui
-            en contient un rend la chaîne illisible sans que rien ne dise lequel.
-            Encodez-le dans la chaîne — <code>%23</code>, <code>%2F</code>,{' '}
-            <code>%3F</code> — sans toucher au mot de passe dans Supabase.
+            <strong className="font-medium text-primary">{t.cause1Strong}</strong>{' '}
+            {t.cause1Lead}{' '}
+            <code>#</code>, <code>/</code> {t.andWord} <code>?</code>
+            {t.cause1Mid}{' '}
+            <code>%23</code>, <code>%2F</code>, <code>%3F</code>
+            {t.cause1Tail}
           </li>
           <li>
-            <strong className="font-medium text-primary">
-              Une variable manquante au moment du build.
-            </strong>{' '}
-            <code>NEXT_PUBLIC_SUPABASE_URL</code> et{' '}
-            <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> sont insérées dans le
-            bundle à la compilation. Les ajouter après un déploiement ne suffit
-            pas : il faut <em>redéployer</em>. Vérifiez aussi qu&apos;elles
-            couvrent l&apos;environnement déployé (Production comme Preview).
+            <strong className="font-medium text-primary">{t.cause2Strong}</strong>{' '}
+            <code>NEXT_PUBLIC_SUPABASE_URL</code> {t.andWord}{' '}
+            <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> {t.cause2Mid}{' '}
+            <em>{t.redeployEm}</em>
+            {t.cause2Tail}
           </li>
           <li>
-            <strong className="font-medium text-primary">
-              La mauvaise chaîne de connexion.
-            </strong>{' '}
-            La connexion vraiment directe de Supabase (<code>db.…</code>) est en
-            IPv6 uniquement et un hébergeur en IPv4 ne l&apos;atteindra jamais.
-            Utilisez les chaînes du <em>pooler</em> : port 6543 en mode
-            transaction pour <code>DATABASE_URL</code>, port 5432 en mode session
-            pour <code>DIRECT_URL</code>.
+            <strong className="font-medium text-primary">{t.cause3Strong}</strong>{' '}
+            {t.cause3Lead} (<code>db.…</code>) {t.cause3Mid} <em>pooler</em>
+            {t.cause3Mid2} <code>DATABASE_URL</code>
+            {t.cause3Mid3} <code>DIRECT_URL</code>.
           </li>
           <li>
-            <strong className="font-medium text-primary">
-              Un schéma en retard.
-            </strong>{' '}
-            Les migrations ne s&apos;appliquent pas au déploiement. Lancez{' '}
-            <code>pnpm db:push</code> depuis votre machine avec le{' '}
-            <code>DIRECT_URL</code> de production, puis <code>pnpm doctor</code>.
+            <strong className="font-medium text-primary">{t.cause4Strong}</strong>{' '}
+            {t.cause4Lead} <code>pnpm db:push</code> {t.cause4Mid}{' '}
+            <code>DIRECT_URL</code>
+            {t.cause4Mid2} <code>pnpm doctor</code>.
           </li>
         </ol>
         <p className="mt-4">
-          La cause 2 ne concerne qu&apos;un déploiement : en local, les variables
-          sont relues à chaque démarrage — il suffit de redémarrer{' '}
-          <code>pnpm dev</code>. Et sur votre machine,{' '}
-          <code>pnpm doctor</code> dit la même chose que cette page en plus
-          détaillé : il essaie chaque connexion et affiche l&apos;hôte
-          qu&apos;il a réellement extrait.
+          {t.closingLead} <code>pnpm dev</code>
+          {t.closingMid} <code>pnpm doctor</code>
+          {t.closingTail}
         </p>
       </section>
 
       <p className="mt-10 text-sm text-muted">
         <Link href="/" className="text-accent hover:underline">
-          Retour à l&apos;accueil
+          {t.backHome}
         </Link>
       </p>
     </main>

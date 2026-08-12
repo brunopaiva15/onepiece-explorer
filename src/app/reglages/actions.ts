@@ -10,6 +10,8 @@ import {
 } from '@/domains/chapters/delete.ts'
 import { enrichEntityImages } from '@/domains/images/index.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
+import { getLocale } from '@/lib/i18n/server.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 export interface PreviewResult {
   ok: boolean
@@ -20,15 +22,17 @@ export interface PreviewResult {
 export async function previewDeletionAction(
   chapterId: string,
 ): Promise<PreviewResult> {
+  // Resolved before the try: getLocale never throws, and the catch needs it.
+  const t = getDictFor(await getLocale()).settings
   try {
     const session = await requireOwner()
     const preview = await previewDeletion(session.userId, chapterId)
-    if (!preview) return { ok: false, error: 'Chapitre introuvable.' }
+    if (!preview) return { ok: false, error: t.chapterNotFound }
     return { ok: true, preview }
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'Aperçu impossible.',
+      error: error instanceof Error ? error.message : t.previewFailed,
     }
   }
 }
@@ -51,19 +55,15 @@ export async function deleteChapterAction(
   confirmation: string,
   keepKnowledge: boolean,
 ): Promise<DeleteResult> {
+  const t = getDictFor(await getLocale()).settings
   try {
     const session = await requireOwner()
 
     const preview = await previewDeletion(session.userId, chapterId)
-    if (!preview) return { ok: false, error: 'Chapitre introuvable.' }
+    if (!preview) return { ok: false, error: t.chapterNotFound }
 
     if (confirmation.trim() !== String(preview.chapterNumber)) {
-      return {
-        ok: false,
-        error:
-          `Confirmation incorrecte. Tapez ${preview.chapterNumber} pour confirmer ` +
-          `la suppression du chapitre ${preview.chapterNumber}.`,
-      }
+      return { ok: false, error: t.confirmIncorrect(preview.chapterNumber) }
     }
 
     const result = await deleteChapter(session.userId, chapterId, { keepKnowledge })
@@ -76,7 +76,7 @@ export async function deleteChapterAction(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'Suppression impossible.',
+      error: error instanceof Error ? error.message : t.deleteFailed,
     }
   }
 }
@@ -101,28 +101,35 @@ export interface EnrichImagesResult {
  * someone else's server, and being polite to them is worth one shared counter.
  */
 export async function enrichImagesAction(): Promise<EnrichImagesResult> {
+  const locale = await getLocale()
+  const t = getDictFor(locale).settings
   try {
     const session = await requireOwner()
 
     const allowance = await consume(session.userId, 'start_run')
     if (!allowance.allowed) {
+      // Null only when allowed; the window length is the worst honest answer.
+      const minutes = allowance.retryInMinutes ?? 60
+      // `allowance.explain` is domain-produced French prose; appended for the
+      // French interface only rather than shown untranslated in English.
       return {
         ok: false,
         error:
-          `Limite atteinte. Réessayez dans ${allowance.retryInMinutes} minute(s). ` +
-          allowance.explain,
+          locale === 'fr'
+            ? `${t.rateLimited(minutes)} ${allowance.explain}`
+            : t.rateLimited(minutes),
       }
     }
 
     const report = await enrichEntityImages(session.userId)
 
     const notes = [
-      ...report.catalogueFailures.map(
-        (failure) => `${failure.source} injoignable : ${failure.reason}`,
+      ...report.catalogueFailures.map((failure) =>
+        t.noteCatalogueDown(failure.source, failure.reason),
       ),
       ...report.failures
         .slice(0, 5)
-        .map((failure) => `« ${failure.label} » : ${failure.reason}`),
+        .map((failure) => t.noteEntityFailed(failure.label, failure.reason)),
     ]
 
     revalidatePath('/reglages')
@@ -141,7 +148,7 @@ export async function enrichImagesAction(): Promise<EnrichImagesResult> {
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'Enrichissement impossible.',
+      error: error instanceof Error ? error.message : t.enrichFailed,
     }
   }
 }
