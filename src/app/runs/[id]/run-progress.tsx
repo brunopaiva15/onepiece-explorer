@@ -34,6 +34,29 @@ const LABELS: Record<string, string> = {
  */
 const STALL_AFTER_MS = 6 * 60 * 1_000
 
+/**
+ * Local time, with the offset spelled out.
+ *
+ * These were ISO strings in UTC, which is the correct instant and the wrong
+ * answer: a run started at 11:45 read "09:45" and looked like it had been
+ * waiting two hours. The offset stays visible so a timestamp copied into a bug
+ * report is still unambiguous.
+ */
+function stamp(value: Date | string): string {
+  const date = new Date(value)
+  return `${date.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' })} (UTC${
+    -date.getTimezoneOffset() >= 0 ? '+' : '−'
+  }${String(Math.abs(date.getTimezoneOffset() / 60)).padStart(2, '0')})`
+}
+
+/** A duration a human reads at a glance while watching it grow. */
+function elapsed(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return minutes > 0 ? `${minutes} min ${String(seconds).padStart(2, '0')} s` : `${seconds} s`
+}
+
 export function RunProgress({ initial }: { initial: RunView }) {
   const [view, setView] = useState<RunView>(initial)
   /**
@@ -67,7 +90,7 @@ export function RunProgress({ initial }: { initial: RunView }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (terminal) return
-    const timer = setInterval(() => setNow(Date.now()), 15_000)
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [terminal])
 
@@ -264,6 +287,7 @@ export function RunProgress({ initial }: { initial: RunView }) {
               <tr className="border-b-[3px] border-ink text-left">
                 <th className="py-1.5 pr-3">étape</th>
                 <th className="py-1.5 pr-3">état</th>
+                <th className="py-1.5 pr-3 text-right">tranches</th>
                 <th className="py-1.5 pr-3 text-right">essai</th>
                 <th className="py-1.5 pr-3 text-right">durée</th>
                 <th className="py-1.5 pr-3 text-right">tok. in</th>
@@ -277,7 +301,23 @@ export function RunProgress({ initial }: { initial: RunView }) {
               {view.steps.map((step) => (
                 <tr key={step.key} className="border-b border-line align-top">
                   <td className="py-1.5 pr-3">{step.key}</td>
-                  <td className="py-1.5 pr-3">{step.status}</td>
+                  <td className="py-1.5 pr-3">
+                    {step.status}
+                    {/*
+                      Live, ticking, and the only thing on this page that moves
+                      while a model call is in flight. Tokens and duration are
+                      written when a step ends, so without this a three-minute
+                      extraction is indistinguishable from a dead one.
+                    */}
+                    {step.status === 'running' && step.startedAt && (
+                      <span className="ml-2 text-[var(--accent-strong)]">
+                        {elapsed(now - new Date(step.startedAt).getTime())}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular">
+                    {step.unitsDone > 0 ? step.unitsDone : '—'}
+                  </td>
                   <td className="py-1.5 pr-3 text-right tabular">{step.attempt}</td>
                   <td className="py-1.5 pr-3 text-right tabular">
                     {step.durationMs === null ? '—' : `${(step.durationMs / 1000).toFixed(1)}s`}
@@ -313,14 +353,14 @@ export function RunProgress({ initial }: { initial: RunView }) {
             <dt className="text-muted">version pipeline</dt>
             <dd className="text-primary">{view.run.pipelineVersion}</dd>
             <dt className="text-muted">créé</dt>
-            <dd className="text-primary">{new Date(view.run.createdAt).toISOString()}</dd>
+            <dd className="text-primary">{stamp(view.run.createdAt)}</dd>
             <dt className="text-muted">démarré</dt>
             <dd className="text-primary">
-              {view.run.startedAt ? new Date(view.run.startedAt).toISOString() : '—'}
+              {view.run.startedAt ? stamp(view.run.startedAt) : '—'}
             </dd>
             <dt className="text-muted">terminé</dt>
             <dd className="text-primary">
-              {view.run.finishedAt ? new Date(view.run.finishedAt).toISOString() : '—'}
+              {view.run.finishedAt ? stamp(view.run.finishedAt) : '—'}
             </dd>
             <dt className="text-muted">temps de travail</dt>
             <dd className="text-primary">{(workedFor / 1000).toFixed(1)}s cumulés sur les étapes</dd>

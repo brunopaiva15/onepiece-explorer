@@ -66,6 +66,16 @@ export interface StepSummary {
   inputHash: string | null
   startedAt: Date | null
   finishedAt: Date | null
+  /**
+   * Units of work already bought inside this step.
+   *
+   * The only progress signal that exists *during* a step: tokens and duration
+   * are written when a step ends, so a three-minute extraction shows nothing
+   * moving and cannot be told apart from a dead one. Checkpoints are written
+   * per slice as each returns, and were already being recorded — they just had
+   * nowhere to appear.
+   */
+  unitsDone: number
 }
 
 export interface RunView {
@@ -393,6 +403,16 @@ export async function getRun(userId: string, runId: string): Promise<RunView | n
       .where(eq(ingestionSteps.runId, runId))
       .orderBy(asc(ingestionSteps.attempt))
 
+    const checkpoints = await db
+      .select({ stepKey: runCheckpoints.stepKey })
+      .from(runCheckpoints)
+      .where(eq(runCheckpoints.runId, runId))
+
+    const unitsByStep = new Map<string, number>()
+    for (const row of checkpoints) {
+      unitsByStep.set(row.stepKey, (unitsByStep.get(row.stepKey) ?? 0) + 1)
+    }
+
     // Latest attempt wins for display; earlier attempts stay in the table for
     // anyone reading the history.
     const latest = new Map<string, (typeof rows)[number]>()
@@ -420,6 +440,7 @@ export async function getRun(userId: string, runId: string): Promise<RunView | n
         inputHash: row?.inputHash ?? null,
         startedAt: row?.stepStartedAt ?? null,
         finishedAt: row?.stepFinishedAt ?? null,
+        unitsDone: unitsByStep.get(definition.key) ?? 0,
       }
     })
 
