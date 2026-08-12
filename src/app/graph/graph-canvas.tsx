@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { GraphProjection } from '@/domains/temporal/projection.ts'
+import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 /**
  * The graph, rendered in WebGL.
@@ -202,7 +203,7 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
           if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target)) continue
           if (graph.hasEdge(edge.source, edge.target)) continue
           graph.addEdge(edge.source, edge.target, {
-            label: edge.predicate,
+            label: predicateLabel(edge.predicate),
             size: Math.min(4, edge.weight),
             // A hypothesis and an explicit fact must not look alike: the whole
             // epistemic model would be invisible if they did.

@@ -4,6 +4,7 @@ import { getViewerSession } from '@/domains/auth/session.ts'
 import { search, shortestPath, type SearchHit } from '@/domains/search/index.ts'
 import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
 import { Portrait } from '@/app/components/portrait.tsx'
+import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 export const metadata: Metadata = { title: 'Recherche' }
 export const dynamic = 'force-dynamic'
@@ -183,7 +184,7 @@ export default async function SearchPage({
                   >
                     {path.labels.get(step.from) ?? step.from}
                   </Link>
-                  <span className="font-mono text-accent">{step.predicate}</span>
+                  <span className="text-accent">{predicateLabel(step.predicate)}</span>
                   <Link
                     href={`/entite/${step.to}?ch=${session.boundaryChapter}`}
                     className="text-primary hover:underline"

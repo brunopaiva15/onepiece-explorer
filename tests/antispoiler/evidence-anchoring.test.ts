@@ -108,6 +108,109 @@ describe('evidence anchoring — a citation must be real', () => {
   })
 })
 
+describe('a relation joins two things, and a sentence is not one of them', () => {
+  /**
+   * « Kuina — meurt à — "Kuina meurt en tombant dans un escalier" ».
+   *
+   * A real fact, phrased as prose and dropped into the object slot, where it
+   * forms no edge, joins nothing, and cannot be found from the other end. The
+   * ontology already says what `dies_at` takes — an event, a battle or a place
+   * — and the model, having none to hand, wrote the story instead. What it
+   * wrote is an event, and the extraction has a category for those.
+   */
+  const withObject = (object: string | null, value: string | null): Extraction => ({
+    entities: [
+      {
+        local_id: 'e1',
+        node_type: 'character',
+        label: 'Kuina',
+        label_kind: 'true_name',
+        source_term: null,
+        naming_confident: true,
+        evidence: [{ ref: 'b1', kind: 'text', excerpt: 'sans elle' }],
+        confidence: 0.9,
+      },
+      {
+        local_id: 'e2',
+        node_type: 'place',
+        label: 'le dojo',
+        label_kind: 'placeholder',
+        source_term: null,
+        naming_confident: true,
+        evidence: [{ ref: 'b2', kind: 'text', excerpt: 'son nom' }],
+        confidence: 0.9,
+      },
+    ],
+    assertions: [
+      {
+        subject: 'e1',
+        predicate: 'dies_at',
+        object,
+        object_value: value,
+        epistemic_status: 'explicit',
+        evidence: [{ ref: 'b1', kind: 'text', excerpt: 'sans elle' }],
+        confidence: 0.85,
+      },
+    ],
+    events: [],
+    mysteries: [],
+  })
+
+  it('quarantines an object written out in words', () => {
+    const result = filterExtraction(
+      withObject(null, 'Kuina meurt en tombant dans un escalier'),
+      sources(),
+      ONTOLOGY,
+      new Set(),
+    )
+
+    expect(result.accepted.assertions).toHaveLength(0)
+    expect(result.quarantined).toHaveLength(1)
+    expect(result.quarantined[0]!.reason).toBe('literal_object')
+    // The reason has to teach: the next occurrence is prevented by the sentence
+    // in the panel, not by anything in the code.
+    expect(result.quarantined[0]!.detail).toContain('événement')
+  })
+
+  it('accepts the same relation once its object is an entity', () => {
+    const result = filterExtraction(withObject('e2', null), sources(), ONTOLOGY, new Set())
+
+    expect(result.quarantined).toHaveLength(0)
+    expect(result.accepted.assertions).toHaveLength(1)
+  })
+
+  it('lets a predicate that declares no object type carry a value', () => {
+    // The only legitimate case, and it can only be user-defined: every
+    // predicate we ship names the entity types its object may have.
+    const result = filterExtraction(
+      {
+        ...withObject(null, 'trente-deux ans'),
+        assertions: [
+          {
+            subject: 'e1',
+            predicate: 'aged',
+            object: null,
+            object_value: 'trente-deux ans',
+            epistemic_status: 'explicit',
+            evidence: [{ ref: 'b1', kind: 'text', excerpt: 'sans elle' }],
+            confidence: 0.8,
+          },
+        ],
+      },
+      sources(),
+      {
+        ...ONTOLOGY,
+        predicates: new Set([...ONTOLOGY.predicates, 'aged']),
+        literalObjects: new Set(['aged']),
+      },
+      new Set(),
+    )
+
+    expect(result.quarantined).toHaveLength(0)
+    expect(result.accepted.assertions).toHaveLength(1)
+  })
+})
+
 describe('blocking test 4 — an unanchored proposal never reaches review', () => {
   it('quarantines a claim citing an invented panel', () => {
     const extraction: Extraction = {

@@ -107,6 +107,7 @@ function quarantineLabel(reason: string): string {
     unknown_node_type: 'type de nœud hors ontologie',
     unknown_subject: 'sujet introuvable — son entité a été écartée',
     unknown_object: 'objet introuvable',
+    literal_object: 'objet écrit en toutes lettres au lieu d’une entité',
     empty_excerpt: 'preuve sans extrait',
   }
   return labels[reason] ?? reason

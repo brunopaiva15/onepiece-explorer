@@ -31,8 +31,11 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  * '2' states the length budgets, which '1' enforced without ever mentioning.
  * '3' adds the written-summary source and the output-language rule.
  * '4' states the citation budgets, which is what decides how long a slice takes.
+ * '5' says that a relation's object is an entity and that a sentence is an
+ *     event — the rule that used to be implicit in the ontology's object types
+ *     and produced « meurt à "elle tombe dans un escalier" » when it was not.
  */
-export const PROMPT_VERSION = '4'
+export const PROMPT_VERSION = '5'
 
 /**
  * What the model is reading.
@@ -308,6 +311,13 @@ Statut épistémique :
     attentif l'aurait déduit au même endroit.
   • « hypothetical » — c'est une lecture possible. Passera par une revue humaine
     explicite quelle que soit votre confiance.
+
+Une relation relie deux choses du graphe. Son objet est une entité — l'un des
+« local_id » que vous venez de déclarer, ou l'identifiant d'une entité déjà
+validée — et jamais une phrase. Si ce que vous voulez dire ne s'écrit qu'en
+toutes lettres (« meurt en tombant dans un escalier »), c'est un événement :
+proposez-le comme tel. Une phrase glissée à la place d'un objet ne relie rien,
+ne se retrouve pas depuis l'autre bout, et sera mise en quarantaine.
 
 Une identité (« même personne que »), une mort, une filiation, une affiliation
 cachée ou la résolution d'un mystère demandent une preuve directe. En cas de

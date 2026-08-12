@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
+import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 export const metadata: Metadata = { title: 'Fiche' }
 export const dynamic = 'force-dynamic'
@@ -69,7 +70,7 @@ export default async function EntityPage({
             )}
 
             <div className="min-w-0 flex-1">
-              <span className="badge badge-or">{sheet.nodeType}</span>
+              <span className="badge badge-or">{nodeTypeLabel(sheet.nodeType)}</span>
               <h1 className="mt-2 break-words text-white">{sheet.displayLabel}</h1>
 
               <div className="mt-3 flex flex-wrap gap-4">
@@ -203,7 +204,9 @@ function FactList({
               className="rounded-sm border border-line bg-surface-raised p-4"
             >
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-sm text-accent">{fact.predicate}</span>
+                <span className="text-sm text-accent">
+                  {predicateLabel(fact.predicate)}
+                </span>
                 {fact.otherId ? (
                   <Link
                     href={`/entite/${fact.otherId}?ch=${boundary}`}

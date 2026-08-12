@@ -4,6 +4,7 @@ import { withBoundary } from '@/db/boundary.ts'
 import { assertions, entityLabels, evidence } from '@/db/schema/knowledge.ts'
 import { normalizeText } from '../knowledge/normalize.ts'
 import { search } from '../search/index.ts'
+import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 /**
  * Assemble what the assistant is allowed to reason from.
@@ -166,7 +167,7 @@ export async function buildContext(
         // reads prose better, and the qualifier keeps a hypothesis from being
         // quoted back as though it were established.
         statement:
-          `${subject} — ${row.predicate} — ${object ?? '(valeur absente)'}` +
+          `${subject} — ${predicateLabel(row.predicate)} — ${object ?? '(valeur absente)'}` +
           (row.epistemicStatus === 'explicit' ? '' : ` [${row.epistemicStatus}]`),
         excerpt: excerptOf.get(row.id) ?? null,
         subjectId: row.subjectId,

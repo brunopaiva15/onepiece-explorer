@@ -6,6 +6,7 @@ import type { DuplicateInfo } from '@/domains/review/duplicates.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
 import type { Decision, DecisionKind, PublishResult } from '@/domains/review/publish.ts'
 import { markChapterReviewedAction, publishDecisionsAction } from './actions.ts'
+import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 /**
  * The review centre.
@@ -1202,8 +1203,8 @@ function ProposalBody({
       <div className="mt-2">
         <p className="text-primary">
           <EntityEnd id={subject} name={end(record.subject)} />{' '}
-          <span className="font-mono text-sm text-accent">
-            {String(record.predicate ?? '')}
+          <span className="text-sm text-accent">
+            {predicateLabel(String(record.predicate ?? ''))}
           </span>{' '}
           {object !== null ? (
             <EntityEnd id={object} name={end(record.object)} />

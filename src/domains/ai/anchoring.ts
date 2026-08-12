@@ -44,6 +44,7 @@ export type QuarantineReason =
   | 'unknown_node_type'
   | 'unknown_subject'
   | 'unknown_object'
+  | 'literal_object'
   | 'empty_excerpt'
 
 export interface Quarantined {
@@ -153,6 +154,18 @@ export function checkEvidence(
 export interface OntologyView {
   nodeTypes: Set<string>
   predicates: Set<string>
+  /**
+   * Predicates whose object may be a literal instead of an entity.
+   *
+   * Empty for the ontology we ship: every built-in predicate declares entity
+   * object types, `dies_at` accepting an event, a battle or a place. A
+   * user-defined predicate with no declared object type is the one case where a
+   * value belongs in that slot, and this is where it is recorded.
+   *
+   * Absent means "check nothing", so a caller written before this existed keeps
+   * behaving as it did.
+   */
+  literalObjects?: Set<string>
 }
 
 export interface FilterResult {
@@ -236,6 +249,41 @@ export function filterExtraction(
     const failure = firstFailure(assertion.evidence, sources)
     if (failure) {
       quarantined.push({ ...failure, payload: assertion })
+      continue
+    }
+
+    /*
+     * A relation joins two things. A sentence is not one of them.
+     *
+     * « Kuina — meurt à — "Kuina meurt en tombant dans un escalier" » is what
+     * this catches: a real fact, phrased as prose and dropped into the object
+     * slot, where it forms no edge, joins nothing, and cannot be found from the
+     * other end. The ontology already says what `dies_at` takes — an event, a
+     * battle or a place — and the model, having none to hand, wrote the story
+     * instead. What it wrote is an *event*, and the extraction has a category
+     * for those.
+     *
+     * After the evidence check, deliberately. An unanchored claim must be
+     * quarantined as unanchored whatever else is wrong with it — that is the
+     * guarantee the blocking tests are about, and a second reason arriving
+     * first would quietly take its place in them.
+     *
+     * Quarantined rather than dropped, so the reason is visible and the fact is
+     * not silently lost: the panel says the object must be an entity, which is
+     * also the sentence that prevents the next occurrence.
+     */
+    const literal = assertion.object_value?.trim() ?? ''
+    const hasEntityObject = assertion.object !== null && assertion.object.length > 0
+    const allowsLiteral = ontology.literalObjects?.has(assertion.predicate) ?? false
+
+    if (!hasEntityObject && literal.length > 0 && !allowsLiteral) {
+      quarantined.push({
+        reason: 'literal_object',
+        detail:
+          `L'objet de « ${assertion.predicate} » doit être une entité, pas une phrase : ` +
+          `« ${literal.slice(0, 120)} ». Ce qui se raconte en une phrase est un événement.`,
+        payload: assertion,
+      })
       continue
     }
 

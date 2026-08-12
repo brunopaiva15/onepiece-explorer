@@ -495,6 +495,11 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   const ontology: OntologyView = {
     nodeTypes: new Set(world.types.map((t) => t.key)),
     predicates: new Set(world.preds.map((p) => p.key)),
+    // A predicate that declares no object type is the only one whose object may
+    // be a value rather than an entity. None of the built-in ones is.
+    literalObjects: new Set(
+      world.preds.filter((p) => p.objectTypes.length === 0).map((p) => p.key),
+    ),
   }
 
   /*

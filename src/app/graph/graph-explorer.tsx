@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { GraphProjection } from '@/domains/temporal/projection.ts'
 import { GraphCanvas } from './graph-canvas.tsx'
+import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 /**
  * The graph, with somewhere to put what you clicked.
@@ -189,7 +190,7 @@ export function GraphExplorer({
                     className="badge"
                     style={{ background: typeColour(selected.nodeType), color: '#fff' }}
                   >
-                    {selected.nodeType}
+                    {nodeTypeLabel(selected.nodeType)}
                   </span>
                   <p className="mt-1.5 text-sm text-secondary">
                     <span className="cartouche block">1re apparition</span>
@@ -224,7 +225,7 @@ export function GraphExplorer({
                         <span className="min-w-0">
                           <span className="text-muted">
                             {link.outgoing ? '' : '← '}
-                            {link.predicate}
+                            {predicateLabel(link.predicate)}
                             {link.outgoing ? ' →' : ''}{' '}
                           </span>
                           {link.other ? (

@@ -4,6 +4,7 @@ import { getViewerSession } from '@/domains/auth/session.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
 import { Portrait } from '@/app/components/portrait.tsx'
+import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 export const metadata: Metadata = { title: 'Graphe — vue tableau' }
 export const dynamic = 'force-dynamic'
@@ -140,7 +141,9 @@ export default async function GraphTablePage({
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-secondary">{node.nodeType}</td>
+                    <td className="py-2 pr-3 text-secondary">
+                      {nodeTypeLabel(node.nodeType)}
+                    </td>
                     <td className="py-2 pr-3 font-mono text-secondary">
                       ch. {node.firstSeenChapter}
                     </td>
@@ -181,7 +184,9 @@ export default async function GraphTablePage({
                     <td className="py-2 pr-3 text-primary">
                       {labelOf.get(edge.source) ?? '—'}
                     </td>
-                    <td className="py-2 pr-3 font-mono text-accent">{edge.predicate}</td>
+                    <td className="py-2 pr-3 text-accent">
+                      {predicateLabel(edge.predicate)}
+                    </td>
                     <td className="py-2 pr-3 text-primary">
                       {labelOf.get(edge.target) ?? '—'}
                     </td>

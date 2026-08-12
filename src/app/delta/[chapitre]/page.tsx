@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getNarrativeDelta } from '@/domains/temporal/timeline.ts'
+import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 export const metadata: Metadata = { title: 'Delta narratif' }
 export const dynamic = 'force-dynamic'
@@ -73,7 +74,7 @@ export default async function DeltaPage({
                 className="rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-3 text-sm"
               >
                 <span className="text-primary">{fact.subjectLabel}</span>{' '}
-                <span className="font-mono text-accent">{fact.predicate}</span>
+                <span className="text-accent">{predicateLabel(fact.predicate)}</span>
                 <span className="ml-2 text-muted">
                   — cru depuis le chapitre {fact.heldSince}
                 </span>
@@ -120,7 +121,9 @@ export default async function DeltaPage({
                   className="inline-block rounded-sm border border-line px-2.5 py-1 text-sm text-primary hover:bg-surface-raised"
                 >
                   {entity.label}
-                  <span className="ml-2 text-xs text-muted">{entity.nodeType}</span>
+                  <span className="ml-2 text-xs text-muted">
+                    {nodeTypeLabel(entity.nodeType)}
+                  </span>
                 </Link>
               </li>
             ))}
@@ -137,7 +140,7 @@ export default async function DeltaPage({
             {delta.newFacts.map((fact) => (
               <li key={fact.id} className="text-primary">
                 {fact.subjectLabel}{' '}
-                <span className="font-mono text-accent">{fact.predicate}</span>{' '}
+                <span className="text-accent">{predicateLabel(fact.predicate)}</span>{' '}
                 {fact.objectLabel ?? ''}
                 {fact.epistemicStatus !== 'explicit' && (
                   <span className="ml-2 text-xs text-muted">

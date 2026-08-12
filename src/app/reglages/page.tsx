@@ -19,6 +19,7 @@ import {
 import { imageCoverage } from '@/domains/images/index.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
 import { EnrichImages } from './enrich-images.tsx'
+import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 export const metadata: Metadata = { title: 'Réglages et santé' }
 export const dynamic = 'force-dynamic'
@@ -314,7 +315,7 @@ export default async function SettingsPage() {
           <ul className="mt-3 space-y-1 text-sm text-secondary">
             {orphans.slice(0, 20).map((orphan) => (
               <li key={orphan.id}>
-                <span className="font-mono text-accent">{orphan.predicate}</span>
+                <span className="text-accent">{predicateLabel(orphan.predicate)}</span>
                 <span className="ml-2 text-muted">chapitre {orphan.chapter}</span>
               </li>
             ))}
