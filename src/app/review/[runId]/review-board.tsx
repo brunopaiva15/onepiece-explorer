@@ -145,88 +145,130 @@ export function ReviewBoard({ queue }: Props) {
     })
   }
 
+  const decided = decisions.size
+  const counts = {
+    accept: [...decisions.values()].filter((d) => d === 'accept').length,
+    reject: [...decisions.values()].filter((d) => d === 'reject').length,
+    defer: [...decisions.values()].filter((d) => d === 'defer').length,
+  }
+
   if (items.length === 0) {
     return (
-      <section className="mt-10 rounded-sm border border-line bg-surface-raised p-6">
-        <p className="text-primary">
-          Rien à revoir pour ce traitement.
-          {queue.counts.accepted > 0 &&
-            ` ${queue.counts.accepted} proposition(s) déjà publiée(s).`}
-        </p>
-        <Link
-          href={`/chapitres/${queue.chapterId}`}
-          className="mt-4 inline-block rounded-sm border border-line-strong px-4 py-2 text-sm text-primary hover:bg-surface-raised"
-        >
-          Revenir au chapitre
-        </Link>
+      <section className="panneau mt-8">
+        <h2 className="panneau-titre panneau-titre-vedette">File vide</h2>
+        <div className="panneau-corps">
+          <p className="text-primary">
+            Rien à revoir pour ce traitement.
+            {queue.counts.accepted > 0 &&
+              ` ${queue.counts.accepted} proposition(s) déjà publiée(s).`}
+          </p>
+          <Link href={`/chapitres/${queue.chapterId}`} className="bouton mt-4">
+            Revenir au chapitre
+          </Link>
+        </div>
       </section>
     )
   }
 
+  /*
+   * One proposal, not eighty-seven.
+   *
+   * This was a scrolling list of every item in the queue, with the "current"
+   * one merely outlined — so the screen showed you forty things you were not
+   * deciding on, and the thing you were deciding on was the same size as the
+   * rest. Triage is a different job from reading: it needs the evidence big
+   * enough to judge, the decision under your fingers, and nothing else
+   * competing. The queue is still there, as a strip of squares you can click,
+   * because knowing there are sixty left is part of the job too.
+   */
   return (
-    <section className="mt-8">
-      <div className="flex flex-wrap items-center gap-3 border-b border-line pb-3">
-        <p className="text-sm text-secondary">
-          {items.length} en attente · {decisions.size} décidée
-          {decisions.size === 1 ? '' : 's'}
-        </p>
-        {queue.counts.requiringExplicitReview > 0 && (
-          <p className="text-sm text-[var(--epi-hypothetical)]">
-            {queue.counts.requiringExplicitReview} exige(nt) une revue explicite
-          </p>
-        )}
+    <section className="mt-4">
+      {/* --- Progress and publication, pinned ------------------------------ */}
+      <div className="sticky top-[3.25rem] z-20 border-[3px] border-ink bg-surface-raised">
+        <div className="flex flex-wrap items-center gap-3 px-3 py-2">
+          <span className="chiffre text-3xl leading-none">{cursor + 1}</span>
+          <span className="font-display text-sm uppercase text-muted">/ {items.length}</span>
 
-        <div className="ml-auto flex flex-wrap gap-2">
-          {bulkEligible.length > 0 && (
+          <div className="flex gap-1.5">
+            {counts.accept > 0 && <span className="badge badge-vert">{counts.accept} ✓</span>}
+            {counts.reject > 0 && <span className="badge badge-rouge">{counts.reject} ✕</span>}
+            {counts.defer > 0 && <span className="badge badge-gris">{counts.defer} ⏸</span>}
+          </div>
+
+          <div className="ml-auto flex flex-wrap gap-2">
+            {bulkEligible.length > 0 && (
+              <button
+                type="button"
+                onClick={acceptBulk}
+                className="bouton !py-1 !text-sm"
+                title="Uniquement les propositions sûres : ni identité, ni révélation, ni contradiction"
+              >
+                Accepter {bulkEligible.length} sûres
+              </button>
+            )}
             <button
               type="button"
-              onClick={acceptBulk}
-              className="rounded-sm border border-line-strong px-3 py-1.5 text-sm text-primary hover:bg-surface-raised"
-              title="Uniquement les propositions sûres : ni identité, ni révélation, ni contradiction"
+              onClick={publish}
+              disabled={decided === 0 || publishing}
+              className="bouton bouton-primaire !py-1 !text-sm"
             >
-              Accepter les {bulkEligible.length} cas sûrs
+              {publishing ? 'Publication…' : `Publier ${decided || ''}`}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={publish}
-            disabled={decisions.size === 0 || publishing}
-            className="rounded-sm bg-accent px-4 py-1.5 text-sm font-medium text-inverted hover:bg-accent-strong disabled:opacity-40"
-          >
-            {publishing ? 'Publication…' : `Publier ${decisions.size || ''}`}
-          </button>
+          </div>
         </div>
+
+        {/* The queue as a strip: position, decisions taken, and a way back. */}
+        <ol className="flex flex-wrap gap-[3px] border-t-[3px] border-ink px-3 py-2">
+          {items.map((item, index) => {
+            const d = decisions.get(item.id)
+            const tint =
+              d === 'accept'
+                ? 'var(--epi-validated)'
+                : d === 'reject'
+                  ? 'var(--coral)'
+                  : d === 'defer'
+                    ? 'var(--text-muted)'
+                    : 'var(--surface-sunken)'
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => setCursor(index)}
+                  aria-label={`Proposition ${index + 1}`}
+                  aria-current={index === cursor}
+                  className={`block h-3 w-3 border-2 ${
+                    index === cursor ? 'border-ink ring-2 ring-[var(--accent)]' : 'border-ink/40'
+                  }`}
+                  style={{ background: tint }}
+                />
+              </li>
+            )
+          })}
+        </ol>
       </div>
 
-      <p className="mt-3 text-sm text-muted">
-        <kbd className="font-mono">a</kbd> accepter ·{' '}
-        <kbd className="font-mono">r</kbd> rejeter ·{' '}
-        <kbd className="font-mono">d</kbd> reporter ·{' '}
-        <kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> naviguer.
-        Rien n&apos;est écrit avant « Publier ».
-      </p>
-
       {error && (
-        <p role="alert" className="mt-4 rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-3 text-sm text-primary">
+        <p role="alert" className="mt-4 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-white">
           {error}
         </p>
       )}
 
       {result && <PublishSummary result={result} chapterId={queue.chapterId} />}
 
-      <ol className="mt-6 space-y-4">
-        {items.map((item, index) => (
-          <li key={item.id}>
-            <ProposalCard
-              item={item}
-              active={index === cursor}
-              decision={decisions.get(item.id) ?? null}
-              onFocus={() => setCursor(index)}
-              onDecide={(decision) => decide(item.id, decision)}
-            />
-          </li>
-        ))}
-      </ol>
+      {current && (
+        <ProposalCard
+          key={current.id}
+          item={current}
+          index={cursor}
+          total={items.length}
+          decision={decisions.get(current.id) ?? null}
+          onDecide={(decision) => {
+            decide(current.id, decision)
+            move(1)
+          }}
+          onMove={move}
+        />
+      )}
     </section>
   )
 }
@@ -286,80 +328,113 @@ function PublishSummary({
 
 function ProposalCard({
   item,
-  active,
+  index,
+  total,
   decision,
-  onFocus,
   onDecide,
+  onMove,
 }: {
   item: ReviewItemView
-  active: boolean
+  index: number
+  total: number
   decision: DecisionKind | null
-  onFocus: () => void
   onDecide: (decision: DecisionKind) => void
+  onMove: (delta: number) => void
 }) {
   return (
-    <article
-      tabIndex={0}
-      onFocus={onFocus}
-      aria-current={active}
-      className={`grid gap-5 rounded-sm border bg-surface-raised p-4 md:grid-cols-2 ${
-        active ? 'border-accent ring-1 ring-[var(--accent)]' : 'border-line'
-      } ${decision ? 'opacity-90' : ''}`}
-    >
-      <div>
-        <header className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs uppercase tracking-wider text-muted">
-            {categoryLabel(item.category)}
+    <article className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
+      {/* --- The evidence, at a size you can actually judge ---------------- */}
+      <div className="panneau">
+        <h2 className="panneau-titre">
+          La preuve
+          <span className="font-sans text-xs normal-case opacity-80">
+            {item.evidence.length} élément{item.evidence.length > 1 ? 's' : ''}
           </span>
-          {item.requiresExplicitReview && (
-            <span
-              className="rounded-sm border border-[var(--epi-hypothetical)] px-1.5 text-[0.65rem] text-[var(--epi-hypothetical)]"
-              title="Identité, révélation, mort, affiliation cachée ou contradiction : jamais acceptable en lot"
-            >
-              revue explicite
-            </span>
+        </h2>
+        <div className="panneau-corps">
+          {item.evidence.length === 0 ? (
+            <p className="border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-white">
+              Aucune preuve rattachée — cette proposition ne devrait pas être ici.
+            </p>
+          ) : (
+            <ul className="space-y-5">
+              {item.evidence.map((evidence, i) => (
+                <li key={`${evidence.ref}-${i}`}>
+                  <EvidencePanel evidence={evidence} />
+                </li>
+              ))}
+            </ul>
           )}
-          <span className="ml-auto font-mono text-xs text-muted">
-            confiance {Math.round(item.confidence * 100)} %
-          </span>
-        </header>
-
-        <ProposalBody category={item.category} payload={item.payload} relatedLabel={item.relatedLabel} />
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {(['accept', 'reject', 'defer'] as const).map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              onClick={() => onDecide(kind)}
-              aria-pressed={decision === kind}
-              className={`rounded-sm border px-3 py-1.5 text-sm transition-colors ${
-                decision === kind
-                  ? 'border-accent bg-accent text-inverted'
-                  : 'border-line-strong text-primary hover:bg-surface-overlay'
-              }`}
-            >
-              {kind === 'accept' ? 'Accepter' : kind === 'reject' ? 'Rejeter' : 'Reporter'}
-            </button>
-          ))}
         </div>
       </div>
 
-      <div className="border-t border-line pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0">
-        <h3 className="text-sm font-medium text-primary">Preuve</h3>
-        {item.evidence.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--epi-contradicted)]">
-            Aucune preuve rattachée — cette proposition ne devrait pas être ici.
-          </p>
-        ) : (
-          <ul className="mt-2 space-y-4">
-            {item.evidence.map((evidence, index) => (
-              <li key={`${evidence.ref}-${index}`}>
-                <EvidencePanel evidence={evidence} />
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* --- The claim, and the four ways out ----------------------------- */}
+      <div className="flex flex-col gap-4">
+        <div className="panneau">
+          <h2 className="panneau-titre panneau-titre-vedette">
+            {categoryLabel(item.category)}
+            <span className="font-sans text-xs normal-case">
+              confiance {Math.round(item.confidence * 100)} %
+            </span>
+          </h2>
+          <div className="panneau-corps">
+            {item.requiresExplicitReview && (
+              <p
+                className="mb-3 border-[3px] border-ink bg-[var(--epi-hypothetical)] px-2 py-1 font-display text-sm uppercase text-ink"
+                title="Identité, révélation, mort, affiliation cachée ou contradiction : jamais acceptable en lot"
+              >
+                Revue explicite obligatoire
+              </p>
+            )}
+            <ProposalBody
+              category={item.category}
+              payload={item.payload}
+              relatedLabel={item.relatedLabel}
+            />
+          </div>
+        </div>
+
+        <div className="panneau lg:sticky lg:top-[9.5rem]">
+          <div className="panneau-corps">
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  ['accept', 'Accepter', 'a', 'bouton-primaire'],
+                  ['reject', 'Rejeter', 'r', 'bouton-danger'],
+                  ['defer', 'Reporter', 'd', ''],
+                ] as const
+              ).map(([kind, label, key, tone]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => onDecide(kind)}
+                  aria-pressed={decision === kind}
+                  className={`bouton ${decision === kind ? tone || 'bouton-mer' : ''} !flex-col !gap-0 !py-2`}
+                >
+                  <span>{label}</span>
+                  <kbd className="font-sans text-[0.65rem] font-bold opacity-70">{key}</kbd>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => onMove(-1)} className="bouton !py-1 !text-xs">
+                ‹ k
+              </button>
+              <span className="tabular text-xs text-muted">
+                {index + 1} / {total}
+              </span>
+              <button type="button" onClick={() => onMove(1)} className="bouton !py-1 !text-xs">
+                j ›
+              </button>
+            </div>
+
+            <p className="mt-3 text-xs text-muted">
+              Rien n&apos;est écrit avant « Publier ». Une décision déplace
+              automatiquement à la suivante.
+            </p>
+          </div>
+        </div>
       </div>
     </article>
   )
@@ -384,11 +459,11 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
           src={evidence.panelImageUrl}
           alt={`Case source ${evidence.ref}`}
           loading="lazy"
-          className="mt-1.5 block max-h-64 w-auto rounded-sm border border-line"
+          className="mt-2 block max-h-[26rem] w-full border-[3px] border-ink object-contain"
         />
       )}
 
-      <blockquote className="mt-1.5 border-l-2 border-accent pl-2.5 text-sm text-primary">
+      <blockquote className="mt-2 border-l-[6px] border-[var(--accent)] bg-surface-sunken px-3 py-2 text-base text-primary">
         {evidence.excerpt}
       </blockquote>
 

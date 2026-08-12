@@ -24,53 +24,67 @@ export default async function ReviewPage({
   const quarantined = await quarantineSummary(session.userId, runId)
 
   return (
-    <main id="contenu" className="mx-auto max-w-6xl px-6 py-12">
-      <nav className="flex flex-wrap items-center gap-2 text-sm">
-        <Link href="/" className="text-muted hover:text-primary">
-          Journal
+    <main id="contenu" className="mx-auto max-w-[1500px] px-4 py-4">
+      {/*
+       * A triage station, not an article.
+       *
+       * The page opened with a breadcrumb, a 4xl title, a subtitle and a
+       * paragraph explaining the review model — four blocks of reading before
+       * the first proposal, every single time, on a screen someone visits with
+       * eighty decisions to make. The explanation is true and it belongs
+       * somewhere; it does not belong between you and the work, every session.
+       */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <Link
+          href={`/runs/${runId}`}
+          className="font-display text-sm uppercase text-muted no-underline hover:text-primary"
+        >
+          ‹ Traitement
         </Link>
-        <span className="text-muted">/</span>
-        <Link href={`/runs/${runId}`} className="text-muted hover:text-primary">
-          Traitement
-        </Link>
-      </nav>
-
-      <h1 className="mt-4 text-4xl font-semibold text-primary">
-        Revue du chapitre {queue.chapterNumber}
-      </h1>
-      {queue.chapterTitle && (
-        <p className="mt-1 text-xl text-secondary">{queue.chapterTitle}</p>
-      )}
-
-      <p className="mt-4 max-w-3xl text-secondary">
-        Chaque proposition est affichée avec la case et le texte dont elle est
-        tirée. Rien n&apos;entre dans le graphe sans votre accord, et une décision
-        prise ici sera réappliquée automatiquement si vous réimportez ce chapitre.
-      </p>
+        <h1 className="font-display text-2xl uppercase leading-none text-primary">
+          Revue · chapitre {queue.chapterNumber}
+        </h1>
+        {queue.chapterTitle && (
+          <span className="truncate text-secondary">{queue.chapterTitle}</span>
+        )}
+        {queue.counts.requiringExplicitReview > 0 && (
+          <span className="badge badge-or ml-auto">
+            {queue.counts.requiringExplicitReview} en revue explicite
+          </span>
+        )}
+      </div>
 
       <ReviewBoard queue={serialisable(queue)} />
 
       {quarantined.length > 0 && (
-        <section className="mt-14 border-t border-line pt-8">
-          <h2 className="text-lg font-semibold text-primary">Quarantaine</h2>
-          <p className="mt-2 max-w-3xl text-sm text-secondary">
-            Ces propositions n&apos;ont pas pu être rattachées à une preuve
-            vérifiable : référence inexistante, ou extrait absent du texte cité.
-            Elles ne sont <strong>pas</strong> proposables — c&apos;est
-            précisément le garde-fou qui empêche une affirmation venue
-            d&apos;ailleurs que des pages d&apos;atteindre le graphe. Leur
-            répartition est en revanche un bon diagnostic.
-          </p>
-          <ul className="mt-3 space-y-1 text-sm">
-            {quarantined.map((entry) => (
-              <li key={entry.reason} className="flex gap-3">
-                <span className="font-mono text-muted">{entry.count}</span>
-                <span className="text-secondary">{quarantineLabel(entry.reason)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <details className="panneau mt-8">
+          <summary className="panneau-titre cursor-pointer list-none">
+            Quarantaine
+            <span className="font-sans text-xs normal-case opacity-80">
+              {quarantined.reduce((sum, e) => sum + e.count, 0)} écartée(s) · pourquoi ?
+            </span>
+          </summary>
+          <div className="panneau-corps">
+            <p className="max-w-3xl text-sm text-secondary">
+              Ces propositions n&apos;ont pas pu être rattachées à une preuve
+              vérifiable : référence inexistante, ou extrait absent du texte
+              cité. Elles ne sont <strong>pas</strong> proposables — c&apos;est
+              le garde-fou qui empêche une affirmation venue d&apos;ailleurs que
+              des pages d&apos;atteindre le graphe. Leur répartition est en
+              revanche un bon diagnostic.
+            </p>
+            <ul className="mt-3 space-y-1 text-sm">
+              {quarantined.map((entry) => (
+                <li key={entry.reason} className="flex gap-3">
+                  <span className="chiffre text-lg">{entry.count}</span>
+                  <span className="text-secondary">{quarantineLabel(entry.reason)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
       )}
+
     </main>
   )
 }
