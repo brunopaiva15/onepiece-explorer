@@ -12,8 +12,12 @@ import { duplicateKeyOf, groupDuplicates } from '@/domains/review/duplicates.ts'
  * thing is not.
  */
 
-function entity(label: string, nodeType = 'character'): unknown {
-  return { label, node_type: nodeType, label_kind: 'alias', local_id: 'e1' }
+function entity(
+  label: string,
+  nodeType = 'character',
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return { label, node_type: nodeType, label_kind: 'alias', local_id: 'e1', ...extra }
 }
 
 describe('duplicateKeyOf', () => {
@@ -30,6 +34,43 @@ describe('duplicateKeyOf', () => {
     expect(duplicateKeyOf('entity', entity('Vogue Merry', 'character'))).not.toBe(
       duplicateKeyOf('entity', entity('Vogue Merry', 'vessel')),
     )
+  })
+
+  it('groups two copies that quote the same source wording under different labels', () => {
+    /*
+     * The case that made this necessary. « Red Hair Pirates » came back from
+     * one slice as « Équipage des cheveux rouges » and from another as
+     * « Équipage du Roux » — the same words, translated twice, which is the
+     * failure the glossary exists to stop and the one a label comparison
+     * cannot see.
+     */
+    const proposed = entity('Équipage des cheveux rouges', 'group', {
+      source_term: 'Red Hair Pirates',
+    })
+    const translated = entity('Équipage du Roux', 'group', {
+      source_term: 'Red Hair Pirates',
+      label_kind: 'translation',
+    })
+
+    expect(duplicateKeyOf('entity', proposed)).toBe(duplicateKeyOf('entity', translated))
+  })
+
+  it('keeps the same wording apart when it names two kinds of thing', () => {
+    // « Straw Hat » is a hat and a crew. Same quoted words, two entities.
+    expect(
+      duplicateKeyOf('entity', entity('Chapeau de paille', 'object', { source_term: 'Straw Hat' })),
+    ).not.toBe(
+      duplicateKeyOf('entity', entity('Chapeau de paille', 'group', { source_term: 'Straw Hat' })),
+    )
+  })
+
+  it('falls back to the label when the source wording is the label', () => {
+    // Null source_term means the model produced no French of its own — a
+    // French source, or a name identical in both languages. The label is then
+    // just as stable as a quote, so nothing is lost.
+    expect(
+      duplicateKeyOf('entity', entity('Luffy', 'character', { source_term: null })),
+    ).toBe(duplicateKeyOf('entity', entity('luffy')))
   })
 
   it('does not group two look-alike designations', () => {

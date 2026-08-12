@@ -62,7 +62,7 @@ Mesurée contre la vérité-terrain des fixtures synthétiques :
 - [ ] Taux d'hallucination suivi **dans le temps**. Aujourd'hui c'est un instantané ; comparer deux versions de prompt demande de le relever à la main.
 - [x] Stabilité : retraiter deux fois le même chapitre ne duplique rien et ne repose pas les questions déjà tranchées — `tests/pipeline/run-chapter.test.ts`.
 - [x] Un chapitre peut porter sa version dans l'autre langue. Elle est fournie à l'extraction pour le nommage — « source_term » et « naming_confident » lus dans la mise en regard plutôt que devinés — et n'est **jamais** citable : elle n'a pas de passages, donc pas de références, donc rien qui puisse l'ancrer — `tests/ingestion/summary.test.ts`, `tests/ai/providers.test.ts`.
-- [x] Les copies d'une même proposition à l'intérieur d'un traitement — le coût assumé du découpage en tranches — sont signalées dans le centre de revue avec ce qui a déjà été décidé sur chacune, y compris une copie acceptée lors d'une publication antérieure ; l'acceptation en lot n'en retient qu'une — `tests/review/duplicates.test.ts`, `tests/review/duplicate-queue.test.ts`.
+- [x] Les copies d'une même proposition à l'intérieur d'un traitement — le coût assumé du découpage en tranches — sont signalées dans le centre de revue avec ce qui a déjà été décidé sur chacune, y compris une copie acceptée lors d'une publication antérieure ; le rapprochement des entités porte sur la formulation source et non sur le libellé français, sans quoi une entité traduite deux fois différemment passe pour deux propositions ; l'acceptation en lot n'en retient qu'une — `tests/review/duplicates.test.ts`, `tests/review/duplicate-queue.test.ts`.
 
 ## Sécurité et confidentialité
 

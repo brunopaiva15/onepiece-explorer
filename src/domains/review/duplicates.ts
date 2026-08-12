@@ -75,11 +75,37 @@ export function duplicateKeyOf(category: string, payload: unknown): string | nul
 
   switch (category) {
     case 'entity': {
+      // Node type either way: a ship and a crew can legitimately share a name,
+      // and they are two entities in the graph.
+      const nodeType = text(record.node_type)
+
+      /*
+       * The source wording first, the French label only as a fallback.
+       *
+       * Keying on the label alone missed the copy that costs the most. Naming
+       * is the one field the model authors rather than quotes, and it authors
+       * it differently from one slice to the next: « Red Hair Pirates » came
+       * back as « Équipage des cheveux rouges » in one and « Équipage du Roux »
+       * in another — two labels honestly derived from the same words, which is
+       * precisely the failure migration 0016 exists for. Compared by label,
+       * those are two proposals; compared by what they quote, they are one.
+       *
+       * `source_term` is copied from the text, not written, so it holds still
+       * while the translation moves. It is null when the label already matches
+       * the source — a French source, or a name that is the same in both — and
+       * the label is then exactly as stable, so the fallback loses nothing.
+       *
+       * What this still misses: two copies where one carries a source term and
+       * the other does not, with different labels. Nothing links those without
+       * comparing meanings, which is entity resolution's job and not this
+       * module's.
+       */
+      const source = text(record.source_term)
+      if (source.length > 0) return `entity|${nodeType}|source:${source}`
+
       const label = text(record.label)
       if (label.length === 0) return null
-      // Node type included: a ship and a crew can legitimately share a name, and
-      // they are two entities in the graph.
-      return `entity|${text(record.node_type)}|${label}`
+      return `entity|${nodeType}|${label}`
     }
 
     case 'assertion': {
