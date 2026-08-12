@@ -132,3 +132,109 @@ describe('groupDuplicates', () => {
     expect(groups.get('d')?.rank).toBe(3)
   })
 })
+
+describe('relations, named by their ends rather than by slice ids', () => {
+  /**
+   * An assertion points at entities by ids scoped to one model response, so the
+   * same relation extracted from two slices carries two different pairs of ids
+   * and used to look like two different relations. Resolving the ids to the
+   * entities they name is what makes them comparable — and refusing to resolve
+   * an ambiguous one is what keeps the comparison honest.
+   */
+  const propose = (
+    id: string,
+    category: string,
+    payload: Record<string, unknown>,
+    status = 'proposed',
+  ) => ({ id, category, payload, status })
+
+  const relation = (subject: string, object: string) => ({
+    subject,
+    predicate: 'protects',
+    object,
+    object_value: null,
+  })
+
+  it('groups one relation extracted twice under different local ids', () => {
+    const groups = groupDuplicates([
+      propose('e-shanks-1', 'entity', entity('Shanks')),
+      propose('e-luffy-1', 'entity', { ...entity('Luffy'), local_id: 'e2' }),
+      propose('r-1', 'assertion', relation('e1', 'e2')),
+      // Second slice: same two characters, ids of its own.
+      propose('e-shanks-2', 'entity', { ...entity('Shanks'), local_id: 'e7' }),
+      propose('e-luffy-2', 'entity', { ...entity('Luffy'), local_id: 'e8' }),
+      propose('r-2', 'assertion', relation('e7', 'e8')),
+    ])
+
+    expect(groups.get('r-1')?.total).toBe(2)
+    expect(groups.get('r-2')?.key).toBe(groups.get('r-1')?.key)
+  })
+
+  it('refuses to resolve an id two slices gave to two different characters', () => {
+    // 'e1' is Shanks in one slice and Higuma in another. Resolving it either
+    // way would call two unrelated relations copies of each other, which is a
+    // worse failure than missing a pair — so it resolves to nothing.
+    const groups = groupDuplicates([
+      propose('e-shanks', 'entity', entity('Shanks')),
+      propose('e-higuma', 'entity', entity('Higuma')),
+      propose('e-shanks-again', 'entity', { ...entity('Shanks'), local_id: 'e4' }),
+      propose('e-luffy', 'entity', { ...entity('Luffy'), local_id: 'e2' }),
+      propose('r-ambiguous', 'assertion', relation('e1', 'e2')),
+      propose('r-named', 'assertion', relation('e4', 'e2')),
+    ])
+
+    expect(groups.has('r-ambiguous')).toBe(false)
+    expect(groups.has('r-named')).toBe(false)
+  })
+})
+
+describe('events, which have no identity but their wording', () => {
+  const event = (id: string, summary: string) => ({
+    id,
+    category: 'event',
+    payload: { summary, participants: [], is_flashback: false },
+    status: 'proposed',
+  })
+
+  it('folds together one beat the model worded twice', () => {
+    // The case with no exact key to find: an event is a sentence the model
+    // composed, and it composes it differently each time.
+    const groups = groupDuplicates([
+      event('a', 'Le Seigneur de la Côte dévore Higuma et son bateau.'),
+      event('b', 'Le Seigneur de la Côte avale Higuma.'),
+    ])
+
+    expect(groups.get('a')?.total).toBe(2)
+    expect(groups.get('b')?.key).toBe(groups.get('a')?.key)
+  })
+
+  it('folds three wordings of one beat into a single group', () => {
+    const groups = groupDuplicates([
+      event('a', 'Shanks perd son bras gauche en sauvant Luffy.'),
+      event('b', 'Shanks perd son bras en sauvant Luffy du monstre.'),
+      event('c', 'Shanks perd un bras gauche pour sauver Luffy.'),
+    ])
+
+    expect(groups.get('a')?.total).toBe(3)
+    expect(groups.get('c')?.rank).toBe(3)
+  })
+
+  it('keeps two beats about the same people apart', () => {
+    const groups = groupDuplicates([
+      event('a', 'Shanks refuse d’emmener Luffy en mer.'),
+      event('b', 'Luffy avale le fruit du démon trouvé dans un coffre.'),
+    ])
+
+    expect(groups.size).toBe(0)
+  })
+
+  it('does not fold two terse summaries sharing a single name', () => {
+    // One shared content word is a coincidence, not a match.
+    const groups = groupDuplicates([
+      event('a', 'Higuma arrive.'),
+      event('b', 'Higuma repart.'),
+    ])
+
+    expect(groups.size).toBe(0)
+  })
+})

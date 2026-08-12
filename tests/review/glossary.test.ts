@@ -56,14 +56,19 @@ async function prepareRun(chapterNumber: number): Promise<{
  * about what is under test: not whether a model raises its hand, but what
  * happens to the answer when it does.
  */
-async function flagAsUnsure(runId: string, sourceTerm: string): Promise<string> {
+async function flagAsUnsure(
+  runId: string,
+  sourceTerm: string,
+  /** True to record a term the model claims to be sure of. */
+  confident = false,
+): Promise<string> {
   const [item] = await raw<Array<{ id: string; payload: Record<string, unknown> }>>`
     SELECT id, payload FROM review_items
       WHERE run_id = ${runId} AND category = 'entity'
       ORDER BY priority DESC LIMIT 1`
   if (!item) throw new Error('Aucune entité proposée : le run n’a rien produit.')
 
-  const payload = { ...item.payload, source_term: sourceTerm, naming_confident: false }
+  const payload = { ...item.payload, source_term: sourceTerm, naming_confident: confident }
   // raw.json, not a stringified object: postgres.js encodes a *string* bound to
   // a jsonb column as a JSON string scalar, which stores `"{\"label\":…}"` and
   // silently turns the payload into text nothing can read a field out of.
@@ -125,13 +130,41 @@ describe('answering a naming question', () => {
     expect(labels.map((row) => row.label)).toContain('Équipage du Roux')
   })
 
-  it('learns nothing from an acceptance you did not edit', async () => {
+  it('records the form you accepted on an entity the model asked about', async () => {
     const prepared = await prepareRun(1)
     const itemId = await flagAsUnsure(prepared.runId, 'Red-Haired Pirates')
+    const [item] = await raw<Array<{ payload: { label: string } }>>`
+      SELECT payload FROM review_items WHERE id = ${itemId}`
 
-    // Accepting the proposal unchanged means "close enough here", not "this is
-    // the form, use it for the whole work". Recording it would settle a
-    // question you never actually answered.
+    /*
+     * Accepting unchanged is an answer when the model raised its hand.
+     *
+     * It declared it did not know the French form, the item was queued for
+     * explicit review with an editable field, and you left the proposal
+     * standing. Treating that as an abstention is what made the same question
+     * come back at every chapter with the answer already given.
+     */
+    await publishDecisions(prepared.userId, prepared.runId, [
+      { reviewItemId: itemId, decision: 'accept' },
+    ])
+
+    const terms = await raw<Array<{ source_term: string; french_term: string }>>`
+      SELECT source_term, french_term FROM glossary_terms
+        WHERE work_id = ${prepared.workId}`
+    expect(terms).toHaveLength(1)
+    expect(terms[0]).toMatchObject({
+      source_term: 'Red-Haired Pirates',
+      french_term: item!.payload.label,
+    })
+  })
+
+  it('learns nothing from an entity the model was sure of', async () => {
+    const prepared = await prepareRun(1)
+    const itemId = await flagAsUnsure(prepared.runId, 'Red-Haired Pirates', true)
+
+    // No question was asked, so accepting answers nothing. Silence stays
+    // silence: waving through a confident proposal must not settle a
+    // convention for the whole work.
     await publishDecisions(prepared.userId, prepared.runId, [
       { reviewItemId: itemId, decision: 'accept' },
     ])

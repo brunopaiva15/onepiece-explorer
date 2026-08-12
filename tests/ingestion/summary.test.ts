@@ -7,6 +7,7 @@ import {
 import { chapterPassages, importSummary } from '@/domains/ingestion/summary.ts'
 import { executeRun } from '@/domains/pipeline/execute.ts'
 import { createRun, getRun } from '@/domains/pipeline/runs.ts'
+import { publishDecisions } from '@/domains/review/publish.ts'
 import { closeDb, raw, resetDatabase, seedWorld } from '../helpers/db.ts'
 
 /**
@@ -521,5 +522,86 @@ describe('the same chapter in the other language', () => {
         expect(stored).toContain(evidence.excerpt)
       }
     }
+  })
+})
+
+describe('finishing a review', () => {
+  /**
+   * Where a chapter's review ends, and why it has to end somewhere.
+   *
+   * The reader's boundary is the highest *published* chapter number. Import
+   * leaves a chapter in `uploaded`, a successful run leaves it in `review`, and
+   * publishing its decisions used to leave it there too — so the boundary stayed
+   * at zero and every row publication had just written was hidden by the same
+   * policies that date facts by revelation. Everything worked, and the graph was
+   * empty.
+   */
+  async function queued(runId: string): Promise<string[]> {
+    const rows = await raw<Array<{ id: string }>>`
+      SELECT id FROM review_items WHERE run_id = ${runId} AND status = 'proposed'`
+    return rows.map((row) => row.id)
+  }
+
+  async function statusOf(chapterId: string): Promise<string> {
+    const [row] = await raw<Array<{ status: string }>>`
+      SELECT status FROM chapters WHERE id = ${chapterId}`
+    return row!.status
+  }
+
+  it('opens the chapter once nothing is left proposed', async () => {
+    const world = await seedWorld([])
+    const { chapterId } = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+    })
+    const runId = await createRun(world.userId, chapterId)
+    await executeRun(world.userId, chapterId, runId)
+
+    expect(await statusOf(chapterId)).toBe('review')
+
+    const items = await queued(runId)
+    expect(items.length).toBeGreaterThan(0)
+
+    const result = await publishDecisions(
+      world.userId,
+      runId,
+      // Deferring rather than accepting: a decision is a decision, and this is
+      // about when the review ends, not about what enters the graph.
+      items.map((reviewItemId) => ({ reviewItemId, decision: 'defer' as const })),
+    )
+
+    expect(result.chapterPublished).toBe(1)
+    expect(await statusOf(chapterId)).toBe('published')
+
+    const [row] = await raw<Array<{ published_at: string | null }>>`
+      SELECT published_at FROM chapters WHERE id = ${chapterId}`
+    expect(row!.published_at).not.toBeNull()
+  })
+
+  it('leaves it open while one proposal is still undecided', async () => {
+    const world = await seedWorld([])
+    const { chapterId } = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+    })
+    const runId = await createRun(world.userId, chapterId)
+    await executeRun(world.userId, chapterId, runId)
+
+    const items = await queued(runId)
+    const result = await publishDecisions(
+      world.userId,
+      runId,
+      // All but one: a chapter is read when every question has been answered,
+      // and opening the boundary over an unread proposal is the one mistake
+      // this design exists to prevent.
+      items.slice(1).map((reviewItemId) => ({ reviewItemId, decision: 'defer' as const })),
+    )
+
+    expect(result.chapterPublished).toBeNull()
+    expect(await statusOf(chapterId)).toBe('review')
   })
 })

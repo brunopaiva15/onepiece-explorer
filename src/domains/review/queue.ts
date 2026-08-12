@@ -64,6 +64,15 @@ export interface ReviewQueue {
   chapterId: string
   chapterNumber: number
   chapterTitle: string | null
+  /**
+   * Whether the chapter has been opened to the reader.
+   *
+   * The queue is where a review ends, so it is where the answer belongs: a
+   * chapter with nothing left proposed and no publication is a chapter whose
+   * facts exist and are hidden, and that is worth a button rather than a
+   * mystery.
+   */
+  chapterPublished: boolean
   items: ReviewItemView[]
   counts: {
     pending: number
@@ -87,6 +96,7 @@ export async function getReviewQueue(
         chapterId: reviewItems.chapterId,
         chapterNumber: chapters.number,
         chapterTitle: chapters.title,
+        chapterStatus: chapters.status,
       })
       .from(reviewItems)
       .innerJoin(chapters, eq(chapters.id, reviewItems.chapterId))
@@ -175,6 +185,7 @@ export async function getReviewQueue(
     chapterId: data.head.chapterId,
     chapterNumber: data.head.chapterNumber,
     chapterTitle: data.head.chapterTitle,
+    chapterPublished: data.head.chapterStatus === 'published',
     items: data.rows.map((row) => ({
       id: row.id,
       category: row.category,

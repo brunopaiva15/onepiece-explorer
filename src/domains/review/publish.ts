@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
@@ -74,6 +74,20 @@ export interface PublishResult {
   deferred: number
   /** Items whose decision could not be applied, with the reason. */
   failures: Array<{ reviewItemId: string; reason: string }>
+  /**
+   * Set when this publication finished the chapter's review and opened it.
+   *
+   * Reviewing a chapter had no end. The pipeline left it in `review`, deciding
+   * its proposals left it in `review`, and nothing anywhere moved it on — so
+   * the reader's boundary, which is the highest *published* chapter number,
+   * stayed at zero and every row published here was hidden by the row-level
+   * policies that date facts by revelation. Forty-two accepted proposals, an
+   * empty graph, and nothing on screen connecting the two.
+   *
+   * A chapter with nothing left proposed is a chapter you have finished
+   * reading, so publication says so.
+   */
+  chapterPublished: number | null
 }
 
 export async function publishDecisions(
@@ -91,6 +105,7 @@ export async function publishDecisions(
     rejected: 0,
     deferred: 0,
     failures: [],
+    chapterPublished: null,
   }
 
   if (decisions.length === 0) return result
@@ -210,17 +225,29 @@ export async function publishDecisions(
       /*
        * The naming decision, recorded so it is never asked again.
        *
-       * The model flagged that it did not know the French form; you supplied
-       * one. Without this the next chapter containing the same English wording
-       * gets the same question, and — worse — a different guess to review, which
-       * is how one person becomes two entities.
+       * The model flagged that it did not know the French form; you answered.
+       * Without this the next chapter containing the same source wording gets
+       * the same question, and — worse — a different guess to review, which is
+       * how one person becomes two entities.
        *
-       * Only written when the label was actually corrected. Accepting the
-       * model's proposal unchanged is a weaker signal: it means "close enough
-       * here", not "this is the form, use it everywhere".
+       * Two ways to answer, and both count. Retyping the label is the obvious
+       * one. Accepting the proposal unchanged *on an entity the model flagged*
+       * is the other, and it was not recorded before: the reasoning was that
+       * accepting unchanged means "close enough here" rather than "use this
+       * everywhere". That reasoning holds for a proposal the model was sure of
+       * — and inverts for one where it declared it was not. It asked, the item
+       * was queued for explicit review with an editable field, and you accepted
+       * the form. Treating that as an abstention is what made « Foosha Village »
+       * come back chapter after chapter with the answer already given.
+       *
+       * Silence is still silence: an entity the model was confident about and
+       * you waved through settles nothing.
        */
+      const answeredNaming =
+        decision.decision === 'correct' || candidate.naming_confident === false
+
       if (
-        decision.decision === 'correct' &&
+        answeredNaming &&
         candidate.source_term &&
         candidate.source_term.trim().length > 0
       ) {
@@ -479,6 +506,8 @@ export async function publishDecisions(
         .where(eq(reviewItems.id, item.id))
     }
 
+    result.chapterPublished = await openIfReviewed(db, userId, run.chapterId)
+
     await db.insert(auditLog).values({
       userId,
       action: 'publish_delta',
@@ -492,6 +521,81 @@ export async function publishDecisions(
   })
 
   return result
+}
+
+/**
+ * Open a chapter whose review is finished, and say so.
+ *
+ * Reviewing had no end. Import left a chapter in `uploaded`, a successful run
+ * left it in `review`, and publishing its decisions left it there too — while
+ * the reader's boundary is the highest *published* chapter number. With none
+ * published the boundary is zero, so every row written by publication is hidden
+ * by the very policies that date facts by revelation: forty-two accepted
+ * proposals and an empty graph, with nothing on screen connecting the two.
+ *
+ * Nothing left proposed is the end of a review. Deferred and rejected items
+ * were looked at and answered; only 'proposed' is an open question.
+ *
+ * Counted across the chapter rather than one run, because a second run on the
+ * same chapter leaves a queue of its own, and opening the boundary over
+ * proposals nobody has read would be the one mistake this whole design exists
+ * to prevent.
+ */
+export async function openIfReviewed(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  userId: string,
+  chapterId: string,
+): Promise<number | null> {
+  const [pending] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(reviewItems)
+    .where(
+      and(
+        eq(reviewItems.chapterId, chapterId),
+        eq(reviewItems.userId, userId),
+        eq(reviewItems.status, 'proposed'),
+      ),
+    )
+
+  if ((pending?.count ?? 0) > 0) return null
+
+  const [opened] = await db
+    .update(chapters)
+    .set({ status: 'published', publishedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(chapters.id, chapterId),
+        eq(chapters.userId, userId),
+        // Publishing again must not rewrite the date it was first finished:
+        // that date is what the reader's position is built on.
+        ne(chapters.status, 'published'),
+      ),
+    )
+    .returning({ number: chapters.number })
+
+  return opened?.number ?? null
+}
+
+/**
+ * Finish a chapter whose queue was emptied before publication learned to.
+ *
+ * The automatic path above covers every review from now on. This is for the
+ * chapters already decided and already invisible — one call, same rule, no
+ * special case in the rule itself.
+ */
+export async function markChapterReviewed(
+  userId: string,
+  runId: string,
+): Promise<number | null> {
+  return withIngest(async (db) => {
+    const [run] = await db
+      .select({ chapterId: reviewItems.chapterId })
+      .from(reviewItems)
+      .where(and(eq(reviewItems.runId, runId), eq(reviewItems.userId, userId)))
+      .limit(1)
+    if (!run) return null
+    return openIfReviewed(db, userId, run.chapterId)
+  })
 }
 
 /**

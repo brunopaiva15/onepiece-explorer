@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import type { DuplicateInfo } from '@/domains/review/duplicates.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
-import type { DecisionKind, PublishResult } from '@/domains/review/publish.ts'
-import { publishDecisionsAction } from './actions.ts'
+import type { Decision, DecisionKind, PublishResult } from '@/domains/review/publish.ts'
+import { markChapterReviewedAction, publishDecisionsAction } from './actions.ts'
 
 /**
  * The review centre.
@@ -36,6 +36,27 @@ interface Props {
   queue: ReviewQueue
 }
 
+/** A name the reviewer replaced, and what they replaced it with. */
+interface RenamePair {
+  from: string
+  to: string
+}
+
+/**
+ * Carry a reviewer's renaming into the prose that used the old name.
+ *
+ * Exact, case-sensitive replacement: these are proper nouns, written by the
+ * same model in the same call as the summary, so the spelling matches. A
+ * case-insensitive or fuzzy pass would start rewriting words the reviewer never
+ * touched, which is a worse failure than leaving a sentence alone — the fix is
+ * always one keystroke away in the field above.
+ */
+function applyRenames(value: string, pairs: RenamePair[]): string {
+  let out = value
+  for (const pair of pairs) out = out.split(pair.from).join(pair.to)
+  return out
+}
+
 export function ReviewBoard({ queue }: Props) {
   const [decisions, setDecisions] = useState<Map<string, DecisionKind>>(new Map())
   /*
@@ -49,7 +70,17 @@ export function ReviewBoard({ queue }: Props) {
    */
   const [renames, setRenames] = useState<Map<string, string>>(new Map())
   const [cursor, setCursor] = useState(0)
+  /**
+   * Whether this card was chosen on purpose.
+   *
+   * Settled copies are stepped over while walking, but clicking one in the
+   * strip has to land on it — overriding the automatic decision is exactly what
+   * that click is for. The flag distinguishes "the walk put me here", which may
+   * be corrected, from "I asked for this card", which may not.
+   */
+  const [pinned, setPinned] = useState(false)
   const [publishing, startPublishing] = useTransition()
+  const [closing, startClosing] = useTransition()
   const [result, setResult] = useState<PublishResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -77,6 +108,46 @@ export function ReviewBoard({ queue }: Props) {
     return positions
   }, [items])
 
+  /*
+   * Copies settled by a decision taken on one of their own.
+   *
+   * Once a copy is accepted, the others have no question left in them: the
+   * entity is in the graph, and accepting a second would add a node nothing
+   * will ever join back. Deciding them by hand, one card at a time, is asking
+   * the reviewer to type the same answer to a question that has been answered.
+   * So they are deferred — not rejected, because they are not wrong, and not
+   * dropped, because nothing here writes anything without saying so.
+   *
+   * Derived rather than stored, which is what makes it undoable: unmark the
+   * accept and the set recomputes without them on the next render. An explicit
+   * decision always wins — accepting two copies is legitimate when you have
+   * judged them to be two different things, and this must not stand in the way.
+   */
+  const autoDeferred = useMemo(() => {
+    const settled = new Set<string>()
+
+    for (const positions of twinsByKey.values()) {
+      const claimed = positions.some(
+        (position) =>
+          decisions.get(items[position]!.id) === 'accept' ||
+          // Accepted in an earlier batch: the entity is already in the graph,
+          // and this run's remaining copies were only ever going to duplicate
+          // it. That copy is not even in the queue any more.
+          (items[position]!.duplicate?.others.accepted ?? 0) > 0,
+      )
+      if (!claimed) continue
+
+      for (const position of positions) {
+        const item = items[position]!
+        // An explicit decision, whatever it is, is the reviewer's and stands.
+        if (decisions.has(item.id)) continue
+        settled.add(item.id)
+      }
+    }
+
+    return settled
+  }, [decisions, items, twinsByKey])
+
   const twinsOfCurrent = useMemo(() => {
     if (!current?.duplicate) return []
     return (twinsByKey.get(current.duplicate.key) ?? [])
@@ -84,8 +155,9 @@ export function ReviewBoard({ queue }: Props) {
       .map((position) => ({
         position,
         decision: decisions.get(items[position]!.id) ?? null,
+        auto: autoDeferred.has(items[position]!.id),
       }))
-  }, [current, cursor, decisions, items, twinsByKey])
+  }, [autoDeferred, current, cursor, decisions, items, twinsByKey])
 
   const decide = useCallback(
     (id: string, decision: DecisionKind) => {
@@ -99,12 +171,80 @@ export function ReviewBoard({ queue }: Props) {
     [],
   )
 
+  /**
+   * Walk to the next card that still has a question in it.
+   *
+   * Settled copies are stepped over rather than removed: the strip still shows
+   * them, and clicking one goes there. What they no longer do is interrupt the
+   * walk — which is the whole point of settling them.
+   */
   const move = useCallback(
     (delta: number) => {
-      setCursor((c) => Math.max(0, Math.min(items.length - 1, c + delta)))
+      setPinned(false)
+      setCursor((from) => {
+        const step = delta === 0 ? 0 : delta > 0 ? 1 : -1
+        let next = from + delta
+        while (next > 0 && next < items.length - 1 && autoDeferred.has(items[next]!.id)) {
+          next += step
+        }
+        return Math.max(0, Math.min(items.length - 1, next))
+      })
     },
-    [items.length],
+    [autoDeferred, items],
   )
+
+  /*
+   * The names you retyped, ready to be applied to everything else in the batch.
+   *
+   * An event summary is prose the model wrote during extraction — before you
+   * renamed anything — so it keeps the name the model chose. Correcting the
+   * entity to « Monstre de la Baie » and then reading « Le Seigneur de la Côte
+   * dévore Higuma » two cards later is the same name settled twice, and the
+   * graph would keep the version you rejected: an event's label is its summary.
+   *
+   * Only from entities you are accepting, and only where the text differs.
+   * A rename you have not committed to is not yet an answer.
+   */
+  const renamedLabels = useMemo(() => {
+    const pairs: RenamePair[] = []
+    for (const item of items) {
+      if (item.category !== 'entity') continue
+      if (decisions.get(item.id) !== 'accept') continue
+      const to = renames.get(item.id)?.trim()
+      const from = (item.payload as { label?: string }).label?.trim()
+      if (!to || !from || to === from) continue
+      pairs.push({ from, to })
+    }
+    // Longest first: a name that contains another must be replaced whole,
+    // before the shorter one can eat part of it.
+    return pairs.sort((a, b) => b.from.length - a.from.length)
+  }, [decisions, items, renames])
+
+  /** Go to a card because the reviewer asked for it, settled or not. */
+  const jumpTo = useCallback((position: number) => {
+    setPinned(true)
+    setCursor(position)
+  }, [])
+
+  /*
+   * Step off a settled card the walk landed on.
+   *
+   * Adjusted during render rather than in an effect, the same way the import
+   * form advances itself: the settled card is never painted, so the queue
+   * simply does not contain it as far as the reviewer is concerned. Deterministic
+   * enough not to loop — the target is computed from the same inputs, so the
+   * next render finds the cursor already there.
+   */
+  if (!pinned && current && autoDeferred.has(current.id)) {
+    const forward = items.findIndex(
+      (item, index) => index > cursor && !autoDeferred.has(item.id),
+    )
+    const backward = items.findLastIndex(
+      (item, index) => index < cursor && !autoDeferred.has(item.id),
+    )
+    const target = forward !== -1 ? forward : backward
+    if (target !== -1 && target !== cursor) setCursor(target)
+  }
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -174,7 +314,13 @@ export function ReviewBoard({ queue }: Props) {
 
     const picked: ReviewItemView[] = []
     for (const item of items) {
-      if (item.requiresExplicitReview || item.confidence < 0.7 || decisions.has(item.id)) {
+      if (
+        item.requiresExplicitReview ||
+        item.confidence < 0.7 ||
+        decisions.has(item.id) ||
+        // Already settled by a copy of its own; nothing left to sweep up.
+        autoDeferred.has(item.id)
+      ) {
         continue
       }
       const key = item.duplicate?.key
@@ -185,7 +331,7 @@ export function ReviewBoard({ queue }: Props) {
       picked.push(item)
     }
     return picked
-  }, [items, decisions])
+  }, [autoDeferred, items, decisions])
 
   /**
    * Copies of one proposal marked "accept" more than once, right now.
@@ -218,27 +364,68 @@ export function ReviewBoard({ queue }: Props) {
   function publish(): void {
     setError(null)
     startPublishing(async () => {
-      const response = await publishDecisionsAction(
-        queue.runId,
-        [...decisions].map(([reviewItemId, decision]) => {
-          const renamed = renames.get(reviewItemId)?.trim()
-          const item = items.find((candidate) => candidate.id === reviewItemId)
-          const payload = item?.payload as { label?: string } | undefined
+      /*
+       * Copies settled by one of their own, written down as what they are.
+       *
+       * Sent as real 'defer' decisions rather than left out: an item nobody
+       * decides stays proposed and comes back next time, which is the opposite
+       * of settled. Deferring writes nothing against the proposal's
+       * fingerprint, so re-processing the chapter still offers it — all that is
+       * spent is a card the reviewer would have had to press D on.
+       */
+      const settled: Decision[] = [...autoDeferred].map((reviewItemId) => ({
+        reviewItemId,
+        decision: 'defer',
+      }))
 
-          if (decision !== 'accept' || !renamed || renamed === payload?.label) {
-            return { reviewItemId, decision }
-          }
+      const taken: Decision[] = [...decisions].map(([reviewItemId, decision]) => {
+        const item = items.find((candidate) => candidate.id === reviewItemId)
+        const payload = item?.payload as Record<string, unknown> | undefined
+
+        if (decision !== 'accept' || !item || !payload) {
+          return { reviewItemId, decision }
+        }
+
+        if (item.category === 'entity') {
+          const renamed = renames.get(reviewItemId)?.trim()
+          if (!renamed || renamed === payload.label) return { reviewItemId, decision }
 
           // 'correct', not 'accept': the label is now yours. Downstream that
           // difference decides whether the glossary learns the answer, and
           // whether the row is marked as proposed by you rather than by a model.
           return {
             reviewItemId,
-            decision: 'correct' as DecisionKind,
-            correctedPayload: { ...(payload ?? {}), label: renamed, naming_confident: true },
+            decision: 'correct',
+            correctedPayload: { ...payload, label: renamed, naming_confident: true },
           }
-        }),
-      )
+        }
+
+        /*
+         * The same correction, carried into the prose that names it.
+         *
+         * An event's label in the graph *is* its summary, so a summary calling
+         * the character by the name you replaced would keep that name on screen
+         * forever, cited from a chapter where you had already answered. Only
+         * the two fields that are free prose about entities; an assertion's
+         * fields are ids and a predicate, and rewriting those would be a
+         * different operation with a different meaning.
+         */
+        const field = item.category === 'event' ? 'summary' : item.category === 'mystery' ? 'question' : null
+        if (field === null || renamedLabels.length === 0) return { reviewItemId, decision }
+
+        const original = payload[field]
+        if (typeof original !== 'string') return { reviewItemId, decision }
+        const rewritten = applyRenames(original, renamedLabels)
+        if (rewritten === original) return { reviewItemId, decision }
+
+        return {
+          reviewItemId,
+          decision: 'correct',
+          correctedPayload: { ...payload, [field]: rewritten },
+        }
+      })
+
+      const response = await publishDecisionsAction(queue.runId, [...settled, ...taken])
       if (response.ok && response.published) {
         setResult(response.published)
         setDecisions(new Map())
@@ -249,26 +436,83 @@ export function ReviewBoard({ queue }: Props) {
     })
   }
 
-  const decided = decisions.size
+  const decided = decisions.size + autoDeferred.size
   const counts = {
     accept: [...decisions.values()].filter((d) => d === 'accept').length,
     reject: [...decisions.values()].filter((d) => d === 'reject').length,
-    defer: [...decisions.values()].filter((d) => d === 'defer').length,
+    // Settled copies counted with the ones deferred by hand: they are the same
+    // decision, and hiding the automatic ones from the tally would make the
+    // number next to "Publier" disagree with what publishing does.
+    defer:
+      [...decisions.values()].filter((d) => d === 'defer').length + autoDeferred.size,
   }
 
   if (items.length === 0) {
     return (
       <section className="panneau mt-8">
-        <h2 className="panneau-titre panneau-titre-vedette">File vide</h2>
+        <h2 className="panneau-titre panneau-titre-vedette">
+          {queue.chapterPublished ? 'Chapitre relu' : 'File vide'}
+        </h2>
         <div className="panneau-corps">
           <p className="text-primary">
             Rien à revoir pour ce traitement.
             {queue.counts.accepted > 0 &&
               ` ${queue.counts.accepted} proposition(s) déjà publiée(s).`}
           </p>
-          <Link href={`/chapitres/${queue.chapterId}`} className="bouton mt-4">
-            Revenir au chapitre
-          </Link>
+
+          {queue.chapterPublished ? (
+            <p className="mt-2 text-sm text-secondary">
+              Le chapitre {queue.chapterNumber} est ouvert : ses faits sont
+              visibles dans le graphe jusqu’à votre position de lecture.
+            </p>
+          ) : (
+            /*
+             * The chapter is decided and invisible, and nothing said so.
+             *
+             * The reader's boundary is the highest *published* chapter number,
+             * and publication used to end at the review items — so a queue
+             * emptied before this existed left its facts in the database and
+             * out of every view. One click closes it, under the same rule the
+             * automatic path applies.
+             */
+            <div className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2">
+              <p className="text-sm text-ink">
+                Ce chapitre n’est pas encore marqué comme relu, et tant qu’il ne
+                l’est pas ses faits restent invisibles dans le graphe : la
+                frontière du lecteur ne compte que les chapitres relus.
+              </p>
+              <button
+                type="button"
+                disabled={closing}
+                onClick={() => {
+                  setError(null)
+                  startClosing(async () => {
+                    const response = await markChapterReviewedAction(queue.runId)
+                    if (!response.ok) setError(response.error ?? 'Opération impossible.')
+                  })
+                }}
+                className="bouton bouton-primaire mt-3 !py-1 !text-sm"
+              >
+                {closing ? 'En cours…' : `Marquer le chapitre ${queue.chapterNumber} comme relu`}
+              </button>
+              {error && (
+                <p role="alert" className="mt-2 text-sm text-ink">
+                  {error}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href={`/chapitres/${queue.chapterId}`} className="bouton">
+              Revenir au chapitre
+            </Link>
+            {queue.chapterPublished && (
+              <Link href="/graph" className="bouton">
+                Voir le graphe
+              </Link>
+            )}
+          </div>
         </div>
       </section>
     )
@@ -334,7 +578,8 @@ export function ReviewBoard({ queue }: Props) {
         {/* The queue as a strip: position, decisions taken, and a way back. */}
         <ol className="flex flex-wrap gap-[3px] border-t-[3px] border-ink px-3 py-2">
           {items.map((item, index) => {
-            const d = decisions.get(item.id)
+            const settled = autoDeferred.has(item.id)
+            const d = decisions.get(item.id) ?? (settled ? 'defer' : undefined)
             const tint =
               d === 'accept'
                 ? 'var(--epi-validated)'
@@ -347,13 +592,20 @@ export function ReviewBoard({ queue }: Props) {
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => setCursor(index)}
+                  onClick={() => jumpTo(index)}
                   aria-label={
                     item.duplicate
-                      ? `Proposition ${index + 1}, copie ${item.duplicate.rank} sur ${item.duplicate.total}`
+                      ? `Proposition ${index + 1}, copie ${item.duplicate.rank} sur ${item.duplicate.total}` +
+                        (settled ? ', reportée automatiquement' : '')
                       : `Proposition ${index + 1}`
                   }
-                  title={item.duplicate ? `Doublon · copie ${item.duplicate.rank}/${item.duplicate.total}` : undefined}
+                  title={
+                    settled
+                      ? `Doublon reporté d’office · copie ${item.duplicate?.rank}/${item.duplicate?.total} — cliquez pour décider vous-même`
+                      : item.duplicate
+                        ? `Doublon · copie ${item.duplicate.rank}/${item.duplicate.total}`
+                        : undefined
+                  }
                   aria-current={index === cursor}
                   className={`block h-3 w-3 border-2 ${
                     index === cursor ? 'border-ink ring-2 ring-[var(--accent)]' : 'border-ink/40'
@@ -391,7 +643,9 @@ export function ReviewBoard({ queue }: Props) {
             setRenames((previous) => new Map(previous).set(current.id, label))
           }
           twins={twinsOfCurrent}
-          onJump={setCursor}
+          onJump={jumpTo}
+          settled={autoDeferred.has(current.id)}
+          renamedLabels={renamedLabels}
         />
       )}
     </section>
@@ -428,6 +682,13 @@ function PublishSummary({
         {result.deferred > 0 && <li>{result.deferred} reportée(s)</li>}
       </ul>
 
+      {result.chapterPublished !== null && (
+        <p className="mt-3 border-[3px] border-ink bg-[var(--epi-validated)] px-3 py-2 text-sm text-ink">
+          Chapitre {result.chapterPublished} relu de bout en bout : il est
+          maintenant ouvert, et ses faits apparaissent dans le graphe.
+        </p>
+      )}
+
       {result.failures.length > 0 && (
         <div className="mt-3 border-t border-line pt-3">
           <p className="text-sm font-medium text-[var(--epi-contradicted)]">
@@ -456,6 +717,8 @@ interface Twin {
   /** Its index in the queue, so the reviewer can jump to it. */
   position: number
   decision: DecisionKind | null
+  /** Settled by an accept on one of its copies rather than by hand. */
+  auto: boolean
 }
 
 function ProposalCard({
@@ -469,6 +732,8 @@ function ProposalCard({
   onRename,
   twins,
   onJump,
+  settled,
+  renamedLabels,
 }: {
   item: ReviewItemView
   index: number
@@ -480,6 +745,9 @@ function ProposalCard({
   onRename: (label: string) => void
   twins: Twin[]
   onJump: (position: number) => void
+  /** Deferred by an accept on one of its copies rather than by hand. */
+  settled: boolean
+  renamedLabels: RenamePair[]
 }) {
   return (
     <article className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
@@ -531,6 +799,7 @@ function ProposalCard({
                 duplicate={item.duplicate}
                 twins={twins}
                 onJump={onJump}
+                settled={settled}
               />
             )}
             <ProposalBody
@@ -539,6 +808,7 @@ function ProposalCard({
               relatedLabel={item.relatedLabel}
               rename={rename}
               onRename={onRename}
+              renamedLabels={renamedLabels}
             />
           </div>
         </div>
@@ -603,10 +873,12 @@ function DuplicateNotice({
   duplicate,
   twins,
   onJump,
+  settled,
 }: {
   duplicate: DuplicateInfo
   twins: Twin[]
   onJump: (position: number) => void
+  settled: boolean
 }) {
   const published = duplicate.others.accepted
   const markedElsewhere = twins.some((twin) => twin.decision === 'accept')
@@ -622,6 +894,7 @@ function DuplicateNotice({
     >
       <p className="font-display text-sm uppercase">
         Doublon · copie {duplicate.rank} sur {duplicate.total}
+        {settled && ' · reportée d’office'}
       </p>
 
       <p className="mt-1 text-sm">
@@ -636,6 +909,14 @@ function DuplicateNotice({
               'd’une tranche à l’autre. N’en acceptez qu’une — sauf si vous jugez ' +
               'qu’il s’agit de deux apparitions différentes.'}
       </p>
+
+      {settled && (
+        <p className="mt-1 text-sm">
+          Celle-ci part en « reporter » sans que vous ayez à le dire, et ne vous
+          sera plus présentée. Décidez-en quand même si vous jugez qu’il s’agit
+          d’autre chose : votre choix l’emporte toujours.
+        </p>
+      )}
 
       {discarded > 0 && (
         <p className="mt-1 text-sm">
@@ -657,7 +938,7 @@ function DuplicateNotice({
                 onClick={() => onJump(twin.position)}
                 className="bouton !py-0.5 !text-xs"
               >
-                n°{twin.position + 1} · {twinStateLabel(twin.decision)}
+                n°{twin.position + 1} · {twinStateLabel(twin)}
               </button>
             </li>
           ))}
@@ -667,13 +948,14 @@ function DuplicateNotice({
   )
 }
 
-function twinStateLabel(decision: DecisionKind | null): string {
+function twinStateLabel(twin: Twin): string {
   const labels: Partial<Record<DecisionKind, string>> = {
     accept: '✓ acceptée',
     reject: '✕ rejetée',
     defer: '⏸ reportée',
   }
-  return (decision && labels[decision]) || 'pas encore décidée'
+  if (twin.decision) return labels[twin.decision] ?? twin.decision
+  return twin.auto ? '⏸ reportée d’office' : 'pas encore décidée'
 }
 
 function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
@@ -733,12 +1015,14 @@ function ProposalBody({
   relatedLabel,
   rename,
   onRename,
+  renamedLabels,
 }: {
   category: string
   payload: unknown
   relatedLabel: string | null
   rename: string | null
   onRename: (label: string) => void
+  renamedLabels: RenamePair[]
 }) {
   const record = (payload ?? {}) as Record<string, unknown>
 
@@ -899,9 +1183,27 @@ function ProposalBody({
   }
 
   if (category === 'event') {
+    /*
+     * Shown under the names you have settled, not the ones the model chose.
+     *
+     * The summary was written during extraction, before any decision, so it
+     * carries the model's first attempt at every name — and an event's label in
+     * the graph *is* its summary. Reading « Le Seigneur de la Côte » on this
+     * card after renaming that entity two cards earlier is being shown a name
+     * you have already replaced, and accepting it would store it.
+     */
+    const written = String(record.summary ?? '')
+    const shown = applyRenames(written, renamedLabels)
+
     return (
       <div className="mt-2">
-        <p className="text-primary">{String(record.summary ?? '')}</p>
+        <p className="text-primary">{shown}</p>
+        {shown !== written && (
+          <p className="mt-1.5 text-sm text-[var(--epi-validated)]">
+            Récrit avec les noms que vous avez tranchés dans ce lot — c’est cette
+            version qui sera enregistrée.
+          </p>
+        )}
         {record.is_flashback === true && (
           <p className="mt-1 text-sm text-[var(--epi-hypothetical)]">
             Présenté comme un souvenir : montré ici, survenu plus tôt.
@@ -912,9 +1214,17 @@ function ProposalBody({
   }
 
   if (category === 'mystery') {
+    const written = String(record.question ?? '')
+    const shown = applyRenames(written, renamedLabels)
+
     return (
       <div className="mt-2">
-        <p className="text-primary">{String(record.question ?? '')}</p>
+        <p className="text-primary">{shown}</p>
+        {shown !== written && (
+          <p className="mt-1.5 text-sm text-[var(--epi-validated)]">
+            Récrit avec les noms que vous avez tranchés dans ce lot.
+          </p>
+        )}
       </div>
     )
   }
