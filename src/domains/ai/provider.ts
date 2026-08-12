@@ -208,6 +208,56 @@ export function costCents(
   return Math.round(dollars * 100_000) / 1_000
 }
 
+/**
+ * How much reasoning a tier is allowed to buy before answering.
+ *
+ * Absent fields mean "the model's own posture", which on Sonnet 5 and Opus 5 is
+ * adaptive thinking — on by default, billed as output tokens, and invisible in
+ * the answer.
+ */
+export interface Reasoning {
+  /** Only ever used to turn thinking off; enabling it is the default. */
+  thinking?: { type: 'disabled' }
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+}
+
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/**
+ * Bound the thinking on extraction, and only there.
+ *
+ * Measured on chapter 1: a 1 774-character summary produced 23 190 output
+ * tokens for a few dozen proposals, took two minutes and cost 24 cents. The
+ * proposals themselves are a few thousand tokens; the rest was reasoning, which
+ * on Sonnet 5 runs by default and is billed at the output rate. Over eleven
+ * hundred chapters that difference is the budget of the project, and the two
+ * minutes matter for a second reason: a run is executed inside a serverless
+ * invocation that is killed at five.
+ *
+ * Extraction is the tier where that trade is defensible. The reasoning it
+ * spends is not what keeps the graph honest — anchoring is, and it runs after
+ * the answer whatever the model thought on the way there. A shallower pass
+ * finds a little less; it cannot invent more.
+ *
+ * `escalate` is left alone deliberately: it decides whether two appearances are
+ * the same character, which is the one question in this pipeline where thinking
+ * is the product. `classify` and `describe` run on Haiku, where there is no
+ * adaptive thinking to bound.
+ *
+ * EXTRACT_EFFORT overrides the level, and the value `adaptive` restores the
+ * model's default posture — the escape hatch for measuring this decision again
+ * rather than trusting the paragraph above.
+ */
+export function reasoningFor(tier: ModelTier): Reasoning {
+  if (tier !== 'extract') return {}
+
+  const chosen = process.env.EXTRACT_EFFORT?.trim()
+  if (chosen === 'adaptive') return {}
+
+  const effort = EFFORTS.find((level) => level === chosen) ?? 'medium'
+  return { thinking: { type: 'disabled' }, effort }
+}
+
 export function modelFor(tier: ModelTier): string {
   switch (tier) {
     case 'classify':

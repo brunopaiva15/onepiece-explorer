@@ -806,6 +806,7 @@ function ProposalCard({
               category={item.category}
               payload={item.payload}
               relatedLabel={item.relatedLabel}
+              names={item.names}
               rename={rename}
               onRename={onRename}
               renamedLabels={renamedLabels}
@@ -1009,10 +1010,32 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
   )
 }
 
+/**
+ * One end of a relation: its name, or an admission that it has none.
+ *
+ * An identifier that resolved to nothing is shown truncated and marked as an
+ * identifier, rather than dressed up as a name. The reviewer then knows the
+ * card is incomplete — which is a decision they can take — instead of reading a
+ * hex string as a character.
+ */
+function EntityEnd({ id, name }: { id: string; name: string | null }) {
+  if (name !== null) return <span className="font-medium">{name}</span>
+
+  return (
+    <span
+      className="font-mono text-sm text-muted"
+      title={`Identifiant non résolu : ${id}`}
+    >
+      entité {id.slice(0, 8)}…
+    </span>
+  )
+}
+
 function ProposalBody({
   category,
   payload,
   relatedLabel,
+  names,
   rename,
   onRename,
   renamedLabels,
@@ -1020,6 +1043,7 @@ function ProposalBody({
   category: string
   payload: unknown
   relatedLabel: string | null
+  names: Record<string, string>
   rename: string | null
   onRename: (label: string) => void
   renamedLabels: RenamePair[]
@@ -1092,16 +1116,40 @@ function ProposalBody({
   }
 
   if (category === 'assertion') {
+    /*
+     * Ends shown by name, and renamed with the rest of the batch.
+     *
+     * What is stored is an identifier — `e3` for an entity proposed in the same
+     * response, a UUID for one already in the graph — and a card reading
+     * « 9fdd1160-… capture 5da604bb-… » asks the reviewer to accept a relation
+     * between two things they cannot see. The names come resolved from the
+     * queue; the rename pass is applied on top, so an end renamed two cards
+     * earlier reads as the name that will actually be stored.
+     */
+    const end = (id: unknown) => {
+      const raw = typeof id === 'string' ? id : ''
+      const known = names[raw]
+      if (known === undefined) return null
+      return applyRenames(known, renamedLabels)
+    }
+
+    const subject = String(record.subject ?? '')
+    const object = record.object === null || record.object === undefined
+      ? null
+      : String(record.object)
+
     return (
       <div className="mt-2">
         <p className="text-primary">
-          <span className="font-medium">{String(record.subject ?? '')}</span>{' '}
+          <EntityEnd id={subject} name={end(record.subject)} />{' '}
           <span className="font-mono text-sm text-accent">
             {String(record.predicate ?? '')}
           </span>{' '}
-          <span className="font-medium">
-            {String(record.object ?? record.object_value ?? '')}
-          </span>
+          {object !== null ? (
+            <EntityEnd id={object} name={end(record.object)} />
+          ) : (
+            <span className="font-medium">{String(record.object_value ?? '')}</span>
+          )}
         </p>
         <p className="mt-1 text-sm text-secondary">
           {epistemicLabel(String(record.epistemic_status ?? ''))}

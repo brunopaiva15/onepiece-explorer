@@ -39,6 +39,7 @@ import {
   costCents,
   emptyUsage,
   modelFor,
+  reasoningFor,
   type AnswerRequest,
   type DescribeRequest,
   type EmbedRequest,
@@ -56,7 +57,13 @@ import {
 /**
  * The real provider.
  *
- * Four cost levers, all of them on by default:
+ * Five cost levers, all of them on by default:
+ *
+ *   Bounded reasoning on extraction. Adaptive thinking runs by default on
+ *   Sonnet 5 and is billed as output; on the tier that answers eleven hundred
+ *   times it is turned off and the effort set explicitly. See `reasoningFor` —
+ *   the reasons are about this pipeline, not about models in general.
+ *
  *
  *   Prompt caching. The system prompt, the ontology and the list of already
  *   validated entities form a prefix that every panel of a chapter reuses. With
@@ -429,15 +436,24 @@ export class AnthropicProvider implements ModelProvider {
   }): Promise<ProviderResult<z.infer<S>>> {
     const model = modelFor(options.tier)
     const messages: MessageParam[] = [{ role: 'user', content: options.content }]
+    // Per tier, and the extraction tier is where it bites: see reasoningFor.
+    const reasoning = reasoningFor(options.tier)
 
     const params: MessageCreateParamsNonStreaming = {
       model,
       system: options.system,
-      // On Opus 5 thinking is on by default and consumes part of this budget,
+      // Where thinking is left on — Opus 5 — it consumes part of this budget,
       // so the ceiling has to cover reasoning plus the JSON.
       max_tokens: options.maxTokens,
       messages,
-      output_config: { format: zodOutputFormat(options.schema) },
+      output_config: {
+        format: zodOutputFormat(options.schema),
+        // `effort` sits inside output_config, beside the format, not at the top
+        // level. Omitted rather than sent at its default, so a tier that has no
+        // opinion sends the request it sent before this existed.
+        ...(reasoning.effort ? { effort: reasoning.effort } : {}),
+      },
+      ...(reasoning.thinking ? { thinking: reasoning.thinking } : {}),
       // No `tools`. The pages are untrusted input; a model that could fetch a
       // URL found in a document would turn an upload into a server-side
       // request forgery.

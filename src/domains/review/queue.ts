@@ -50,6 +50,19 @@ export interface ReviewItemView {
   /** For resolution items: the existing entity's current display label. */
   relatedLabel: string | null
   /**
+   * Names for the identifiers this proposal mentions.
+   *
+   * A relation stores its two ends as identifiers, and which kind depends on
+   * when the entity was published: `e3` for one proposed in the same response,
+   * a UUID for one already in the graph — including one accepted five minutes
+   * earlier in this very review. Shown raw, the card reads
+   * « 9fdd1160-… capture 5da604bb-… », which is a question nobody can answer.
+   *
+   * Only the ids that resolve appear here; the card falls back to the raw one
+   * rather than inventing a name for it.
+   */
+  names: Record<string, string>
+  /**
    * Set when another item of this run proposes the same thing.
    *
    * Counted over every item of the run, not just the pending page: a copy
@@ -179,6 +192,9 @@ export async function getReviewQueue(
 
   const byStatus = new Map(data.counts.map((row) => [row.status, Number(row.count)]))
   const duplicates = groupDuplicates(data.forGrouping)
+  // Over the whole run, not the page: a relation shown here routinely names an
+  // entity whose own card was published in an earlier batch.
+  const names = await resolveNames(data.rows, data.forGrouping)
 
   return {
     runId,
@@ -212,6 +228,11 @@ export async function getReviewQueue(
         ? (labelById.get(relatedEntityId(row.payload)!) ?? null)
         : null,
       duplicate: duplicates.get(row.id) ?? null,
+      names: Object.fromEntries(
+        referencedIds(row.payload)
+          .map((id) => [id, names.get(id)] as const)
+          .filter((pair): pair is readonly [string, string] => pair[1] !== undefined),
+      ),
     })),
     counts: {
       pending: byStatus.get('proposed') ?? 0,
@@ -348,6 +369,86 @@ async function resolveEvidence(
   }
 
   return { evidenceByRef, labelById }
+}
+
+/** What a stored entity id looks like, as opposed to a per-response local id. */
+const STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Put a name on every identifier the queue is about to display.
+ *
+ * Two populations, because a proposal names entities from two different places.
+ * A UUID is an entity already in the graph and its name is read from the
+ * database. A short id like `e3` belongs to the response it came from, and is
+ * answered by that run's own entity proposals — including the ones still
+ * waiting on a decision, which is the point: a relation and its subject are
+ * proposed together and reviewed together.
+ *
+ * A local id claimed by two different entities resolves to nothing. Slices
+ * number their entities independently, so `e1` in one is not `e1` in the next,
+ * and putting the first slice's name on the second slice's relation is worse
+ * than showing the raw id — one is unreadable, the other is wrong.
+ */
+async function resolveNames(
+  rows: Array<{ payload: unknown }>,
+  proposals: Array<{ category: string; payload: unknown }>,
+): Promise<Map<string, string>> {
+  const wanted = new Set(rows.flatMap((row) => referencedIds(row.payload)))
+  if (wanted.size === 0) return new Map()
+
+  const names = new Map<string, string>()
+
+  const claimed = new Map<string, string | null>()
+  for (const proposal of proposals) {
+    if (proposal.category !== 'entity') continue
+    if (proposal.payload === null || typeof proposal.payload !== 'object') continue
+    const record = proposal.payload as Record<string, unknown>
+    const localId = typeof record.local_id === 'string' ? record.local_id.trim() : ''
+    const label = typeof record.label === 'string' ? record.label.trim() : ''
+    if (localId.length === 0 || label.length === 0) continue
+
+    if (!claimed.has(localId)) claimed.set(localId, label)
+    else if (claimed.get(localId) !== label) claimed.set(localId, null)
+  }
+  for (const [localId, label] of claimed) {
+    if (label !== null && wanted.has(localId)) names.set(localId, label)
+  }
+
+  const storedIds = [...wanted].filter((id) => STORED_ID.test(id))
+  if (storedIds.length > 0) {
+    const labels = await withIngest((db) =>
+      db
+        .select({
+          entityId: entityLabels.entityId,
+          label: entityLabels.label,
+        })
+        .from(entityLabels)
+        .where(inArray(entityLabels.entityId, storedIds))
+        .orderBy(desc(entityLabels.precedence)),
+    )
+    for (const row of labels) if (!names.has(row.entityId)) names.set(row.entityId, row.label)
+  }
+
+  return names
+}
+
+/**
+ * The entities a proposal names, as opposed to the ones it proposes.
+ *
+ * A relation names two; an event names its participants. An entity proposal
+ * names none — its own `local_id` is what the others point at.
+ */
+export function referencedIds(payload: unknown): string[] {
+  if (payload === null || typeof payload !== 'object') return []
+  const record = payload as Record<string, unknown>
+
+  const ids = [record.subject, record.object, ...(Array.isArray(record.participants)
+    ? record.participants
+    : [])]
+
+  return ids
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    .map((id) => id.trim())
 }
 
 /**

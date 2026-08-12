@@ -8,13 +8,14 @@ import {
   type OntologyView,
 } from '@/domains/ai/anchoring.ts'
 import { extractionSystem, parallelText } from '@/domains/ai/prompts.ts'
-import { costCents, PRICING } from '@/domains/ai/provider.ts'
+import { costCents, PRICING, reasoningFor } from '@/domains/ai/provider.ts'
 import {
   clampPanelDescriptions,
   DESCRIPTION_BUDGET,
   panelDescriptionsSchema,
   type PanelDescription,
 } from '@/domains/ai/schemas.ts'
+import { AnthropicProvider } from '@/domains/ai/anthropic.ts'
 import { cassetteKey, ReplayProvider } from '@/domains/ai/replay.ts'
 import { properNouns, SyntheticProvider } from '@/domains/ai/synthetic.ts'
 import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
@@ -556,5 +557,142 @@ describe('the extraction prompt about the other-language text', () => {
     expect(rendered).toContain('parallèle-en')
     expect(rendered).toContain('He hands over his straw hat.')
     expect(rendered).not.toMatch(/\[b\d+\]/)
+  })
+})
+
+describe('how much thinking each tier buys', () => {
+  /**
+   * Measured, not assumed: chapter 1 is a 1 774-character summary, and it cost
+   * 23 190 output tokens, two minutes and 24 cents. The proposals are a few
+   * thousand tokens of JSON — the rest was adaptive thinking, which runs by
+   * default on Sonnet 5 and is billed at the output rate. Over eleven hundred
+   * chapters that is the budget of the project, and two minutes inside a
+   * five-minute invocation ceiling is the difference between a run that
+   * finishes and one that is killed.
+   */
+  const withEnv = async (value: string | undefined, run: () => void | Promise<void>) => {
+    const previous = process.env.EXTRACT_EFFORT
+    if (value === undefined) delete process.env.EXTRACT_EFFORT
+    else process.env.EXTRACT_EFFORT = value
+    try {
+      await run()
+    } finally {
+      if (previous === undefined) delete process.env.EXTRACT_EFFORT
+      else process.env.EXTRACT_EFFORT = previous
+    }
+  }
+
+  it('turns extraction’s thinking off and sets its effort', async () => {
+    await withEnv(undefined, () => {
+      expect(reasoningFor('extract')).toEqual({
+        thinking: { type: 'disabled' },
+        effort: 'medium',
+      })
+    })
+  })
+
+  it('leaves identity judgement alone', async () => {
+    // The one call whose product *is* the reasoning: whether two appearances
+    // are the same character. Nothing downstream catches a wrong answer there.
+    await withEnv(undefined, () => {
+      expect(reasoningFor('escalate')).toEqual({})
+      expect(reasoningFor('describe')).toEqual({})
+      expect(reasoningFor('classify')).toEqual({})
+    })
+  })
+
+  it('takes a level from the environment', async () => {
+    await withEnv('low', () => {
+      expect(reasoningFor('extract').effort).toBe('low')
+    })
+    await withEnv('max', () => {
+      expect(reasoningFor('extract').effort).toBe('max')
+    })
+  })
+
+  it('restores the model’s own posture on request', async () => {
+    // The escape hatch that makes this decision measurable again rather than
+    // permanent: one variable, and the run is comparable with the recorded one.
+    await withEnv('adaptive', () => {
+      expect(reasoningFor('extract')).toEqual({})
+    })
+  })
+
+  it('ignores a level that is not one', async () => {
+    await withEnv('beaucoup', () => {
+      expect(reasoningFor('extract').effort).toBe('medium')
+    })
+  })
+})
+
+describe('what the Anthropic provider actually sends', () => {
+  /**
+   * Pins the request shape, because both halves of it are easy to get wrong and
+   * the wrong version fails with a 400 in production rather than here: `effort`
+   * belongs inside `output_config`, beside the format, and `thinking` is a
+   * top-level field. Neither may be sent for a tier that has no opinion — an
+   * unchanged tier must send exactly the request it sent before this existed.
+   */
+  function providerWith(capture: (params: Record<string, unknown>) => void) {
+    const provider = new AnthropicProvider('sk-test-not-a-key')
+    const client = {
+      messages: {
+        create: async () => ({ usage: {} }),
+        stream: (params: Record<string, unknown>) => {
+          capture(params)
+          return {
+            aborted: false,
+            on: () => {},
+            finalMessage: async () => ({
+              usage: { input_tokens: 10, output_tokens: 5 },
+              stop_reason: 'end_turn',
+              parsed_output: { entities: [], assertions: [], events: [], mysteries: [] },
+            }),
+          }
+        },
+      },
+    }
+    ;(provider as unknown as { client: unknown }).client = client
+    return provider
+  }
+
+  const request: ExtractRequest = {
+    chapterNumber: 1,
+    source: 'summary',
+    ontology: 'character, place',
+    knownEntities: [],
+    glossary: [],
+    descriptions: [],
+    textBlocks: [{ ref: 'b1', text: 'Shanks refuse de l’emmener.', panelRef: null }],
+    allowedRefs: ['b1'],
+  }
+
+  it('sends the effort inside output_config and thinking beside it', async () => {
+    const sent: Record<string, unknown>[] = []
+    await providerWith((params) => sent.push(params)).extract(request)
+
+    const [params] = sent
+    expect(params).toBeDefined()
+    expect(params!.thinking).toEqual({ type: 'disabled' })
+    const output = params!.output_config as Record<string, unknown>
+    expect(output.effort).toBe('medium')
+    // The format is still there: bounding the reasoning must not cost the
+    // structured answer.
+    expect(output.format).toBeDefined()
+  })
+
+  it('sends neither for a tier that has no opinion', async () => {
+    const sent: Record<string, unknown>[] = []
+    await providerWith((params) => sent.push(params)).resolve({
+      chapterNumber: 1,
+      source: 'summary',
+      candidate: { label: 'un homme au chapeau', nodeType: 'character', description: '…' },
+      existing: [],
+    })
+
+    const [params] = sent
+    expect(params).toBeDefined()
+    expect(params!.thinking).toBeUndefined()
+    expect((params!.output_config as Record<string, unknown>).effort).toBeUndefined()
   })
 })
