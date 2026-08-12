@@ -14,7 +14,7 @@ import { withIngest } from '@/db/boundary.ts'
  * unlimited; asking a question, launching a run and exporting are counted.
  *
  * Backed by `audit_log` rather than by an in-memory counter, which matters more
- * than it looks: the worker and the web server are separate processes, and a
+ * than it looks: several invocations can run at once, and a
  * serverless deployment is many. An in-process map would be reset by every cold
  * start, so the limit it enforced would depend on the deployment topology rather
  * than on the reader's actual usage.
@@ -130,7 +130,7 @@ export async function consume(
  *
  * They are written to `audit_log` because it already exists and is already
  * per-user, but they are not audit entries anyone will ever read — a month of
- * them would bury the real ones. Called by the worker's maintenance pass.
+ * them would bury the real ones.
  *
  * Plain `withIngest`, not `withDestructive`: the destructive wrapper exists to
  * mark deletions of *history*, and it is the only way past the append-only

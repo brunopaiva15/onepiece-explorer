@@ -122,7 +122,7 @@ export default async function HomePage() {
           ton="mer"
           href={`/chapitres/${p.enCours[0]!.id}`}
           action="Suivre"
-          detail="Un worker travaille dessus. La progression montre chaque étape, sa durée et son coût réel."
+          detail="Le traitement est en cours. La progression montre chaque étape, sa durée et son coût réel."
         />,
       )
     }

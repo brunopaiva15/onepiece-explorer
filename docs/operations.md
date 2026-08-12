@@ -14,21 +14,24 @@ l'avoir oubliée.
 
 ## Ce qui tourne
 
-Trois choses, et chacune casse différemment.
+Deux choses.
 
 | Processus | Commande | Ce qui se passe s'il manque |
 |---|---|---|
 | Interface web | `pnpm start` (ou `pnpm dev`) | Rien n'est consultable. Panne visible. |
-| Worker du pipeline | `pnpm worker:once` | **Panne invisible.** L'import continue de marcher, les chapitres s'empilent en « en attente d'un worker », et l'application a l'air d'avoir un bug. |
 | PostgreSQL (Supabase) | — | Tout s'arrête, y compris l'authentification. |
 
-Le worker est le seul dont l'absence ressemble à un bug applicatif. Si un
-chapitre reste bloqué, c'est le premier endroit à regarder — pas le pipeline.
+**Il n'y a plus de worker.** Le pipeline d'un chapitre écrit tient dans une
+invocation : l'import crée le run et `after()` laisse le traitement se
+poursuivre après le départ de la réponse. La file de jobs a été retirée avec le
+processus qui la consommait — voir
+[ADR 0008](adr/0008-the-chapter-is-a-text-you-write.md) pour ce que cela
+abandonne.
 
-Le worker fait aussi le ménage : au démarrage puis toutes les six heures, il
-purge les compteurs de limitation de débit de plus de 24 h. Un worker qui n'est
-jamais lancé laisse ces lignes s'accumuler dans `audit_log`. Ce n'est pas grave,
-juste sale.
+Ce qui disparaît avec le worker : sa passe de ménage, qui purgeait les compteurs
+de limitation de débit de plus de 24 h dans `audit_log`. Ces lignes s'accumulent
+maintenant. Ce n'est pas grave, juste sale — quelques lignes par traitement
+lancé.
 
 ---
 
@@ -47,7 +50,7 @@ pnpm build
 
 La configuration se lit dans `.env.local` puis `.env`, une variable réellement
 présente dans l'environnement l'emportant sur les deux — même ordre que
-Next.js, et le même pour l'application, le worker et les scripts. Un hébergeur
+Next.js, et le même pour l'application et les scripts. Un hébergeur
 qui injecte ses propres variables n'a donc aucun fichier à déposer.
 
 ### Appliquer les migrations sans machine locale
@@ -111,7 +114,7 @@ occurrences d'une même raison est un problème systématique — un prompt, un
 schéma, une étape. Une occurrence de chacune de trente raisons est une mauvaise
 journée du modèle, et il n'y a rien à faire.
 
-**Échecs d'étape.** Étape, nombre de tentatives, dernière erreur. pg-boss
+**Échecs d'étape.** Étape, nombre de tentatives, dernière erreur. Le pipeline
 réessaie deux fois avec dix secondes d'écart avant d'abandonner ; ce qui
 apparaît ici a donc déjà échoué trois fois.
 
@@ -164,7 +167,7 @@ pas qu'on déclenche par un clic.
 | Pages et dérivés (stockage) | Jusqu'à suppression explicite | `/reglages` → supprimer un chapitre |
 | Faits, preuves, décisions de revue | Indéfiniment, en ajout seul | Suppression de chapitre en cochant « supprimer aussi les faits » |
 | Illustrations externes (bucket + lignes) | Jusqu'à suppression de l'entité | Cascade depuis l'entité ; `purgeReader` pour tout |
-| Compteurs de limitation de débit | 24 h | Automatique (passe du worker) |
+| Compteurs de limitation de débit | 24 h | Manuel : plus de passe de ménage automatique |
 | Journal d'audit | Indéfiniment | `purgeReader` |
 | Tout | — | `purgeReader` |
 
@@ -178,40 +181,23 @@ chapitre pose, et qui écrit une entrée d'audit d'abord.
 ## Importer, et pourquoi pas depuis un hébergeur serverless
 
 Un chapitre arrive par une **server action**, donc dans le corps d'une requête
-HTTP. Next.js plafonne ce corps à 1 Mo par défaut — relevé dans
-`next.config.ts` — mais une plate-forme serverless impose le sien par-dessus, et
-celui-là n'est pas réglable : **4,5 Mo sur Vercel**. Un chapitre fait dix à cent
-fois cela.
+HTTP. C'était la contrainte structurante du projet : Next.js plafonne ce corps à
+1 Mo par défaut, une plate-forme serverless impose le sien par-dessus — **4,5 Mo
+sur Vercel**, non réglable — et un chapitre en PDF faisait dix à cent fois cela.
+L'import ne pouvait donc pas tourner sur l'hébergeur.
 
-Ce n'est donc pas un réglage à ajuster, c'est une contrainte d'architecture. Les
-conséquences pratiques :
+**Cette contrainte a disparu avec le fichier.** Un chapitre écrit fait quelques
+milliers de caractères ; le plafond de transport n'est plus jamais approché, et
+`/import` fonctionne sur Vercel comme ailleurs.
 
-- **Sur un hébergeur serverless, l'import ne peut pas fonctionner.** La page le
-  dit désormais en haut plutôt que de laisser un bouton accepter un fichier que
-  la requête ne peut pas porter — Next.js ne transmet aucun message quand la
-  limite est franchie, ce qui produisait une page d'erreur nue.
-- **Le reste fonctionne** : lire, chercher, explorer le graphe, les fiches, la
-  chronologie. C'est 95 % de l'usage.
-- **Pour importer aujourd'hui** : lancez l'application sur une machine à vous
-  (`pnpm dev` puis `pnpm worker`), avec le même `DIRECT_URL`. Elle écrit dans la
-  même base ; l'hébergeur sert la lecture.
-- **La vraie correction**, non écrite : faire passer l'envoi du navigateur
-  directement au stockage Supabase par URL signée (`createSignedUploadUrl` puis
-  `uploadToSignedUrl`), puis laisser le worker extraire les pages. Les octets ne
-  traversent alors aucune fonction.
-
-  À noter avant de s'y lancer : cela ne résout que le **transport**. Il resterait
-  à découper les pages — `pdfjs` et `sharp` sur 18 pages en pleine résolution —
-  et à faire tourner le pipeline, ce qu'une fonction serverless fait mal et
-  qu'un worker `pg-boss` ne peut pas y faire du tout. Tant que le worker tourne
-  sur une machine à vous, l'envoi peut y tourner aussi et l'envoi direct
-  n'apporte rien. Il ne devient utile que le jour où le traitement quitte aussi
-  cette machine — et cet hébergeur-là recevra alors le fichier directement.
-
-  Vercel Blob résoudrait le même transport, en ajoutant un **second endroit où
-  vivent les pages** : deux chemins de suppression, deux politiques de rétention.
-  Pour un produit qui promet qu'une purge efface les octets, c'est le mauvais
-  compromis tant que Supabase Storage suffit.
+Ce qui reste à surveiller n'est plus la taille mais la **durée**. Le traitement
+s'exécute après le départ de la réponse, sur la même invocation, et une
+plate-forme serverless finit par la tuer. Le plafond se règle par route
+(`maxDuration`) et dépend du plan. Un chapitre écrit tient largement dedans —
+une ou deux extractions, quelques comparaisons d'identité — mais si une
+invocation est coupée, le run est marqué en échec et il faut le relancer à la
+main. Ce n'est pas cher : `run_checkpoints` rejoue les tranches déjà payées au
+lieu de les racheter.
 
 ### Les plafonds de stockage, qui arrivent avant tout le reste
 
@@ -297,7 +283,7 @@ gratuitement.
 La lecture, la navigation, le graphe et la recherche ne sont jamais comptés :
 ils ne coûtent rien à personne. Les plafonds vivent dans
 `src/domains/observability/rate-limit.ts` et sont adossés à `audit_log`, pas à
-un compteur en mémoire — le worker et le serveur web sont deux processus, et un
+un compteur en mémoire — plusieurs invocations tournent en parallèle, et un
 compteur par processus mesurerait la topologie de déploiement plutôt que
 l'usage.
 
@@ -331,14 +317,11 @@ Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répo
 | Symptôme | Cause probable | Que faire |
 |---|---|---|
 | **Toutes** les pages en erreur serveur | Variables absentes au moment du build | `/etat`, puis redéployez après les avoir enregistrées |
-| L'import échoue sans message exploitable | Corps de requête au-delà de la limite | Plafond de la plate-forme, pas un réglage : 4,5 Mo sur Vercel. Importez depuis une machine qui fait tourner l'application |
 | Une seule page en erreur serveur | Schéma en retard sur cette table | `pnpm db:push` avec le `DIRECT_URL` de production |
-| Chapitre bloqué en « en attente d'un worker » | Worker non lancé | `pnpm worker:once` |
-| Second chapitre importé d'affilée jamais traité | Job dédupliqué par la file | Vérifiez que `singletonKey` vaut bien l'identifiant du chapitre ; un `stately` sans clé déduplique sur toute la file |
-| « Le run est créé mais n'a pas pu être mis en file » | `DIRECT_URL` absent ou pooler utilisé à sa place | pg-boss exige la connexion directe (5432), jamais le pooler (6543) |
+| Run coupé en plein traitement, sans erreur de pipeline | Invocation tuée au plafond de durée | Relancez : les tranches déjà payées sont rejouées, pas rachetées |
 | 429 « Limite atteinte » | Garde-fou de dépense | Attendez le délai indiqué. S'il se déclenche sans action de votre part, cherchez la boucle avant de relever le plafond |
 | Une requête renvoie zéro ligne alors que les données existent | Lecture hors `withBoundary()`, ou frontière trop basse | C'est le comportement voulu — la RLS échoue fermée. Vérifiez l'appelant |
-| `prepared statement already exists` | `prepare: false` manquant sur le pooler | Le client applicatif doit le poser ; le worker n'utilise pas le pooler |
+| `prepared statement already exists` | `prepare: false` manquant sur le pooler | Le client applicatif doit le poser ; le pipeline n'utilise pas le pooler |
 | Un réglage de session fuit d'un utilisateur à l'autre | `SET` au lieu de `SET LOCAL` | Toute variable de session doit être posée par `set_config(..., true)` dans une transaction |
 | `pnpm build` réclame une base | Un module se connecte à l'import | Les clients sont des fabriques paresseuses ; une connexion au chargement du module casse le build |
 | Recherche sémantique « désactivée » | Aucun fournisseur d'embeddings | Attendu. Le plein texte, l'approchant et le graphe fonctionnent sans |

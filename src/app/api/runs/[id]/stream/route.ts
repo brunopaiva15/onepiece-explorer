@@ -30,7 +30,7 @@ export const maxDuration = 300
  * never ran.
  *
  * The server polls the database and pushes changes. That is honest about what
- * is happening — the worker writes rows, this reads them — and it means a
+ * is happening — the pipeline writes rows, this reads them — and it means a
  * dropped connection loses nothing: reconnecting re-reads the current state
  * instead of replaying a missed event.
  */

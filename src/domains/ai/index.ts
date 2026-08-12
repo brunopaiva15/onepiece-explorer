@@ -87,7 +87,7 @@ const cached = new Map<ProviderChoice, ModelProvider>()
 /**
  * The provider for a given choice.
  *
- * Cached per choice rather than globally: a worker that processes one chapter
+ * Cached per choice rather than globally: a process that handles one chapter
  * with Anthropic and the next with the local model must not have the first
  * decide for the second.
  */
@@ -109,7 +109,7 @@ function build(choice: ProviderChoice): ModelProvider {
     if (!local) {
       throw new Error(
         'Traitement demandé sur le modèle auto-hébergé, mais LOCAL_AI_BASE_URL et ' +
-          "LOCAL_AI_MODEL ne sont pas configurés sur cette machine. Le worker n'a " +
+          "LOCAL_AI_MODEL ne sont pas configurés sur cette machine. Le pipeline n'a " +
           'pas accès à ce modèle.',
       )
     }

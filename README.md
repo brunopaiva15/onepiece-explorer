@@ -101,10 +101,10 @@ Aucun secret n'est affiché.
 
 Les deux connexions ne sont pas interchangeables. Les lectures applicatives
 passent par le pooler en mode transaction (`prepare: false` obligatoire) ; les
-migrations, le worker et le pipeline exigent la connexion directe.
+migrations et le pipeline exigent la connexion directe.
 
 **Où les mettre.** Dans `.env.local`, à la racine — ignoré par Git. Tout les
-lit : l'application, le worker, et les scripts (`db:push`, `doctor`, `demo`,
+lit : l'application et les scripts (`db:push`, `doctor`, `demo`,
 `images:enrich`…). L'ordre de priorité est celui de Next.js :
 
 ```
@@ -135,32 +135,28 @@ nominal.
 ## Lancement
 
 ```bash
-pnpm dev      # interface   → http://localhost:3000
-pnpm worker   # worker du pipeline (processus séparé)
+pnpm dev      # interface → http://localhost:3000
 ```
 
-**Le worker est indispensable.** L'import lui-même est synchrone : vous voyez
-les pages tout de suite. Mais le traitement — découpage en cases, transcription,
-extraction — passe par une file de jobs, et sans worker un chapitre reste
-indéfiniment « en attente d'un worker » sur `/runs/[id]`. Ce n'est pas un bug de
-l'application, c'est un processus qui n'a pas été lancé.
+**Un seul processus.** L'import lance le traitement lui-même : vous collez le
+chapitre, vous validez, et `/runs/[id]` montre les étapes défiler. Le travail
+continue après le départ de la réponse, sur la même invocation, via `after()`.
+Il n'y a ni file de jobs ni worker à penser à démarrer.
 
-Le parcours import → file → pipeline se vérifie d'un coup, sans navigateur :
+### Pourquoi c'était deux processus, et pourquoi ça ne l'est plus
 
-```bash
-TEST_DB=1 pnpm smoke:worker
-```
+Un chapitre lu à partir de pages dessinées, c'était environ cent vingt appels de
+modèle porteurs d'image et huit à dix minutes — impossible dans un gestionnaire
+de requête, donc une file de jobs et un worker. Un chapitre écrit, c'est une ou
+deux extractions et quelques comparaisons d'identité : sous la minute le plus
+souvent. La file coûtait alors plus qu'elle ne rapportait, et son absence
+ressemblait à un bug applicatif.
 
-### Pourquoi deux processus
-
-Le découpage en cases décode les pages en pleine résolution, et les étapes de
-modèle tiendront des lots longs. Faire cela dans un gestionnaire de requête
-lierait le traitement d'un chapitre à la durée de vie d'une connexion HTTP :
-fermer l'onglet abandonnerait le travail à moitié fait.
-
-Le worker tourne sur la **connexion directe** (port 5432), pas sur le pooler :
-pg-boss maintient des connexions d'écoute longues et gère son propre schéma,
-deux choses incompatibles avec un pooler en mode transaction.
+Ce que ça abandonne, dit franchement : une invocation tuée au plafond de durée
+de la plate-forme emporte le run, et rien ne le relance tout seul. C'est tenable
+parce que `run_checkpoints` existe — une relance rejoue les tranches déjà payées
+au lieu de les racheter, donc le prix du retry manquant est un clic, pas une
+seconde facture.
 
 ---
 
@@ -439,7 +435,6 @@ docs/adr/           décisions d'architecture et leurs raisons
 src/db/             client, schéma Drizzle, et withBoundary()
 src/domains/        ingestion · documents · knowledge · resolution · review
                     temporal · search · assistant · viz · auth · storage · ai
-src/worker/         worker pg-boss
 tests/antispoiler/  les scénarios bloquants
 scripts/            migrations, fixtures, démonstration
 ```

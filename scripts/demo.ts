@@ -78,7 +78,6 @@ async function main(): Promise<void> {
   const { search } = await import('../src/domains/search/index.ts')
   const { ask } = await import('../src/domains/assistant/answer.ts')
   const { effectiveModelProvider } = await import('../src/lib/env.ts')
-  const { stopQueue } = await import('../src/domains/pipeline/queue.ts')
 
   console.log(`Fournisseur de modèle : ${effectiveModelProvider()}`)
   if (effectiveModelProvider() !== 'anthropic') {
@@ -214,7 +213,6 @@ async function main(): Promise<void> {
     }
   }
 
-  await stopQueue()
   await sql.end({ timeout: 5 })
   console.log('\nParcours complet. Les données de démonstration restent en base.')
 }

@@ -7,6 +7,7 @@ import { IngestionRejection } from '@/domains/ingestion/limits.ts'
 import { MAX_SUMMARY_CHARS, type SummaryLanguage } from '@/domains/ingestion/passages.ts'
 import { reorderPages } from '@/domains/ingestion/persist.ts'
 import { importSummary } from '@/domains/ingestion/summary.ts'
+import { startChapterRun } from '@/domains/pipeline/start.ts'
 
 /**
  * Import a chapter from the browser.
@@ -126,6 +127,16 @@ export async function importChapterAction(
 export interface SummaryActionResult {
   ok: boolean
   chapterId?: string
+  /** Set when the chapter went straight into the pipeline. */
+  runId?: string
+  /**
+   * The import worked and the run did not.
+   *
+   * Kept apart from `error`, which means the chapter was not stored at all.
+   * Collapsing the two would have a rate-limited run report a failed import and
+   * send someone back to re-paste a chapter that is already saved.
+   */
+  runError?: string
   passageCount?: number
   characterCount?: number
   language?: SummaryLanguage
@@ -174,6 +185,10 @@ export async function importSummaryAction(
 
     const volumeRaw = formData.get('volume')
     const volume = volumeRaw ? Number(volumeRaw) : undefined
+    // Absent means unchecked: a checkbox posts nothing when it is off, so the
+    // default has to be read as "on" rather than inferred from presence.
+    const autoRun = formData.get('autoRun') !== 'off'
+
     const languageRaw = formData.get('language')
     const language: SummaryLanguage | undefined =
       languageRaw === 'fr' || languageRaw === 'en' ? languageRaw : undefined
@@ -190,6 +205,32 @@ export async function importSummaryAction(
       ...(language ? { language } : {}),
     })
 
+    /*
+     * Import and processing, in one submission.
+     *
+     * They were two steps because importing a file put pages on screen while
+     * you were still watching, and it was worth checking the page order before
+     * paying to analyse it. A pasted text has no page order to get wrong: you
+     * are looking at the source as you submit it. Keeping the split would mean
+     * eleven hundred extra round trips through a chapter page to press a second
+     * button.
+     *
+     * Skipped when nothing changed — re-pasting an identical summary must not
+     * re-run a pipeline whose inputs are byte-for-byte the ones it already ran.
+     */
+    let runId: string | undefined
+    let runError: string | undefined
+
+    if (autoRun && !result.unchanged) {
+      const started = await startChapterRun({
+        userId: session.userId,
+        chapterId: result.chapterId,
+        provider: 'auto',
+      })
+      if (started.ok) runId = started.runId
+      else runError = started.error
+    }
+
     revalidatePath('/chapitres')
     revalidatePath(`/chapitres/${result.chapterId}`)
 
@@ -201,6 +242,8 @@ export async function importSummaryAction(
       language: result.language,
       replaced: result.replaced,
       unchanged: result.unchanged,
+      ...(runId ? { runId } : {}),
+      ...(runError ? { runError } : {}),
     }
   } catch (error) {
     if (error instanceof IngestionRejection) {

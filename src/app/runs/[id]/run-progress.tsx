@@ -262,7 +262,7 @@ function toneFor(status: string): { bg: string; fg: string } {
 function statusSentence(status: string): string {
   switch (status) {
     case 'pending':
-      return 'en attente d’un worker'
+      return 'en attente de démarrage'
     case 'running':
       return 'en cours'
     case 'succeeded':

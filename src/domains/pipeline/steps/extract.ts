@@ -562,7 +562,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
      * Written down the moment it lands.
      *
      * The proposals reach review_items only after every slice has returned, so
-     * without this a worker that dies on slice eighteen loses eighteen paid
+     * without this a run that dies on slice eighteen loses eighteen paid
      * answers. Recording here costs one small insert per call and removes the
      * only reason a retry was ever expensive.
      */

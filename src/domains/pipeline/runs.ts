@@ -122,13 +122,13 @@ export async function createRun(
 /**
  * Erase a run that never became work.
  *
- * Only for the one case where the queue refuses the job — a run already in
- * flight for the same chapter. Nothing ran, so there is no history to preserve,
- * and leaving the row would put a run in the list that is permanently
- * `pending`: indistinguishable, to the reader, from one waiting for a worker.
+ * Only for the case where the pipeline could not be scheduled at all. Nothing
+ * ran, so there is no history to preserve, and leaving the row would put a run
+ * in the list that is permanently `pending`: indistinguishable, to the reader,
+ * from one that is about to start.
  *
- * The chapter's own status is left alone on purpose. It says `processing`
- * because another run really is processing it.
+ * The chapter's own status is left alone on purpose: if it says `processing`,
+ * it is because another run really is processing it.
  */
 export async function discardRun(runId: string): Promise<void> {
   await withIngest(async (db) => {

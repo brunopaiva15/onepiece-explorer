@@ -1,19 +1,13 @@
-# Importer depuis votre machine, de A à Z
+# Faire tourner l'application sur votre machine, de A à Z
 
-Vercel sert la lecture ; votre machine importe. Ce document est la marche à
-suivre complète, sans rien supposer d'installé.
+Marche à suivre complète, sans rien supposer d'installé.
 
-> **Depuis que le chapitre est un texte** (ADR 0008), l'import lui-même n'a plus
-> besoin de votre machine : quelques milliers de caractères passent sans peine
-> dans une requête, et `/import` fonctionne directement sur Vercel. Ce document
-> ne reste nécessaire que pour **faire tourner le worker**, qui exécute le
-> pipeline. La partie « import de fichiers » ci-dessous concerne les chapitres
-> importés avant ce changement.
-
-**Pourquoi cette séparation.** Le worker du pipeline n'existe pas sur Vercel :
-c'est un processus long, et il n'y a que des fonctions. Il tourne donc sur votre
-machine, qui écrit dans **la même base Supabase**. Vous lancez les traitements
-d'un côté, vous consultez de l'autre.
+> **Ce document n'est plus nécessaire.** Depuis que le chapitre est un texte
+> (ADR 0008), tout tourne sur Vercel : l'import parce que quelques milliers de
+> caractères passent sans peine dans une requête, et le traitement parce qu'il
+> tient dans une invocation et n'a plus besoin d'un worker. Il est conservé pour
+> qui veut faire tourner l'application en local — pour développer, pour
+> réimporter en masse, ou pour garder la main sur les appels de modèle.
 
 ---
 

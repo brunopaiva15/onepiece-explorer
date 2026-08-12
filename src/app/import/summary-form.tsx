@@ -48,11 +48,39 @@ export function SummaryForm({ suggestedNumber }: Props) {
   )
   const [text, setText] = useState('')
   const [language, setLanguage] = useState<SummaryLanguage | 'auto'>('auto')
+  const [autoRun, setAutoRun] = useState(true)
+  /*
+   * The number to offer next, held here rather than recomputed from the server.
+   *
+   * There are more than a thousand chapters to enter, and the loop is: paste,
+   * submit, paste the next one. Reloading the page between each to pick up a
+   * fresh suggestion would be the slowest part of the whole product. After a
+   * successful import the form clears itself and advances, so the next paste
+   * needs no clicks at all.
+   */
+  const [nextNumber, setNextNumber] = useState(suggestedNumber)
+  const [lastImport, setLastImport] = useState<SummaryActionResult | null>(null)
 
   const numberId = useId()
   const titleId = useId()
   const volumeId = useId()
   const summaryId = useId()
+
+  /*
+   * Clear and advance the moment an import lands.
+   *
+   * Adjusted during render rather than in an effect: React re-renders straight
+   * away with the new values, so the emptied field is never painted holding the
+   * text that was just stored. `useActionState` hands back a new object per
+   * submission, which is what makes the identity check a reliable "this is a
+   * result I have not reacted to yet".
+   */
+  if (state?.ok && state !== lastImport) {
+    setLastImport(state)
+    setText('')
+    setLanguage('auto')
+    setNextNumber((current) => current + 1)
+  }
 
   const trimmed = text.trim()
   const passages = useMemo(() => splitPassages(text), [text])
@@ -92,7 +120,8 @@ export function SummaryForm({ suggestedNumber }: Props) {
               min={0}
               step={1}
               required
-              defaultValue={suggestedNumber}
+              value={nextNumber}
+              onChange={(event) => setNextNumber(Number(event.target.value))}
               aria-labelledby={numberId}
               className="mt-1.5 w-full rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 text-primary"
             />
@@ -242,13 +271,39 @@ export function SummaryForm({ suggestedNumber }: Props) {
           </p>
         </fieldset>
 
-        <button
-          type="submit"
-          disabled={tooShort || tooLong || mustChooseLanguage}
-          className="bouton bouton-primaire !text-lg"
-        >
-          {pending ? 'Enregistrement…' : 'Importer le chapitre'}
-        </button>
+        <div className="flex flex-wrap items-center gap-4">
+          <button
+            type="submit"
+            disabled={tooShort || tooLong || mustChooseLanguage}
+            className="bouton bouton-primaire !text-lg"
+          >
+            {pending
+              ? autoRun
+                ? 'Import et traitement…'
+                : 'Enregistrement…'
+              : autoRun
+                ? 'Importer et traiter'
+                : 'Importer seulement'}
+          </button>
+
+          {/*
+           * On by default, because the alternative is eleven hundred trips
+           * through a chapter page to press a second button. Still a choice:
+           * re-pasting a corrected summary is a case where you may want the
+           * text stored without paying to analyse it again straight away.
+           */}
+          <label className="flex items-center gap-2 text-sm text-secondary">
+            <input
+              type="checkbox"
+              name="autoRun"
+              value="on"
+              checked={autoRun}
+              onChange={(event) => setAutoRun(event.target.checked)}
+              className="accent-[var(--accent)]"
+            />
+            Lancer le traitement dans la foulée
+          </label>
+        </div>
       </fieldset>
 
       {state && !state.ok && state.error && (
@@ -277,11 +332,28 @@ export function SummaryForm({ suggestedNumber }: Props) {
             — {state.passageCount} passage{(state.passageCount ?? 0) > 1 ? 's' : ''}
             {state.language === 'en' && ', source en anglais'}.
           </p>
+          {state.runError && (
+            <p className="mt-2 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink">
+              Le chapitre est enregistré, mais le traitement n’a pas démarré :{' '}
+              {state.runError}
+            </p>
+          )}
+
           <div className="mt-3 flex flex-wrap gap-2">
+            {state.runId && (
+              <Link href={`/runs/${state.runId}`} className="bouton bouton-primaire !py-1.5 !text-sm">
+                Suivre le traitement
+              </Link>
+            )}
             <Link href={`/chapitres/${state.chapterId}`} className="bouton !py-1.5 !text-sm">
               Voir le chapitre
             </Link>
           </div>
+
+          <p className="mt-3 text-sm text-muted">
+            Le formulaire est prêt pour le chapitre {nextNumber} — collez la
+            suite sans recharger la page.
+          </p>
         </div>
       )}
     </form>
