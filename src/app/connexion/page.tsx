@@ -14,36 +14,39 @@ export default async function SignInPage({
     Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 
   return (
-    <main
-      id="contenu"
-      className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16"
-    >
-      <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">
-        Journal d&apos;exploration
-      </p>
-      <h1 className="mt-3 text-4xl font-semibold text-primary">
-        One Piece Explorer
-      </h1>
-      <p className="mt-4 text-secondary">
-        Votre biblioth&egrave;que est priv&eacute;e. Connectez-vous pour y
-        acc&eacute;der.
-      </p>
-
-      {configured ? (
-        <SignInForm redirectTo={suite ?? '/'} />
-      ) : (
-        <div className="mt-8 rounded-sm border border-line-strong bg-surface-raised p-5 text-sm">
-          <p className="font-medium text-primary">Supabase n&apos;est pas configur&eacute;</p>
-          <p className="mt-2 text-secondary">
-            Copiez <code className="font-mono text-xs">.env.example</code> vers{' '}
-            <code className="font-mono text-xs">.env.local</code> et renseignez{' '}
-            <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code> et{' '}
-            <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>,
-            puis appliquez le sch&eacute;ma avec{' '}
-            <code className="font-mono text-xs">pnpm db:push</code>.
+    <main id="contenu" className="mx-auto max-w-md px-5 py-14">
+      {/* Framed rather than floating. The form used to sit alone in the middle
+          of an empty page, which is what a sign-in screen looks like when
+          nobody decided anything about it. */}
+      <section className="panneau">
+        <h1 className="panneau-titre !text-lg">Entrer dans le journal</h1>
+        <div className="panneau-corps">
+          <p className="text-secondary">
+            Cette bibliothèque est privée. Connectez-vous pour y accéder.
           </p>
+
+          {configured ? (
+            <SignInForm redirectTo={suite ?? '/'} />
+          ) : (
+            <div className="mt-5 border border-line-strong bg-surface-sunken p-4 text-sm">
+              <p className="font-medium text-primary">Supabase n&apos;est pas configuré</p>
+              <p className="mt-2 text-secondary">
+                Copiez <code className="font-mono text-xs">.env.example</code> vers{' '}
+                <code className="font-mono text-xs">.env.local</code> et renseignez{' '}
+                <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code> et{' '}
+                <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>,
+                puis appliquez le schéma avec{' '}
+                <code className="font-mono text-xs">pnpm db:push</code>.
+              </p>
+            </div>
+          )}
         </div>
-      )}
+      </section>
+
+      <p className="mt-5 text-center text-xs text-muted">
+        Aucun chapitre n&apos;est téléchargé ni récupéré en ligne : vous importez
+        des fichiers que vous possédez déjà.
+      </p>
     </main>
   )
 }

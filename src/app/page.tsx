@@ -11,112 +11,166 @@ export const dynamic = 'force-dynamic'
  * told plainly what they cannot do and why — a row of buttons that all bounce
  * off a sign-in page would be worse than no buttons, and "you cannot import
  * because this is somebody's private library" is information, not a refusal.
+ *
+ * Rebuilt from the hero-and-pills shape it had, which said nothing about the
+ * product. The three ideas that make this thing what it is — one graph, two
+ * timelines, every fact sourced — are now three framed panels a reader can
+ * scan, and the navigation lives in the header where it belongs instead of
+ * being a row of undifferentiated buttons under a paragraph.
  */
+
+const IDEAS = [
+  {
+    title: 'Un seul graphe',
+    body:
+      "Personnages, équipages, îles, fruits, promesses, mystères — tout dans le même " +
+      'réseau. C’est là qu’apparaissent les liens auxquels on n’avait pas pensé : ' +
+      'un chemin entre deux personnages, une récurrence, un recoupement à trois cents ' +
+      'chapitres d’écart.',
+  },
+  {
+    title: 'Deux temps',
+    body:
+      'Le temps du récit et le temps de la révélation. Chaque fait sait au chapitre près ' +
+      'quand un lecteur a pu l’apprendre, ce qui permet de reposer le curseur où vous ' +
+      'en êtes : le graphe redevient ce qu’on savait à ce moment-là, et rien de la ' +
+      'suite ne vous est montré.',
+  },
+  {
+    title: 'Rien sans preuve',
+    body:
+      'Chaque affirmation cite son chapitre, sa page, sa case et l’extrait exact. ' +
+      'Ce que l’IA propose n’entre pas dans le graphe : ça entre dans une file de ' +
+      'revue, et c’est vous qui tranchez.',
+  },
+] as const
+
 export default async function HomePage() {
   const user = await getCurrentUser()
   const isOwner = user !== null
   const publiclyOpen = publicLibraryOwnerId() !== null
 
-  const readingLinks = [
-    ['/graph', 'Explorer le graphe'],
-    ['/recherche', 'Chercher'],
-    ['/chronologie', 'Chronologie'],
-  ] as const
-
-  const ownerLinks = [
-    ['/ask', 'Poser une question'],
-    ['/chapitres', 'Chapitres'],
-    ['/reglages', 'Réglages'],
-  ] as const
-
   return (
-    <main id="contenu" className="mx-auto max-w-3xl px-6 py-24">
-      <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">
-        Journal d&apos;exploration
-      </p>
-      <h1 className="mt-3 text-5xl font-semibold text-primary">
-        One Piece Explorer
-      </h1>
-      <p className="mt-6 max-w-2xl text-lg text-secondary">
-        Un seul grand graphe interconnect&eacute; : personnages, groupes, lieux,
-        objets, &eacute;v&eacute;nements, promesses, myst&egrave;res. C&apos;est
-        l&agrave; qu&apos;apparaissent les liens auxquels on n&apos;avait pas
-        pens&eacute; &mdash; un chemin entre deux personnages, une
-        r&eacute;currence, un recoupement &agrave; trois cents chapitres
-        d&apos;&eacute;cart.
-      </p>
-      <p className="mt-4 max-w-2xl text-secondary">
-        Chaque fait sait &agrave; quel chapitre on a pu l&apos;apprendre. Le
-        curseur sert &agrave; <em>revenir en arri&egrave;re</em> : posez-le
-        o&ugrave; vous en &ecirc;tes de votre lecture et le graphe redevient ce
-        qu&apos;on savait &agrave; ce moment-l&agrave;. Rien de la suite ne vous
-        sera montr&eacute;.
-      </p>
+    <main id="contenu" className="mx-auto max-w-6xl px-5 py-10">
+      {/* The masthead: a title that behaves like the head of a chart, not a
+          marketing hero. Rule above, rule below, subtitle in the middle. */}
+      <section className="text-center">
+        <hr className="regle" />
+        <h1 className="mt-5 text-4xl leading-tight text-primary sm:text-5xl">
+          Ce que l&apos;on savait, chapitre après chapitre
+        </h1>
+        <p className="mx-auto mt-4 max-w-2xl text-lg text-secondary">
+          Un atlas de One Piece construit à partir des chapitres que vous
+          possédez, où chaque fait porte la date à laquelle il a été révélé.
+        </p>
+        <hr className="regle mt-6" />
+      </section>
 
-      <div className="mt-10 flex flex-wrap gap-3">
-        {isOwner && (
-          <Link
-            href="/import"
-            className="rounded-sm bg-accent px-5 py-2.5 text-sm font-medium text-inverted transition-colors hover:bg-accent-strong"
-          >
-            Importer le prochain chapitre
-          </Link>
-        )}
-
-        {[...readingLinks, ...(isOwner ? ownerLinks : [])].map(([href, label]) => (
-          <Link
-            key={href}
-            href={href}
-            className={
-              isOwner
-                ? 'rounded-sm border border-line-strong px-5 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-surface-raised'
-                : 'rounded-sm bg-accent px-5 py-2.5 text-sm font-medium text-inverted transition-colors hover:bg-accent-strong'
-            }
-          >
-            {label}
-          </Link>
+      <section className="mt-10 grid gap-5 md:grid-cols-3">
+        {IDEAS.map((idea) => (
+          <article key={idea.title} className="panneau">
+            <h2 className="panneau-titre">{idea.title}</h2>
+            <div className="panneau-corps text-[0.97rem] text-secondary">{idea.body}</div>
+          </article>
         ))}
-      </div>
+      </section>
 
-      {!isOwner && (
-        <p className="mt-8 max-w-2xl rounded-sm border border-line bg-surface-raised p-4 text-sm text-secondary">
-          Vous consultez une biblioth&egrave;que en lecture seule. Le graphe, la
-          chronologie, les fiches et la recherche sont ouverts ; les pages de
-          manga elles-m&ecirc;mes ne le sont pas, et ne le seront pas. Chaque
-          fait affiche sa r&eacute;f&eacute;rence de chapitre, de page et de case
-          ainsi que l&apos;extrait cit&eacute; &mdash; de quoi tout
-          v&eacute;rifier dans votre propre exemplaire.
-        </p>
-      )}
+      <section className="mt-8 grid gap-5 md:grid-cols-[2fr_1fr]">
+        <div className="panneau">
+          <h2 className="panneau-titre">Par où commencer</h2>
+          <div className="panneau-corps">
+            <ul className="space-y-3">
+              <li>
+                <Link href="/graph" className="font-display text-lg text-accent hover:underline">
+                  Explorer le graphe
+                </Link>
+                <p className="text-sm text-secondary">
+                  Posez le curseur de chapitre, cherchez un personnage, suivez les
+                  arêtes. Le plus court chemin entre deux nœuds est souvent la
+                  chose la plus intéressante de la page.
+                </p>
+              </li>
+              <li>
+                <Link href="/chronologie" className="font-display text-lg text-accent hover:underline">
+                  Remonter la chronologie
+                </Link>
+                <p className="text-sm text-secondary">
+                  Dates exactes, ordres relatifs, flashbacks et incertitudes
+                  assumées — une chronologie qui dit ce qu&apos;elle ne sait pas
+                  plutôt que d&apos;inventer une précision.
+                </p>
+              </li>
+              <li>
+                <Link href="/recherche" className="font-display text-lg text-accent hover:underline">
+                  Chercher un nom, un lieu, une phrase
+                </Link>
+                <p className="text-sm text-secondary">
+                  Plein texte, approximatif et par graphe. Chaque résultat dit
+                  pourquoi il est là.
+                </p>
+              </li>
+              {isOwner && (
+                <li>
+                  <Link href="/import" className="font-display text-lg text-accent hover:underline">
+                    Importer le prochain chapitre
+                  </Link>
+                  <p className="text-sm text-secondary">
+                    PDF, CBZ ou images. Un PDF avec couche texte évite l&apos;OCR :
+                    l&apos;extraction est alors exacte et gratuite.
+                  </p>
+                </li>
+              )}
+            </ul>
+          </div>
+        </div>
 
-      <p className="mt-16 border-t border-line pt-6 text-sm text-muted">
-        {publiclyOpen ? (
-          <>
-            Le graphe est public&nbsp;; les chapitres ne le sont pas. Aucun
-            chapitre n&apos;est t&eacute;l&eacute;charg&eacute; ni
-            r&eacute;cup&eacute;r&eacute; en ligne, et aucune page
-            import&eacute;e n&apos;est servie sans authentification &mdash; ni
-            par une URL publique permanente.
-          </>
-        ) : (
-          <>
-            Outil priv&eacute;. Aucun chapitre n&apos;est
-            t&eacute;l&eacute;charg&eacute;, r&eacute;cup&eacute;r&eacute; en
-            ligne ni partag&eacute; : vous importez des fichiers que vous
-            poss&eacute;dez d&eacute;j&agrave;, et ils restent accessibles
-            &agrave; vous seul.
-          </>
-        )}
-      </p>
-
-      {!isOwner && (
-        <p className="mt-4 text-sm text-muted">
-          <Link href="/connexion" className="text-accent hover:underline">
-            Se connecter
-          </Link>{' '}
-          si cette biblioth&egrave;que est la v&ocirc;tre.
-        </p>
-      )}
+        <aside className="panneau self-start">
+          <h2 className="panneau-titre">Cette bibliothèque</h2>
+          <div className="panneau-corps space-y-3 text-sm text-secondary">
+            {isOwner ? (
+              <>
+                <p>
+                  <span className="cartouche block">Accès</span>
+                  Vous en êtes le propriétaire : import, traitement, revue et
+                  publication.
+                </p>
+                <p>
+                  <span className="cartouche block">Lecture publique</span>
+                  {publiclyOpen
+                    ? 'Ouverte. Le graphe, la chronologie et les fiches sont visibles de tous ; les pages de manga, non.'
+                    : 'Fermée. Tout exige une connexion.'}
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  <span className="cartouche block">Accès</span>
+                  Lecture seule. Le graphe, la chronologie, les fiches et la
+                  recherche sont ouverts.
+                </p>
+                <p>
+                  <span className="cartouche block">Ce qui reste fermé</span>
+                  Les pages de manga elles-mêmes, et elles le resteront. Chaque
+                  fait affiche sa référence de chapitre, de page et de case ainsi
+                  que l&apos;extrait cité — de quoi tout vérifier dans votre
+                  propre exemplaire.
+                </p>
+                <p>
+                  <Link href="/connexion" className="text-accent hover:underline">
+                    Se connecter
+                  </Link>{' '}
+                  si cette bibliothèque est la vôtre.
+                </p>
+              </>
+            )}
+            <hr className="regle" />
+            <p className="text-xs text-muted">
+              Aucun chapitre n&apos;est téléchargé ni récupéré en ligne : vous
+              importez des fichiers que vous possédez déjà.
+            </p>
+          </div>
+        </aside>
+      </section>
     </main>
   )
 }

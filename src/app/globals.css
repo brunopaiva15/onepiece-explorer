@@ -1,142 +1,169 @@
 @import 'tailwindcss';
 
 /* --------------------------------------------------------------------------
-   One Piece Explorer — sea-chart / exploration-journal art direction.
+   One Piece Explorer — chart room and logbook.
 
-   Deliberately original: no official One Piece asset, logo, typeface or
-   illustration is used anywhere. The vocabulary is nautical cartography —
-   ink-washed paper, rhumb lines, brass instruments, constellations — which
-   evokes the genre without borrowing from the work itself.
+   What this is reacting against, stated plainly because it was the brief: the
+   first version looked like every interface a language model produces when
+   nobody decides anything — a centred column of prose, a row of pill buttons,
+   uniform rounded rectangles, a system sans, and colour used only for status.
+   Nothing about it said what the product was or who it was for.
 
-   Every colour is defined on bare :root so a theme token always has a value;
-   the dark palette only redefines tokens.
+   The vocabulary here is nautical cartography and 17th-century print: inked
+   paper, a sea-blue banner over every block of content, brass rules, old-style
+   figures. It is borrowed from the *genre*, never from the work: no official
+   One Piece logo, typeface, colour or illustration appears anywhere in this
+   file or in the repository.
+
+   Three rules the components below all follow:
+
+     1. A block of content wears a banner. That is the wiki idiom, and it is
+        good interface design before it is decoration — a coloured title bar
+        makes a long page scannable at a glance.
+     2. Corners are square or nearly. Uniform 16px radius on everything is the
+        single clearest tell of an interface nobody chose.
+     3. Colour carries meaning or structure, never mood. Sea blue is chrome,
+        brass is action, and the six epistemic colours mean exactly one thing
+        each and are always paired with a word.
+
+   Every colour is defined on bare :root so a token always has a value; the
+   dark palette only redefines tokens.
    -------------------------------------------------------------------------- */
 
 @theme {
-  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia,
-    'Times New Roman', serif;
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
-    Arial, sans-serif;
-  --font-mono:
-    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: var(--font-display-loaded), Georgia, 'Times New Roman', serif;
+  --font-sans: var(--font-sans-loaded), Optima, Candara, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 :root {
   color-scheme: light;
 
-  /* Parchment ground */
-  --surface-base: #f2ece0;
-  --surface-raised: #f8f4ea;
-  --surface-sunken: #e8e0d0;
-  --surface-overlay: #fffdf8;
+  /* Paper. Warmer and more contrasted than before: parchment you can see,
+     not an off-white that reads as a bug. */
+  --surface-base: #efe4cd;
+  --surface-raised: #f8f1e0;
+  --surface-sunken: #e2d4b7;
+  --surface-overlay: #fdf9ef;
 
   /* Ink */
-  --text-primary: #1b2733;
-  --text-secondary: #4a5a68;
-  --text-muted: #74838f;
-  --text-inverted: #f8f4ea;
+  --text-primary: #221a10;
+  --text-secondary: #4e4130;
+  --text-muted: #7a6a54;
+  --text-inverted: #fdf9ef;
 
-  /* Brass and copper — the instrument accents */
-  --accent: #a8622a;
-  --accent-strong: #8a4d1e;
-  --accent-soft: #e6cbae;
-  --brass: #b08430;
+  /* Brass — action, emphasis, the instrument accents */
+  --accent: #9c5a17;
+  --accent-strong: #7c4310;
+  --accent-soft: #e8d3ae;
+  --brass: #b0862f;
 
-  /* Sea */
-  --sea: #2f6f6b;
-  --sea-soft: #cfe0dd;
+  /* Sea — the structural colour. Banners, chrome, headers. */
+  --sea: #1c5c86;
+  --sea-deep: #123f5e;
+  --sea-soft: #cfe0ea;
+  --sea-ink: #f4e9cf;
 
   /* Epistemic status — the palette that carries meaning.
-     Kept distinguishable without relying on hue alone; every use is
-     paired with an icon or a label. */
-  --epi-explicit: #2f6f6b; /* fait explicite */
-  --epi-inferred: #7a5ea8; /* déduction de l'IA */
-  --epi-hypothetical: #b08430; /* hypothèse */
-  --epi-contradicted: #b4552d; /* contradiction */
-  --epi-refuted: #8c8c8c; /* réfuté */
-  --epi-validated: #2d6a4f; /* validé par l'utilisateur */
+     Distinguishable without relying on hue alone; every use is paired with an
+     icon or a label. */
+  --epi-explicit: #1c6b62;
+  --epi-inferred: #6a4c93;
+  --epi-hypothetical: #b0862f;
+  --epi-contradicted: #a63f22;
+  --epi-refuted: #857a6a;
+  --epi-validated: #2c6e49;
 
-  --border: #d6cbb6;
-  --border-strong: #bdae94;
-  --focus-ring: #a8622a;
+  --border: #c9b48c;
+  --border-strong: #a68d5f;
+  --focus-ring: #9c5a17;
 
-  --rhumb: rgba(27, 39, 51, 0.045);
+  /* Chart lines and paper grain, at strengths you can actually see. */
+  --rhumb: rgba(34, 26, 16, 0.05);
+  --grain: rgba(120, 90, 50, 0.05);
+  --shadow-panel: 0 1px 0 rgba(255, 250, 240, 0.6) inset, 0 2px 8px rgba(60, 44, 24, 0.09);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --surface-base: #0c141c;
-    --surface-raised: #131e29;
-    --surface-sunken: #070d13;
-    --surface-overlay: #182533;
+    --surface-base: #10161c;
+    --surface-raised: #18222b;
+    --surface-sunken: #0a0f14;
+    --surface-overlay: #1e2a35;
 
-    --text-primary: #e8e2d4;
-    --text-secondary: #a8b4bf;
-    --text-muted: #74848f;
-    --text-inverted: #0c141c;
+    --text-primary: #ece0c8;
+    --text-secondary: #b6ab97;
+    --text-muted: #837a6b;
+    --text-inverted: #10161c;
 
-    --accent: #d08c4a;
-    --accent-strong: #e5a969;
-    --accent-soft: #3b2c1d;
+    --accent: #d08c3c;
+    --accent-strong: #e8ac60;
+    --accent-soft: #3a2a16;
     --brass: #d4a24c;
 
-    --sea: #5aa9a3;
-    --sea-soft: #17322f;
+    --sea: #2d7fac;
+    --sea-deep: #17475f;
+    --sea-soft: #16303d;
+    --sea-ink: #ece0c8;
 
-    --epi-explicit: #5aa9a3;
+    --epi-explicit: #4fa89c;
     --epi-inferred: #a58fd4;
     --epi-hypothetical: #d4a24c;
-    --epi-contradicted: #e0805a;
-    --epi-refuted: #7b8590;
-    --epi-validated: #6bbf8f;
+    --epi-contradicted: #e07a52;
+    --epi-refuted: #8b8375;
+    --epi-validated: #5cba8a;
 
-    --border: #26333f;
-    --border-strong: #3a4a58;
-    --focus-ring: #d08c4a;
+    --border: #2e3b46;
+    --border-strong: #4a5b68;
+    --focus-ring: #d08c3c;
 
-    --rhumb: rgba(232, 226, 212, 0.04);
+    --rhumb: rgba(236, 224, 200, 0.045);
+    --grain: rgba(210, 190, 150, 0.03);
+    --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 2px 10px rgba(0, 0, 0, 0.35);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --surface-base: #0c141c;
-  --surface-raised: #131e29;
-  --surface-sunken: #070d13;
-  --surface-overlay: #182533;
+  --surface-base: #10161c;
+  --surface-raised: #18222b;
+  --surface-sunken: #0a0f14;
+  --surface-overlay: #1e2a35;
 
-  --text-primary: #e8e2d4;
-  --text-secondary: #a8b4bf;
-  --text-muted: #74848f;
-  --text-inverted: #0c141c;
+  --text-primary: #ece0c8;
+  --text-secondary: #b6ab97;
+  --text-muted: #837a6b;
+  --text-inverted: #10161c;
 
-  --accent: #d08c4a;
-  --accent-strong: #e5a969;
-  --accent-soft: #3b2c1d;
+  --accent: #d08c3c;
+  --accent-strong: #e8ac60;
+  --accent-soft: #3a2a16;
   --brass: #d4a24c;
 
-  --sea: #5aa9a3;
-  --sea-soft: #17322f;
+  --sea: #2d7fac;
+  --sea-deep: #17475f;
+  --sea-soft: #16303d;
+  --sea-ink: #ece0c8;
 
-  --epi-explicit: #5aa9a3;
+  --epi-explicit: #4fa89c;
   --epi-inferred: #a58fd4;
   --epi-hypothetical: #d4a24c;
-  --epi-contradicted: #e0805a;
-  --epi-refuted: #7b8590;
-  --epi-validated: #6bbf8f;
+  --epi-contradicted: #e07a52;
+  --epi-refuted: #8b8375;
+  --epi-validated: #5cba8a;
 
-  --border: #26333f;
-  --border-strong: #3a4a58;
-  --focus-ring: #d08c4a;
+  --border: #2e3b46;
+  --border-strong: #4a5b68;
+  --focus-ring: #d08c3c;
 
-  --rhumb: rgba(232, 226, 212, 0.04);
+  --rhumb: rgba(236, 224, 200, 0.045);
+  --grain: rgba(210, 190, 150, 0.03);
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
-/* Expose the tokens to Tailwind utilities (bg-surface-base, text-primary…). */
 @theme inline {
   --color-surface-base: var(--surface-base);
   --color-surface-raised: var(--surface-raised);
@@ -151,7 +178,9 @@
   --color-accent-soft: var(--accent-soft);
   --color-brass: var(--brass);
   --color-sea: var(--sea);
+  --color-sea-deep: var(--sea-deep);
   --color-sea-soft: var(--sea-soft);
+  --color-sea-ink: var(--sea-ink);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-epi-explicit: var(--epi-explicit);
@@ -171,21 +200,23 @@ body {
   background-color: var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 
-  /* Rhumb lines: the faint radiating rules of a portolan chart.
-     Two diagonals at low opacity — present, never noisy over long sessions. */
+  /*
+   * Paper, then chart.
+   *
+   * A grain of fine dots so the ground is a material rather than a fill, and
+   * two sets of rhumb lines — the rules that radiate from a compass rose on a
+   * portolan chart. Both were present before at 4% and invisible, which is the
+   * worst of both: the cost of a texture with none of the effect.
+   */
   background-image:
-    repeating-linear-gradient(
-      60deg,
-      transparent 0 119px,
-      var(--rhumb) 119px 120px
-    ),
-    repeating-linear-gradient(
-      -60deg,
-      transparent 0 119px,
-      var(--rhumb) 119px 120px
-    );
+    radial-gradient(var(--grain) 0.5px, transparent 0.5px),
+    repeating-linear-gradient(60deg, transparent 0 95px, var(--rhumb) 95px 96px),
+    repeating-linear-gradient(-60deg, transparent 0 95px, var(--rhumb) 95px 96px);
+  background-size: 4px 4px, auto, auto;
   background-attachment: fixed;
 }
 
@@ -194,13 +225,213 @@ h2,
 h3,
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  font-weight: 400;
+  letter-spacing: 0.005em;
+}
+
+/* Old-style figures wherever numbers sit in prose: chapter numbers, dates,
+   counts. They belong to the same century as the display face. */
+h1, h2, h3, .font-display, .prose-chart {
+  font-variant-numeric: oldstyle-nums;
+}
+
+/* Tabular figures wherever numbers are compared: costs, durations, tables. */
+table, .tabular {
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 :focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+  border-radius: 1px;
+}
+
+/* --------------------------------------------------------------------------
+   Panels — the one structural idiom.
+
+   A framed block with a sea-blue banner. Used for every section of every page,
+   which is what gives the application a shape you can learn once: the banner
+   says what this is, the frame says where it ends.
+   -------------------------------------------------------------------------- */
+
+.panneau {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-panel);
+}
+
+.panneau-titre {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0.9rem;
+  background: linear-gradient(var(--sea), var(--sea-deep));
+  color: var(--sea-ink);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--sea-deep);
+  /* A brass hairline under the banner: the join between the two materials. */
+  box-shadow: 0 1px 0 var(--brass);
+}
+
+.panneau-corps {
+  padding: 1rem 1.1rem;
+}
+
+/* A caption in small caps over a hairline — for labels above a value. */
+.cartouche {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------------------
+   Buttons. Square, weighty, with a pressed state you can feel.
+   -------------------------------------------------------------------------- */
+
+.bouton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-overlay);
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  transition:
+    background-color 120ms,
+    transform 60ms;
+}
+
+.bouton:hover {
+  background: var(--surface-sunken);
+}
+
+.bouton:active {
+  transform: translateY(1px);
+}
+
+.bouton-primaire {
+  background: linear-gradient(var(--accent), var(--accent-strong));
+  border-color: var(--accent-strong);
+  color: var(--text-inverted);
+}
+
+.bouton-primaire:hover {
+  background: var(--accent-strong);
+}
+
+.bouton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   Rules and ornaments.
+   -------------------------------------------------------------------------- */
+
+/* A divider that is not a 1px grey line: brass, fading at both ends. */
+.regle {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--border-strong) 15%,
+    var(--brass) 50%,
+    var(--border-strong) 85%,
+    transparent
+  );
+}
+
+
+/* --------------------------------------------------------------------------
+   Element defaults.
+
+   Twenty-two files draw their own bordered boxes and twenty carry a form
+   control. Styling the elements themselves is what keeps the pages that have
+   not been rewritten by hand from looking like a different application —
+   coherence that does not depend on remembering a class.
+   -------------------------------------------------------------------------- */
+
+main {
+  padding-bottom: 1rem;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 1.3rem + 2vw, 2.6rem);
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+h3 {
+  font-size: 1.1rem;
+  line-height: 1.3;
+}
+
+/* Form controls: paper sunk into paper, with a brass focus ring. */
+input[type='text'],
+input[type='email'],
+input[type='password'],
+input[type='number'],
+input[type='search'],
+input[type='file'],
+select,
+textarea {
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
   border-radius: 2px;
+  padding: 0.45rem 0.6rem;
+  color: var(--text-primary);
+  font: inherit;
+  box-shadow: inset 0 1px 2px rgba(60, 44, 24, 0.07);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Ledger tables: a banner head, ruled rows, figures that line up. */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead th {
+  background: var(--sea-deep);
+  color: var(--sea-ink);
+  font-family: var(--font-display);
+  font-weight: 400;
+  text-align: left;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.95rem;
+}
+
+tbody td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.45rem 0.7rem;
+  vertical-align: top;
+}
+
+tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--surface-sunken) 45%, transparent);
+}
+
+/* Anything that still draws its own box gets the paper, not a flat grey. */
+::selection {
+  background: var(--accent-soft);
+  color: var(--text-primary);
 }
 
 /* Respect the reader's motion preference: graph animations and delta

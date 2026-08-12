@@ -51,12 +51,17 @@ interface PromptBlock {
 /**
  * How much of a chapter goes into one extraction call.
  *
- * Forty panels is roughly seven pages: enough context for a scene to hold
+ * Twenty panels is three or four pages: enough context for a scene to hold
  * together, small enough that the answer — entities, assertions, events and
- * mysteries for all of them — finishes inside the output ceiling. A chapter of
- * 122 panels ran through that ceiling in a single call and came back truncated.
+ * mysteries for all of them — finishes inside the output ceiling.
+ *
+ * It started at forty, which measurement then rejected. A real chapter's third
+ * slice ran through the 32 000 token ceiling and had to be halved and retried,
+ * and that retry is not free: the truncated call is billed in full before it is
+ * thrown away. Halving stays as the safety net for a slice that is unusually
+ * dense; it should not be the normal path for a chapter that is merely busy.
  */
-const SLICE_PANELS = 40
+const SLICE_PANELS = 20
 
 /** How many times a failing slice may be halved before it is given up on. */
 const MAX_SPLIT_DEPTH = 2

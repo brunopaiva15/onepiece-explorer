@@ -109,7 +109,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mt-1.5 w-full rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 text-primary"
+          className="mt-1.5 w-full px-3 py-2 text-primary"
         />
       </div>
 
@@ -128,7 +128,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
           autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mt-1.5 w-full rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 text-primary"
+          className="mt-1.5 w-full px-3 py-2 text-primary"
         />
       </div>
 
@@ -146,7 +146,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-sm bg-accent px-4 py-2.5 text-sm font-medium text-inverted transition-colors hover:bg-accent-strong disabled:opacity-60"
+        className="bouton bouton-primaire w-full justify-center transition-colors hover:bg-accent-strong disabled:opacity-60"
       >
         {mode === 'signin' ? 'Se connecter' : 'Créer le compte'}
       </button>
