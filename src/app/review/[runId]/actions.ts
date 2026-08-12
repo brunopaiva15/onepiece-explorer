@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { requireOwner } from '@/domains/auth/session.ts'
 import { publishDecisions, type Decision, type PublishResult } from '@/domains/review/publish.ts'
+import { getLocale } from '@/lib/i18n/server.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 export interface ReviewActionResult {
   ok: boolean
@@ -24,11 +26,12 @@ export async function publishDecisionsAction(
   runId: string,
   decisions: Decision[],
 ): Promise<ReviewActionResult> {
+  const t = getDictFor(await getLocale()).review
   try {
     const session = await requireOwner()
 
     if (decisions.length === 0) {
-      return { ok: false, error: 'Aucune décision à publier.' }
+      return { ok: false, error: t.noDecisions }
     }
 
     const published = await publishDecisions(session.userId, runId, decisions)
@@ -40,7 +43,7 @@ export async function publishDecisionsAction(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'Publication impossible.',
+      error: error instanceof Error ? error.message : t.publishFailed,
     }
   }
 }

@@ -5,6 +5,8 @@ import Link from 'next/link'
 import type { DuplicateInfo } from '@/domains/review/duplicates.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
 import type { DecisionKind, PublishResult } from '@/domains/review/publish.ts'
+import { type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { publishDecisionsAction } from './actions.ts'
 
 /**
@@ -34,9 +36,10 @@ const KEYS: Record<string, DecisionKind> = {
 
 interface Props {
   queue: ReviewQueue
+  locale: Locale
 }
 
-export function ReviewBoard({ queue }: Props) {
+export function ReviewBoard({ queue, locale }: Props) {
   const [decisions, setDecisions] = useState<Map<string, DecisionKind>>(new Map())
   /*
    * Names the reviewer rewrote, by item id.
@@ -53,6 +56,7 @@ export function ReviewBoard({ queue }: Props) {
   const [result, setResult] = useState<PublishResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const t = getDictFor(locale).review
   const items = queue.items
   const current = items[cursor]
 
@@ -244,7 +248,7 @@ export function ReviewBoard({ queue }: Props) {
         setDecisions(new Map())
         setRenames(new Map())
       } else {
-        setError(response.error ?? 'Publication impossible.')
+        setError(response.error ?? t.publishFailed)
       }
     })
   }
@@ -259,15 +263,15 @@ export function ReviewBoard({ queue }: Props) {
   if (items.length === 0) {
     return (
       <section className="panneau mt-8">
-        <h2 className="panneau-titre panneau-titre-vedette">File vide</h2>
+        <h2 className="panneau-titre panneau-titre-vedette">{t.emptyTitle}</h2>
         <div className="panneau-corps">
           <p className="text-primary">
-            Rien à revoir pour ce traitement.
+            {t.emptyBody}
             {queue.counts.accepted > 0 &&
-              ` ${queue.counts.accepted} proposition(s) déjà publiée(s).`}
+              ` ${t.alreadyPublished(queue.counts.accepted)}`}
           </p>
           <Link href={`/chapitres/${queue.chapterId}`} className="bouton mt-4">
-            Revenir au chapitre
+            {t.backToChapter}
           </Link>
         </div>
       </section>
@@ -302,10 +306,9 @@ export function ReviewBoard({ queue }: Props) {
           {doubleAccepted > 0 && (
             <span
               className="badge badge-rouge"
-              title="Deux copies d’une même proposition acceptées : le graphe recevra deux nœuds, que rien ne rapprochera ensuite."
+              title={t.doubleAcceptedTitle}
             >
-              {doubleAccepted} doublon{doubleAccepted > 1 ? 's' : ''} accepté
-              {doubleAccepted > 1 ? 's' : ''}
+              {t.doubleAccepted(doubleAccepted)}
             </span>
           )}
 
@@ -315,9 +318,9 @@ export function ReviewBoard({ queue }: Props) {
                 type="button"
                 onClick={acceptBulk}
                 className="bouton !py-1 !text-sm"
-                title="Uniquement les propositions sûres : ni identité, ni révélation, ni contradiction"
+                title={t.bulkAcceptTitle}
               >
-                Accepter {bulkEligible.length} sûres
+                {t.bulkAccept(bulkEligible.length)}
               </button>
             )}
             <button
@@ -326,7 +329,7 @@ export function ReviewBoard({ queue }: Props) {
               disabled={decided === 0 || publishing}
               className="bouton bouton-primaire !py-1 !text-sm"
             >
-              {publishing ? 'Publication…' : `Publier ${decided || ''}`}
+              {publishing ? t.publishing : t.publish(decided)}
             </button>
           </div>
         </div>
@@ -350,10 +353,10 @@ export function ReviewBoard({ queue }: Props) {
                   onClick={() => setCursor(index)}
                   aria-label={
                     item.duplicate
-                      ? `Proposition ${index + 1}, copie ${item.duplicate.rank} sur ${item.duplicate.total}`
-                      : `Proposition ${index + 1}`
+                      ? t.stripItemDuplicate(index + 1, item.duplicate.rank, item.duplicate.total)
+                      : t.stripItem(index + 1)
                   }
-                  title={item.duplicate ? `Doublon · copie ${item.duplicate.rank}/${item.duplicate.total}` : undefined}
+                  title={item.duplicate ? t.stripDuplicateTitle(item.duplicate.rank, item.duplicate.total) : undefined}
                   aria-current={index === cursor}
                   className={`block h-3 w-3 border-2 ${
                     index === cursor ? 'border-ink ring-2 ring-[var(--accent)]' : 'border-ink/40'
@@ -372,11 +375,14 @@ export function ReviewBoard({ queue }: Props) {
         </p>
       )}
 
-      {result && <PublishSummary result={result} chapterId={queue.chapterId} />}
+      {result && (
+        <PublishSummary result={result} chapterId={queue.chapterId} locale={locale} />
+      )}
 
       {current && (
         <ProposalCard
           key={current.id}
+          locale={locale}
           item={current}
           index={cursor}
           total={items.length}
@@ -401,10 +407,13 @@ export function ReviewBoard({ queue }: Props) {
 function PublishSummary({
   result,
   chapterId,
+  locale,
 }: {
   result: PublishResult
   chapterId: string
+  locale: Locale
 }) {
+  const t = getDictFor(locale).review
   const created =
     result.entitiesCreated +
     result.assertionsCreated +
@@ -417,21 +426,21 @@ function PublishSummary({
       className="mt-4 rounded-sm border border-[var(--epi-explicit)] bg-surface-raised p-4"
     >
       <p className="font-medium text-primary">
-        {created} élément(s) ajouté(s) au graphe.
+        {t.summaryCreated(created)}
       </p>
       <ul className="mt-2 space-y-0.5 text-sm text-secondary">
-        {result.entitiesCreated > 0 && <li>{result.entitiesCreated} entité(s)</li>}
-        {result.assertionsCreated > 0 && <li>{result.assertionsCreated} relation(s)</li>}
-        {result.eventsCreated > 0 && <li>{result.eventsCreated} événement(s)</li>}
-        {result.mysteriesCreated > 0 && <li>{result.mysteriesCreated} mystère(s)</li>}
-        {result.rejected > 0 && <li>{result.rejected} rejetée(s)</li>}
-        {result.deferred > 0 && <li>{result.deferred} reportée(s)</li>}
+        {result.entitiesCreated > 0 && <li>{t.summaryEntities(result.entitiesCreated)}</li>}
+        {result.assertionsCreated > 0 && <li>{t.summaryAssertions(result.assertionsCreated)}</li>}
+        {result.eventsCreated > 0 && <li>{t.summaryEvents(result.eventsCreated)}</li>}
+        {result.mysteriesCreated > 0 && <li>{t.summaryMysteries(result.mysteriesCreated)}</li>}
+        {result.rejected > 0 && <li>{t.rejectedCount(result.rejected)}</li>}
+        {result.deferred > 0 && <li>{t.deferredCount(result.deferred)}</li>}
       </ul>
 
       {result.failures.length > 0 && (
         <div className="mt-3 border-t border-line pt-3">
           <p className="text-sm font-medium text-[var(--epi-contradicted)]">
-            {result.failures.length} n&apos;ont pas pu être appliquée(s) :
+            {t.failuresIntro(result.failures.length)}
           </p>
           <ul className="mt-1 space-y-1 text-sm text-secondary">
             {result.failures.map((failure) => (
@@ -445,7 +454,7 @@ function PublishSummary({
         href={`/chapitres/${chapterId}`}
         className="mt-3 inline-block rounded-sm border border-line-strong px-4 py-2 text-sm text-primary hover:bg-surface-raised"
       >
-        Revenir au chapitre
+        {t.backToChapter}
       </Link>
     </div>
   )
@@ -459,6 +468,7 @@ interface Twin {
 }
 
 function ProposalCard({
+  locale,
   item,
   index,
   total,
@@ -470,6 +480,7 @@ function ProposalCard({
   twins,
   onJump,
 }: {
+  locale: Locale
   item: ReviewItemView
   index: number
   total: number
@@ -481,26 +492,27 @@ function ProposalCard({
   twins: Twin[]
   onJump: (position: number) => void
 }) {
+  const t = getDictFor(locale).review
   return (
     <article className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
       {/* --- The evidence, at a size you can actually judge ---------------- */}
       <div className="panneau">
         <h2 className="panneau-titre">
-          La preuve
+          {t.evidenceTitle}
           <span className="font-sans text-xs normal-case opacity-80">
-            {item.evidence.length} élément{item.evidence.length > 1 ? 's' : ''}
+            {t.evidenceCount(item.evidence.length)}
           </span>
         </h2>
         <div className="panneau-corps">
           {item.evidence.length === 0 ? (
             <p className="border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-white">
-              Aucune preuve rattachée — cette proposition ne devrait pas être ici.
+              {t.noEvidence}
             </p>
           ) : (
             <ul className="space-y-5">
               {item.evidence.map((evidence, i) => (
                 <li key={`${evidence.ref}-${i}`}>
-                  <EvidencePanel evidence={evidence} />
+                  <EvidencePanel evidence={evidence} locale={locale} />
                 </li>
               ))}
             </ul>
@@ -512,18 +524,18 @@ function ProposalCard({
       <div className="flex flex-col gap-4">
         <div className="panneau">
           <h2 className="panneau-titre panneau-titre-vedette">
-            {categoryLabel(item.category)}
+            {t.category[item.category] ?? item.category}
             <span className="font-sans text-xs normal-case">
-              confiance {Math.round(item.confidence * 100)} %
+              {t.confidence(Math.round(item.confidence * 100))}
             </span>
           </h2>
           <div className="panneau-corps">
             {item.requiresExplicitReview && (
               <p
                 className="mb-3 border-[3px] border-ink bg-[var(--epi-hypothetical)] px-2 py-1 font-display text-sm uppercase text-ink"
-                title="Identité, révélation, mort, affiliation cachée ou contradiction : jamais acceptable en lot"
+                title={t.explicitReviewTitle}
               >
-                Revue explicite obligatoire
+                {t.explicitReviewRequired}
               </p>
             )}
             {item.duplicate && (
@@ -531,9 +543,11 @@ function ProposalCard({
                 duplicate={item.duplicate}
                 twins={twins}
                 onJump={onJump}
+                locale={locale}
               />
             )}
             <ProposalBody
+              locale={locale}
               category={item.category}
               payload={item.payload}
               relatedLabel={item.relatedLabel}
@@ -548,9 +562,9 @@ function ProposalCard({
             <div className="grid grid-cols-3 gap-2">
               {(
                 [
-                  ['accept', 'Accepter', 'a', 'bouton-primaire'],
-                  ['reject', 'Rejeter', 'r', 'bouton-danger'],
-                  ['defer', 'Reporter', 'd', ''],
+                  ['accept', t.accept, 'a', 'bouton-primaire'],
+                  ['reject', t.reject, 'r', 'bouton-danger'],
+                  ['defer', t.defer, 'd', ''],
                 ] as const
               ).map(([kind, label, key, tone]) => (
                 <button
@@ -579,8 +593,7 @@ function ProposalCard({
             </div>
 
             <p className="mt-3 text-xs text-muted">
-              Rien n&apos;est écrit avant « Publier ». Une décision déplace
-              automatiquement à la suivante.
+              {t.nothingWritten}
             </p>
           </div>
         </div>
@@ -603,11 +616,14 @@ function DuplicateNotice({
   duplicate,
   twins,
   onJump,
+  locale,
 }: {
   duplicate: DuplicateInfo
   twins: Twin[]
   onJump: (position: number) => void
+  locale: Locale
 }) {
+  const t = getDictFor(locale).review
   const published = duplicate.others.accepted
   const markedElsewhere = twins.some((twin) => twin.decision === 'accept')
   const discarded = duplicate.others.rejected + duplicate.others.deferred
@@ -621,30 +637,23 @@ function DuplicateNotice({
       }`}
     >
       <p className="font-display text-sm uppercase">
-        Doublon · copie {duplicate.rank} sur {duplicate.total}
+        {t.duplicateTitle(duplicate.rank, duplicate.total)}
       </p>
 
       <p className="mt-1 text-sm">
         {published > 0
-          ? `${published} copie${published > 1 ? 's' : ''} déjà acceptée${
-              published > 1 ? 's' : ''
-            } et publiée${published > 1 ? 's' : ''} : accepter celle-ci ajouterait un ` +
-            `second nœud au graphe, que rien ne rapprochera ensuite.`
+          ? t.duplicatePublished(published)
           : markedElsewhere
-            ? 'Une autre copie est déjà marquée « accepter ». Une seule suffit.'
-            : 'Le chapitre est extrait par tranches, et la même proposition revient ' +
-              'd’une tranche à l’autre. N’en acceptez qu’une — sauf si vous jugez ' +
-              'qu’il s’agit de deux apparitions différentes.'}
+            ? t.duplicateMarked
+            : t.duplicateDefault}
       </p>
 
       {discarded > 0 && (
         <p className="mt-1 text-sm">
-          {duplicate.others.rejected > 0 &&
-            `${duplicate.others.rejected} rejetée(s)`}
+          {duplicate.others.rejected > 0 && t.rejectedCount(duplicate.others.rejected)}
           {duplicate.others.rejected > 0 && duplicate.others.deferred > 0 && ' · '}
-          {duplicate.others.deferred > 0 &&
-            `${duplicate.others.deferred} reportée(s)`}
-          {' lors d’une publication précédente.'}
+          {duplicate.others.deferred > 0 && t.deferredCount(duplicate.others.deferred)}
+          {t.duplicatePrevious}
         </p>
       )}
 
@@ -657,7 +666,10 @@ function DuplicateNotice({
                 onClick={() => onJump(twin.position)}
                 className="bouton !py-0.5 !text-xs"
               >
-                n°{twin.position + 1} · {twinStateLabel(twin.decision)}
+                {t.twinButton(
+                  twin.position + 1,
+                  (twin.decision && t.twinState[twin.decision]) || t.twinUndecided,
+                )}
               </button>
             </li>
           ))}
@@ -667,16 +679,14 @@ function DuplicateNotice({
   )
 }
 
-function twinStateLabel(decision: DecisionKind | null): string {
-  const labels: Partial<Record<DecisionKind, string>> = {
-    accept: '✓ acceptée',
-    reject: '✕ rejetée',
-    defer: '⏸ reportée',
-  }
-  return (decision && labels[decision]) || 'pas encore décidée'
-}
-
-function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
+function EvidencePanel({
+  evidence,
+  locale,
+}: {
+  evidence: EvidenceView
+  locale: Locale
+}) {
+  const t = getDictFor(locale).review
   return (
     <div>
       {/*
@@ -690,10 +700,10 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
        */}
       <p className="font-mono text-xs text-muted">
         {evidence.pageIndex !== null
-          ? `${evidence.ref} · page ${evidence.pageIndex + 1}`
-          : `passage ${evidence.ref.replace(/^b/, '')}`}
+          ? t.pageRef(evidence.ref, evidence.pageIndex + 1)
+          : t.passageRef(evidence.ref.replace(/^b/, ''))}
         {' · '}
-        {evidence.kind === 'text' ? 'texte' : 'visuel'}
+        {evidence.kind === 'text' ? t.evidenceText : t.evidenceVisual}
       </p>
 
       {evidence.panelImageUrl && (
@@ -703,7 +713,7 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={evidence.panelImageUrl}
-          alt={`Case source ${evidence.ref}`}
+          alt={t.panelAlt(evidence.ref)}
           loading="lazy"
           className="mt-2 block max-h-[26rem] w-full border-[3px] border-ink object-contain"
         />
@@ -715,7 +725,7 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
 
       {evidence.blockText && evidence.blockText !== evidence.excerpt && (
         <p className="mt-1 text-xs text-muted">
-          {evidence.pageIndex === null ? 'Passage complet' : 'Bloc complet'} :{' '}
+          {evidence.pageIndex === null ? t.fullPassage : t.fullBlock}{' '}
           {evidence.blockText}
         </p>
       )}
@@ -728,18 +738,22 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
 }
 
 function ProposalBody({
+  locale,
   category,
   payload,
   relatedLabel,
   rename,
   onRename,
 }: {
+  locale: Locale
   category: string
   payload: unknown
   relatedLabel: string | null
   rename: string | null
   onRename: (label: string) => void
 }) {
+  const dict = getDictFor(locale)
+  const t = dict.review
   const record = (payload ?? {}) as Record<string, unknown>
 
   if (category === 'entity') {
@@ -763,14 +777,14 @@ function ProposalBody({
         <div className="mt-2">
           {sourceTerm && (
             <p className="text-sm text-secondary">
-              <span className="cartouche block">Dans la source</span>
+              <span className="cartouche block">{t.inSource}</span>
               <span className="text-base text-primary">« {sourceTerm} »</span>
             </p>
           )}
 
           <label className="mt-3 block">
             <span className="cartouche block">
-              {unsure ? 'Comment on l’appelle en français' : 'Nom dans le graphe'}
+              {unsure ? t.nameQuestion : t.nameInGraph}
             </span>
             <input
               type="text"
@@ -783,14 +797,13 @@ function ProposalBody({
 
           <p className="mt-1.5 text-sm text-secondary">
             {String(record.node_type ?? '')} ·{' '}
-            {labelKindLabel(String(record.label_kind ?? ''))}
+            {dict.common.labelKind[String(record.label_kind ?? '')] ??
+              String(record.label_kind ?? '')}
           </p>
 
           {unsure && (
             <p className="mt-2 text-sm text-muted">
-              Le modèle ne sait pas trancher — traduire ou garder tel quel est une
-              convention, pas un fait du texte. Votre réponse est enregistrée pour
-              toute l’œuvre : la question ne sera plus posée.
+              {t.namingNote}
             </p>
           )}
         </div>
@@ -801,7 +814,9 @@ function ProposalBody({
       <div className="mt-2">
         <p className="text-lg text-primary">{String(record.label ?? '')}</p>
         <p className="mt-1 text-sm text-secondary">
-          {String(record.node_type ?? '')} · {labelKindLabel(String(record.label_kind ?? ''))}
+          {String(record.node_type ?? '')} ·{' '}
+          {dict.common.labelKind[String(record.label_kind ?? '')] ??
+            String(record.label_kind ?? '')}
         </p>
       </div>
     )
@@ -820,7 +835,8 @@ function ProposalBody({
           </span>
         </p>
         <p className="mt-1 text-sm text-secondary">
-          {epistemicLabel(String(record.epistemic_status ?? ''))}
+          {dict.common.epistemic[String(record.epistemic_status ?? '')] ??
+            String(record.epistemic_status ?? '')}
         </p>
       </div>
     )
@@ -834,16 +850,17 @@ function ProposalBody({
     return (
       <div className="mt-2">
         <p className="text-primary">
-          « {String(record.candidateLabel ?? '')} » est-il la même entité que
+          {t.resolutionQuestion(String(record.candidateLabel ?? ''))}
           {' '}
           <span className="font-medium">
             {relatedLabel ?? String(record.existingEntityId ?? '')}
-          </span>{' '}
-          ?
+          </span>
+          {t.resolutionQuestionEnd}
         </p>
         <p className="mt-1 text-sm text-secondary">
-          Score {Math.round(Number(record.score ?? 0) * 100)} % ·{' '}
-          {suggestionLabel(String(record.suggestion ?? ''))}
+          {t.resolutionScore(Math.round(Number(record.score ?? 0) * 100))} ·{' '}
+          {t.suggestion[String(record.suggestion ?? '')] ??
+            String(record.suggestion ?? '')}
         </p>
 
         {/* Every signal, including the ones that found nothing. A score shown
@@ -870,7 +887,7 @@ function ProposalBody({
 
         {typeof record.modelReasoning === 'string' && (
           <p className="mt-2 rounded-sm bg-surface-overlay p-2 text-sm text-secondary">
-            Avis du modèle ({String(record.modelVerdict ?? '')}) :{' '}
+            {t.modelOpinion(String(record.modelVerdict ?? ''))}{' '}
             {record.modelReasoning}
           </p>
         )}
@@ -887,7 +904,7 @@ function ProposalBody({
       <div className="mt-2">
         <p className="text-primary">{String(record.explanation ?? '')}</p>
         <p className="mt-2 text-sm text-secondary">
-          Trois lectures possibles, et le système n&apos;en choisit aucune :
+          {t.conflictIntro}
         </p>
         <ul className="mt-1 space-y-1 text-sm text-secondary">
           {options.map((option) => (
@@ -904,7 +921,7 @@ function ProposalBody({
         <p className="text-primary">{String(record.summary ?? '')}</p>
         {record.is_flashback === true && (
           <p className="mt-1 text-sm text-[var(--epi-hypothetical)]">
-            Présenté comme un souvenir : montré ici, survenu plus tôt.
+            {t.flashback}
           </p>
         )}
       </div>
@@ -924,45 +941,4 @@ function ProposalBody({
       {JSON.stringify(payload, null, 2)}
     </pre>
   )
-}
-
-function categoryLabel(category: string): string {
-  const labels: Record<string, string> = {
-    entity: 'entité',
-    assertion: 'relation',
-    resolution: 'rapprochement',
-    conflict: 'contradiction',
-    event: 'événement',
-    mystery: 'mystère',
-  }
-  return labels[category] ?? category
-}
-
-function labelKindLabel(kind: string): string {
-  const labels: Record<string, string> = {
-    placeholder: 'désignation provisoire, tirée de l’image',
-    alias: 'surnom ou désignation',
-    true_name: 'vrai nom',
-    epithet: 'épithète',
-    translation: 'traduction',
-  }
-  return labels[kind] ?? kind
-}
-
-function epistemicLabel(status: string): string {
-  const labels: Record<string, string> = {
-    explicit: 'affirmé ou montré directement',
-    inferred_strong: 'déduit des pages, sans y être dit',
-    hypothetical: 'lecture possible — revue explicite requise',
-  }
-  return labels[status] ?? status
-}
-
-function suggestionLabel(suggestion: string): string {
-  const labels: Record<string, string> = {
-    likely_same: 'probablement la même',
-    worth_checking: 'à vérifier',
-    likely_different: 'probablement différentes',
-  }
-  return labels[suggestion] ?? suggestion
 }

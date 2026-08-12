@@ -4,9 +4,13 @@ import { notFound } from 'next/navigation'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { quarantineSummary } from '@/domains/pipeline/quarantine.ts'
 import { getReviewQueue } from '@/domains/review/queue.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 import { ReviewBoard } from './review-board.tsx'
 
-export const metadata: Metadata = { title: 'Centre de revue' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.review.metaTitle }
+}
 /** Signed evidence URLs expire within the minute; never cache this render. */
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +21,8 @@ export default async function ReviewPage({
 }) {
   const { runId } = await params
   const session = await getReaderSession()
+  const dict = await getDict()
+  const t = dict.review
 
   const queue = await getReviewQueue(session.userId, runId)
   if (!queue) notFound()
@@ -39,45 +45,44 @@ export default async function ReviewPage({
           href={`/runs/${runId}`}
           className="font-display text-sm uppercase text-muted no-underline hover:text-primary"
         >
-          ‹ Traitement
+          {t.backToRun}
         </Link>
         <h1 className="font-display text-2xl uppercase leading-none text-primary">
-          Revue · chapitre {queue.chapterNumber}
+          {t.heading(queue.chapterNumber)}
         </h1>
         {queue.chapterTitle && (
           <span className="truncate text-secondary">{queue.chapterTitle}</span>
         )}
         {queue.counts.requiringExplicitReview > 0 && (
           <span className="badge badge-or ml-auto">
-            {queue.counts.requiringExplicitReview} en revue explicite
+            {t.explicitReviewCount(queue.counts.requiringExplicitReview)}
           </span>
         )}
       </div>
 
-      <ReviewBoard queue={serialisable(queue)} />
+      <ReviewBoard queue={serialisable(queue)} locale={session.locale} />
 
       {quarantined.length > 0 && (
         <details className="panneau mt-8">
           <summary className="panneau-titre cursor-pointer list-none">
-            Quarantaine
+            {t.quarantineTitle}
             <span className="font-sans text-xs normal-case opacity-80">
-              {quarantined.reduce((sum, e) => sum + e.count, 0)} écartée(s) · pourquoi ?
+              {t.quarantineCount(quarantined.reduce((sum, e) => sum + e.count, 0))}
             </span>
           </summary>
           <div className="panneau-corps">
             <p className="max-w-3xl text-sm text-secondary">
-              Ces propositions n&apos;ont pas pu être rattachées à une preuve
-              vérifiable : référence inexistante, ou extrait absent du texte
-              cité. Elles ne sont <strong>pas</strong> proposables — c&apos;est
-              le garde-fou qui empêche une affirmation venue d&apos;ailleurs que
-              des pages d&apos;atteindre le graphe. Leur répartition est en
-              revanche un bon diagnostic.
+              {t.quarantineBody1}
+              <strong>{t.quarantineNot}</strong>
+              {t.quarantineBody2}
             </p>
             <ul className="mt-3 space-y-1 text-sm">
               {quarantined.map((entry) => (
                 <li key={entry.reason} className="flex gap-3">
                   <span className="chiffre text-lg">{entry.count}</span>
-                  <span className="text-secondary">{quarantineLabel(entry.reason)}</span>
+                  <span className="text-secondary">
+                    {t.quarantineReasons[entry.reason] ?? entry.reason}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -87,23 +92,6 @@ export default async function ReviewPage({
 
     </main>
   )
-}
-
-function quarantineLabel(reason: string): string {
-  const labels: Record<string, string> = {
-    unknown_ref:
-      'référence de case ou de bloc inexistante — souvent le signe que le découpage a mal tourné',
-    excerpt_not_in_source:
-      "extrait absent du bloc cité — souvent le signe d'une transcription trop dégradée pour ancrer quoi que ce soit",
-    visual_without_description:
-      'preuve visuelle sur une case sans description produite',
-    unknown_predicate: 'prédicat hors ontologie',
-    unknown_node_type: 'type de nœud hors ontologie',
-    unknown_subject: 'sujet introuvable — son entité a été écartée',
-    unknown_object: 'objet introuvable',
-    empty_excerpt: 'preuve sans extrait',
-  }
-  return labels[reason] ?? reason
 }
 
 /** Dates cross to the client as strings; send one shape, not two. */
