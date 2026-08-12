@@ -1,4 +1,5 @@
 import 'server-only'
+import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -61,12 +62,27 @@ export interface AuthenticatedUser {
  * policy trusts to decide whose data to return. An unverified uid here would
  * be an authorisation bypass, not a login bug.
  */
-export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
-  const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data.user) return null
-  return { id: data.user.id, email: data.user.email ?? null }
-}
+/**
+ * Who is asking, verified — once per render, not once per caller.
+ *
+ * `getUser()` is a network call to the Supabase auth server: it verifies the
+ * token rather than trusting the cookie, which is the whole reason to prefer it
+ * over `getSession()`. That makes it correct and makes it expensive, and a
+ * single page render was making it four to six times — the shell asks, the
+ * session helper asks, the page asks again with its own boundary. Half a second
+ * of a two-second navigation was the same answer fetched repeatedly.
+ *
+ * React's `cache()` scopes memoisation to one render pass, which is exactly the
+ * right lifetime: never shared between requests, never stale within one.
+ */
+export const getCurrentUser = cache(
+  async (): Promise<AuthenticatedUser | null> => {
+    const supabase = await createSupabaseServerClient()
+    const { data, error } = await supabase.auth.getUser()
+    if (error || !data.user) return null
+    return { id: data.user.id, email: data.user.email ?? null }
+  },
+)
 
 export class UnauthenticatedError extends Error {
   constructor() {

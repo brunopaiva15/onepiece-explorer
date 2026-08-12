@@ -93,16 +93,31 @@ export async function withBoundary<T>(
   const claims = JSON.stringify({ sub: ctx.userId, role: 'authenticated' })
 
   return appDb().transaction(async (tx) => {
-    // Parameterised, not interpolated. The third argument makes each setting
-    // local to this transaction so nothing survives onto a pooled connection.
-    await tx.execute(
-      sql`SELECT set_config('request.jwt.claims', ${claims}, true)`,
-    )
-    await tx.execute(
-      sql`SELECT set_config('app.boundary_chapter', ${String(boundary)}, true)`,
-    )
-    // A role name cannot be a bind parameter; this is a fixed literal.
-    await tx.execute(sql`SET LOCAL ROLE authenticated`)
+    /*
+     * Three settings, one round trip.
+     *
+     * These were three separate `execute` calls, which is three sequential
+     * network waits before the transaction had read anything. A page opens ten
+     * or so boundaries, so that was twenty round trips spent on setup alone —
+     * on a function and a database in different regions, most of a second.
+     *
+     * `role` is set through set_config rather than `SET LOCAL ROLE` because a
+     * role name cannot be a bind parameter, and putting the three in one
+     * statement is worth more than the literal. It is the same GUC either way:
+     * `SET ROLE x` and `set_config('role', 'x', ...)` are the same operation,
+     * which is how PostgREST does it too.
+     *
+     * The third argument is what makes each setting local to this transaction,
+     * so nothing survives onto a pooled connection handed to the next request.
+     * Getting that wrong would leak this reader's identity and position onto
+     * someone else's query — tests/db cover exactly that.
+     */
+    await tx.execute(sql`
+      SELECT
+        set_config('request.jwt.claims', ${claims}, true),
+        set_config('app.boundary_chapter', ${String(boundary)}, true),
+        set_config('role', 'authenticated', true)
+    `)
 
     return fn(tx)
   })

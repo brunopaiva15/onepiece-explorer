@@ -12,6 +12,27 @@ l'avoir oubliée.
 
 ---
 
+## Où ça tourne, et pourquoi c'est le premier réglage de performance
+
+`vercel.json` épingle les fonctions à **`fra1`** (Francfort), parce que la base
+Supabase est sur `aws-0-eu-central-1`. Ce n'est pas un détail de confort.
+
+Une page rend côté serveur et ouvre une dizaine de transactions bornées, chacune
+faisant plusieurs allers-retours vers Postgres. Avec la fonction et la base dans
+la même région, un aller-retour coûte une poignée de millisecondes et la page
+sort en moins de 300 ms. Avec la fonction aux États-Unis et la base à Francfort,
+le même aller-retour coûte 80 à 150 ms — et cinquante allers-retours séquentiels
+font plusieurs secondes, sans qu'aucune requête ne soit lente. La région par
+défaut d'un projet Vercel est américaine ; c'est de loin la cause la plus
+probable d'une navigation qui traîne.
+
+Si vous déplacez le projet Supabase, changez `regions` en même temps. Les deux
+valeurs doivent désigner le même continent, sinon tout le reste de cette page
+est du réglage de détail sur un problème qui se compte en centaines de
+millisecondes par requête.
+
+---
+
 ## Ce qui tourne
 
 Deux choses.

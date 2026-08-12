@@ -1,4 +1,5 @@
 import 'server-only'
+import { cache } from 'react'
 import { eq, and, max } from 'drizzle-orm'
 import { getCurrentUser, requireUser } from './server.ts'
 import { withIngest } from '@/db/boundary.ts'
@@ -29,7 +30,18 @@ export interface ReaderSession {
  * is not a spoiler about its contents. Every query here filters on the
  * verified userId explicitly.
  */
-export async function getReaderSession(
+/*
+ * Memoised per render, keyed by the requested boundary.
+ *
+ * Every page resolves the session, and so does the shell wrapped around it, so
+ * a single navigation was running this three or four times: three or four
+ * verified-user round trips to the auth server and as many transactions to read
+ * the same profile and the same chapter ceiling. `cache()` scopes the result to
+ * one render pass — never shared between requests, never stale within one — and
+ * the key is the argument, so a page asking for a specific boundary still gets
+ * its own answer rather than the shell's.
+ */
+export const getReaderSession = cache(async function getReaderSession(
   requestedBoundary?: unknown,
 ): Promise<ReaderSession> {
   const user = await requireUser()
@@ -101,7 +113,7 @@ export async function getReaderSession(
       followingLatest: boundaryChapter >= maxChapter,
     }
   })
-}
+})
 
 /** Remember where the reader left the slider. */
 export async function persistBoundary(
@@ -147,7 +159,7 @@ export interface ViewerSession extends ReaderSession {
   isOwner: boolean
 }
 
-export async function getViewerSession(
+export const getViewerSession = cache(async function getViewerSession(
   requestedBoundary?: unknown,
 ): Promise<ViewerSession> {
   const user = await getCurrentUser()
@@ -226,7 +238,7 @@ export async function getViewerSession(
       isOwner: false,
     }
   })
-}
+})
 
 /**
  * The session for anything that writes, or that a visitor has no business
