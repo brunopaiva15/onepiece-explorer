@@ -5,6 +5,7 @@ import { getReaderSession } from '@/domains/auth/session.ts'
 import { getChapter, getChapterPages } from '@/domains/chapters/queries.ts'
 import { latestRunForChapter } from '@/domains/pipeline/runs.ts'
 import { PageGrid } from './page-grid.tsx'
+import { providerOptions } from '@/domains/ai/index.ts'
 import { StartRun } from './start-run.tsx'
 
 export const metadata: Metadata = { title: 'Pages du chapitre' }
@@ -57,7 +58,9 @@ export default async function ChapterPage({
       </header>
 
       <div className="mt-6 flex flex-wrap items-start gap-3">
-        {pages.length > 0 && <StartRun chapterId={chapter.id} />}
+        {pages.length > 0 && (
+          <StartRun chapterId={chapter.id} options={providerOptions()} />
+        )}
         {lastRunId && (
           <Link
             href={`/runs/${lastRunId}`}

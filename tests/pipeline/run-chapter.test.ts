@@ -8,6 +8,7 @@ import { executeRun } from '@/domains/pipeline/execute.ts'
 import { createRun, getRun } from '@/domains/pipeline/runs.ts'
 import { STEPS } from '@/domains/pipeline/registry.ts'
 import { LocalFsStorage } from '@/domains/storage/local-storage.ts'
+import { modelProvider } from '@/domains/ai/index.ts'
 import { closeDb, raw, resetDatabase, seedWorld } from '../helpers/db.ts'
 
 /**
@@ -381,7 +382,13 @@ describe('resuming a step that failed halfway', () => {
                   ORDER BY index DESC LIMIT 1)
     `
 
-    const result = await runDescribe({ userId, chapterId, chapterNumber: 1, runId })
+    const result = await runDescribe({
+      userId,
+      chapterId,
+      chapterNumber: 1,
+      runId,
+      provider: modelProvider(),
+    })
 
     expect(result.note).toContain(`${Number(before?.count) - 1} conservée(s)`)
 

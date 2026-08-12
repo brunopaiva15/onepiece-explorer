@@ -3,7 +3,6 @@ import { and, asc, eq, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters, pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { filterTranscription } from '@/domains/ai/anchoring.ts'
-import { modelProvider } from '@/domains/ai/index.ts'
 import { assignToPanel } from '@/domains/documents/panels.ts'
 import { normalizeText } from '@/domains/knowledge/normalize.ts'
 import { storage } from '@/domains/storage/index.ts'
@@ -80,7 +79,7 @@ export async function runOcr(context: StepContext): Promise<StepResult> {
     }
   }
 
-  const provider = modelProvider()
+  const provider = context.provider
   const store = storage()
 
   const work = await withIngest(async (db) => {

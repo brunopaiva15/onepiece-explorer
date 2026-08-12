@@ -209,6 +209,18 @@ chapitre occupe, et la suppression d'un chapitre efface réellement les octets.
 
 ## 6. Traiter, relire, publier
 
+**Le modèle se choisit au lancement**, sur la fiche du chapitre, quand plus d'un
+est configuré : « Par défaut », « Anthropic », « Mon modèle ». Le choix est
+enregistré sur le traitement et rappelé sur `/runs/[id]`, ce qui rend la
+comparaison lisible après coup — sans ça, deux traitements du même chapitre sont
+deux séries de chiffres dont on ne sait plus ce qui les a produits.
+
+C'est la seule façon honnête de savoir si un modèle plus petit suffit à une
+étape donnée : même chapitre, deux traitements, et on compare trois nombres —
+propositions à revoir, propositions en quarantaine, raison de quarantaine
+dominante.
+
+
 **Lancez le traitement** depuis la fiche du chapitre. Suivez-le sur `/runs/[id]`,
 étape par étape, avec la durée et le coût réel de chacune.
 

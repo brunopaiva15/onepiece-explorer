@@ -1,3 +1,5 @@
+import type { ModelProvider } from '@/domains/ai/provider.ts'
+
 /**
  * What every step is handed, and what it reports back.
  *
@@ -11,6 +13,16 @@ export interface StepContext {
   chapterId: string
   chapterNumber: number
   runId: string
+  /**
+   * The model for this run, chosen when it was launched.
+   *
+   * Passed rather than looked up, because the choice belongs to the run and not
+   * to the process. Two runs started minutes apart may legitimately use
+   * different models — that is the whole point of being able to compare them —
+   * and a step reading a module-level singleton would silently give both
+   * whatever the last one configured.
+   */
+  provider: ModelProvider
 }
 
 export interface StepResult {

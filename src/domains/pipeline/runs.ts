@@ -4,7 +4,7 @@ import { and, asc, desc, eq } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { ingestionRuns, ingestionSteps } from '@/db/schema/ingestion.ts'
-import { effectiveModelProvider } from '@/lib/env.ts'
+import type { ProviderChoice } from '@/domains/ai/index.ts'
 import { PIPELINE_VERSION } from '../ingestion/import.ts'
 import { STEPS, stepDefinition, type StepKey } from './registry.ts'
 
@@ -67,6 +67,15 @@ export interface RunView {
 export async function createRun(
   userId: string,
   chapterId: string,
+  /**
+   * Which model to use, chosen at launch.
+   *
+   * Stored on the run rather than read from the environment when each step
+   * runs: a run has to keep the choice it was started under, and two runs of
+   * the same chapter are allowed to differ. That is what makes "is the cheaper
+   * model good enough here" an answerable question rather than an opinion.
+   */
+  provider: ProviderChoice = 'auto',
 ): Promise<string> {
   return withIngest(async (db) => {
     const [chapter] = await db
@@ -84,7 +93,7 @@ export async function createRun(
         userId,
         status: 'pending',
         pipelineVersion: PIPELINE_VERSION,
-        provider: effectiveModelProvider(),
+        provider,
         usedBatchApi: process.env.USE_BATCH_API !== 'false',
       })
       .returning({ id: ingestionRuns.id })

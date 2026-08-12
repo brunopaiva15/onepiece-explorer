@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { localModelConfig } from '@/domains/ai/openai-compatible.ts'
+import {
+  isProviderChoice,
+  modelProvider,
+  providerOptions,
+  resetModelProvider,
+} from '@/domains/ai/index.ts'
 import { localTiers, ROUTED_TIERS, TIER_OF } from '@/domains/ai/routing.ts'
 
 /**
@@ -86,5 +92,71 @@ describe('the routing table', () => {
     // must not follow the bulk onto whatever cheap model is serving describe.
     expect(TIER_OF.resolve).toBe('escalate')
     expect(TIER_OF.describePanels).toBe('describe')
+  })
+})
+
+describe('choosing a provider per run', () => {
+  it('only offers what is configured, and says why when it is not', () => {
+    setEnv({
+      ANTHROPIC_API_KEY: undefined,
+      LOCAL_AI_BASE_URL: undefined,
+      LOCAL_AI_MODEL: undefined,
+    })
+    const none = providerOptions()
+    expect(none.find((o) => o.id === 'anthropic')?.available).toBe(false)
+    expect(none.find((o) => o.id === 'local')?.available).toBe(false)
+    // Unconfigured options are listed rather than hidden: a missing variable
+    // named on screen is actionable, an option that vanished is not.
+    expect(none.find((o) => o.id === 'local')?.note).toContain('LOCAL_AI_BASE_URL')
+
+    setEnv({
+      ANTHROPIC_API_KEY: 'sk-test',
+      LOCAL_AI_BASE_URL: 'http://127.0.0.1:1234/v1',
+      LOCAL_AI_MODEL: 'qwen-hermes',
+    })
+    const both = providerOptions()
+    expect(both.filter((o) => o.available).map((o) => o.id).sort()).toEqual([
+      'anthropic',
+      'auto',
+      'local',
+    ])
+    expect(both.find((o) => o.id === 'local')?.note).toContain('qwen-hermes')
+  })
+
+  it('rejects anything that is not a choice', () => {
+    // These arrive from a browser through a server action and are written to
+    // the run, where they are read back as a model choice.
+    expect(isProviderChoice('auto')).toBe(true)
+    expect(isProviderChoice('local')).toBe(true)
+    expect(isProviderChoice('anthropic')).toBe(true)
+    for (const value of ['openai', '', null, undefined, 42, { id: 'local' }]) {
+      expect(isProviderChoice(value)).toBe(false)
+    }
+  })
+
+  it('builds a different provider per choice, and caches each separately', () => {
+    setEnv({
+      ANTHROPIC_API_KEY: 'sk-test',
+      LOCAL_AI_BASE_URL: 'http://127.0.0.1:1234/v1',
+      LOCAL_AI_MODEL: 'qwen-hermes',
+      MODEL_PROVIDER: 'anthropic',
+    })
+    resetModelProvider()
+
+    // The failure this guards: one cached singleton, so a chapter processed
+    // with Anthropic would decide for the next one launched on the local model.
+    expect(modelProvider('local').name).toBe('local')
+    expect(modelProvider('anthropic').name).toBe('anthropic')
+    expect(modelProvider('local')).toBe(modelProvider('local'))
+    expect(modelProvider('anthropic')).not.toBe(modelProvider('local'))
+  })
+
+  it('refuses a local run on a machine that cannot reach the model', () => {
+    // The worker runs where the weights are. Asking for the local model from a
+    // machine without the endpoint has to say that, not fall back silently to
+    // the paid provider.
+    setEnv({ LOCAL_AI_BASE_URL: undefined, LOCAL_AI_MODEL: undefined })
+    resetModelProvider()
+    expect(() => modelProvider('local')).toThrow(/LOCAL_AI_BASE_URL/)
   })
 })

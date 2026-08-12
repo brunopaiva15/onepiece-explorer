@@ -5,7 +5,6 @@ import { chapters } from '@/db/schema/documents.ts'
 import { reviewItems } from '@/db/schema/ingestion.ts'
 import { assertions, entities, entityLabels } from '@/db/schema/knowledge.ts'
 import { proposalFingerprint } from '@/domains/ai/anchoring.ts'
-import { modelProvider } from '@/domains/ai/index.ts'
 import type { CandidateEntity } from '@/domains/ai/schemas.ts'
 import {
   LIKELY_SAME,
@@ -70,7 +69,7 @@ export async function runResolve(context: StepContext): Promise<StepResult> {
     return { note: 'Aucune nouvelle entité à rapprocher.', status: 'skipped' }
   }
 
-  const provider = modelProvider()
+  const provider = context.provider
   let scored = 0
   let queued = 0
   let escalated = 0

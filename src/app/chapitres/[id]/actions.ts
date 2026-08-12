@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireOwner } from '@/domains/auth/session.ts'
+import { isProviderChoice, type ProviderChoice } from '@/domains/ai/index.ts'
 import { enqueueChapter } from '@/domains/pipeline/queue.ts'
 import { createRun, discardRun } from '@/domains/pipeline/runs.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
@@ -19,9 +20,18 @@ export interface StartRunResult {
  * job up instantly still finds its run. The reverse order would race: the job
  * would arrive before the row it is supposed to update.
  */
-export async function startRunAction(chapterId: string): Promise<StartRunResult> {
+export async function startRunAction(
+  chapterId: string,
+  provider: ProviderChoice = 'auto',
+): Promise<StartRunResult> {
   try {
     const session = await requireOwner()
+
+    // A server action's arguments come from the browser. An unknown value here
+    // would be written to the run and read back as a model choice.
+    if (!isProviderChoice(provider)) {
+      return { ok: false, error: `Fournisseur inconnu : ${String(provider)}.` }
+    }
 
     // A chapter run is the heaviest spend in the system; a script re-launching
     // the same one in a loop is the failure mode worth bounding.
@@ -35,7 +45,7 @@ export async function startRunAction(chapterId: string): Promise<StartRunResult>
       }
     }
 
-    const runId = await createRun(session.userId, chapterId)
+    const runId = await createRun(session.userId, chapterId, provider)
 
     try {
       const jobId = await enqueueChapter({ runId, userId: session.userId, chapterId })

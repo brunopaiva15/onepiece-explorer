@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters, documents, pages } from '@/db/schema/documents.ts'
 import { ingestionRuns } from '@/db/schema/ingestion.ts'
+import { isProviderChoice, modelProvider, type ProviderChoice } from '@/domains/ai/index.ts'
 import { RUNNABLE_STEPS, STEPS, type StepKey } from './registry.ts'
 import {
   inputHash,
@@ -41,6 +42,27 @@ export interface ExecuteResult {
   costCents: number
 }
 
+/**
+ * The provider choice recorded on a run.
+ *
+ * A row written before this feature existed holds a resolved provider name
+ * ('anthropic', 'local', 'synthetic') rather than a choice, so anything that is
+ * not one of the three choices means "whatever is configured" — which is what
+ * those runs were launched with.
+ */
+async function runProviderChoice(runId: string): Promise<ProviderChoice> {
+  const stored = await withIngest(async (db) => {
+    const [row] = await db
+      .select({ provider: ingestionRuns.provider })
+      .from(ingestionRuns)
+      .where(eq(ingestionRuns.id, runId))
+      .limit(1)
+    return row?.provider ?? null
+  })
+
+  return isProviderChoice(stored) ? stored : 'auto'
+}
+
 export async function executeRun(
   userId: string,
   chapterId: string,
@@ -61,7 +83,21 @@ export async function executeRun(
       return row.number
     })
 
-    const context: StepContext = { userId, chapterId, chapterNumber, runId }
+    /*
+     * The model this run was launched with, not the one configured right now.
+     *
+     * Read from the run row rather than the environment so that a run keeps the
+     * choice it was started under even if the worker restarts, and so two runs
+     * of the same chapter can legitimately use different models — which is the
+     * only way to find out whether a cheaper one is good enough at a given step.
+     */
+    const context: StepContext = {
+      userId,
+      chapterId,
+      chapterNumber,
+      runId,
+      provider: modelProvider(await runProviderChoice(runId)),
+    }
 
     for (const step of RUNNABLE_STEPS) {
       const hash = await hashInputsFor(step.key, userId, chapterId)

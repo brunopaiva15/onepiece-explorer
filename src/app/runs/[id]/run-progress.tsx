@@ -82,6 +82,11 @@ export function RunProgress({ initial }: { initial: RunView }) {
             coût réel {(view.run.totalCostCents / 100).toFixed(2)} $
           </p>
         )}
+        {/* Which model answered. Without it two runs of the same chapter are
+            two sets of numbers with no way to tell what produced them, which
+            makes the comparison the choice exists for impossible after the
+            fact. */}
+        <p className="text-sm text-muted">{providerSentence(view.run.provider)}</p>
       </div>
 
       <div
@@ -184,6 +189,24 @@ export function RunProgress({ initial }: { initial: RunView }) {
       )}
     </section>
   )
+}
+
+/** The recorded choice, in words. Older rows hold a resolved provider name. */
+function providerSentence(provider: string): string {
+  switch (provider) {
+    case 'auto':
+      return 'modèle par défaut'
+    case 'anthropic':
+      return 'Anthropic'
+    case 'local':
+      return 'modèle auto-hébergé'
+    case 'synthetic':
+      return 'fournisseur synthétique — extraction générée, pas issue des pages'
+    case 'replay':
+      return 'réponses rejouées'
+    default:
+      return provider
+  }
 }
 
 function statusSentence(status: string): string {

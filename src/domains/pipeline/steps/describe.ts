@@ -3,7 +3,6 @@ import { and, asc, eq } from 'drizzle-orm'
 import sharp from 'sharp'
 import { withIngest } from '@/db/boundary.ts'
 import { pages, panels, textBlocks } from '@/db/schema/documents.ts'
-import { modelProvider } from '@/domains/ai/index.ts'
 import { clampPanelDescriptions } from '@/domains/ai/schemas.ts'
 import { ingestionLimits } from '@/domains/ingestion/limits.ts'
 import { storage } from '@/domains/storage/index.ts'
@@ -30,7 +29,7 @@ const BATCH_SIZE = 6
 
 export async function runDescribe(context: StepContext): Promise<StepResult> {
   const { userId, chapterId, chapterNumber } = context
-  const provider = modelProvider()
+  const provider = context.provider
   const limits = ingestionLimits()
   const store = storage()
 

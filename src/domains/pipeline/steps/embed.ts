@@ -3,7 +3,6 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { assertions, entityLabels } from '@/db/schema/knowledge.ts'
-import { modelProvider } from '@/domains/ai/index.ts'
 import { vectorStore, type EmbeddingRow } from '@/domains/search/index.ts'
 import type { StepContext, StepResult } from './context.ts'
 
@@ -108,7 +107,7 @@ export async function runEmbed(context: StepContext): Promise<StepResult> {
       .join(' '),
   }))
 
-  const provider = modelProvider()
+  const provider = context.provider
   let indexed = 0
   let costCents = 0
   let modelId = 'synthetic'

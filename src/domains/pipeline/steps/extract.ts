@@ -12,7 +12,6 @@ import {
   type OntologyView,
   type Quarantined,
 } from '@/domains/ai/anchoring.ts'
-import { modelProvider } from '@/domains/ai/index.ts'
 import type { Extraction, PanelDescription } from '@/domains/ai/schemas.ts'
 import { PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { quarantineItems } from '../quarantine.ts'
@@ -116,7 +115,7 @@ export function sliceChapter(descriptions: PanelDescription[], blocks: PromptBlo
 
 export async function runExtract(context: StepContext): Promise<StepResult> {
   const { userId, chapterId, chapterNumber, runId } = context
-  const provider = modelProvider()
+  const provider = context.provider
 
   const world = await withIngest(async (db) => {
     const [chapter] = await db
