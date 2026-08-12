@@ -18,6 +18,24 @@ export const metadata: Metadata = { title: 'Source du chapitre' }
  */
 export const dynamic = 'force-dynamic'
 
+/**
+ * How long this route's invocation may live.
+ *
+ * Load-bearing, not a tuning knob. Starting a run schedules the pipeline with
+ * `after()`, which continues the work once the response has left — but on the
+ * same invocation, and therefore inside this ceiling. Without it the route
+ * inherits the platform default of a few seconds: the response returns, the
+ * function is torn down mid-call, and the run sits at `running` on its first
+ * step forever with nothing recorded to explain it. That is the exact shape of
+ * "stuck at step 1".
+ *
+ * 300s matches the SSE progress route, which has needed it since it was
+ * written. Raise it if your plan allows more and a chapter ever runs long;
+ * lowering it silently reintroduces the failure above.
+ */
+export const maxDuration = 300
+
+
 export default async function ChapterPage({
   params,
 }: {

@@ -26,6 +26,14 @@ const LABELS: Record<string, string> = {
   cached: 'réutilisé',
 }
 
+/**
+ * How long a silent run may stay silent before the page says so.
+ *
+ * A little above the route's `maxDuration`: below it, a slow but living run
+ * would be accused of being dead.
+ */
+const STALL_AFTER_MS = 6 * 60 * 1_000
+
 export function RunProgress({ initial }: { initial: RunView }) {
   const [view, setView] = useState<RunView>(initial)
   /**
@@ -35,6 +43,39 @@ export function RunProgress({ initial }: { initial: RunView }) {
    */
   const [streamBroken, setStreamBroken] = useState(false)
   const terminal = ['succeeded', 'failed', 'cancelled'].includes(view.run.status)
+
+  /*
+   * A run that stopped without saying so.
+   *
+   * The pipeline runs inside the invocation that started it, so an invocation
+   * killed at the platform's duration ceiling takes the run with it — mid-call,
+   * with no chance to record a failure. The row stays `running` on whichever
+   * step it had reached, and the page shows a spinner that will never resolve.
+   *
+   * Nothing can detect this from inside; the process that would have written
+   * the failure is the process that died. What *can* be said is that no step
+   * has changed in longer than any step should take, which is not proof but is
+   * the right thing to put on screen — an honest "this looks dead, relaunch it"
+   * beats a spinner that means nothing.
+   */
+  const startedAt = view.run.startedAt ? new Date(view.run.startedAt).getTime() : 0
+  // When work was last known to finish: the start, plus every step that has
+  // recorded a duration. Server truth, so it needs no client bookkeeping and
+  // cannot drift with a reconnection.
+  const workedFor = view.steps.reduce((total, step) => total + (step.durationMs ?? 0), 0)
+
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (terminal) return
+    const timer = setInterval(() => setNow(Date.now()), 15_000)
+    return () => clearInterval(timer)
+  }, [terminal])
+
+  const stalled =
+    !terminal &&
+    view.run.status === 'running' &&
+    startedAt > 0 &&
+    now - (startedAt + workedFor) > STALL_AFTER_MS
   const sourceRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
@@ -77,6 +118,17 @@ export function RunProgress({ initial }: { initial: RunView }) {
           {statusSentence(view.run.status)}
           {streamBroken && !terminal && ' · connexion au flux perdue, reconnexion'}
         </p>
+        {stalled && (
+          <p
+            role="status"
+            className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink"
+          >
+            Plus rien ne bouge depuis plusieurs minutes. Le traitement a
+            probablement été interrompu avant d&apos;avoir pu enregistrer son
+            échec. Relancez-le depuis le chapitre&nbsp;: les tranches déjà
+            payées sont rejouées, pas rachetées.
+          </p>
+        )}
         {view.run.totalCostCents > 0 && (
           <p className="text-sm text-muted">
             coût réel {(view.run.totalCostCents / 100).toFixed(2)} $
@@ -189,6 +241,107 @@ export function RunProgress({ initial }: { initial: RunView }) {
           )
         })}
       </ol>
+
+      {/*
+       * Everything the database knows, laid out as a table.
+       *
+       * The step rows have recorded tokens, model id and per-attempt timings
+       * since the first version of the pipeline, and none of it was on screen.
+       * That is how "why is extraction slow" became unanswerable from the page:
+       * output tokens *are* the wait — a call that writes twelve thousand of
+       * them takes three minutes and no amount of watching a spinner says so.
+       *
+       * Open by default. This is an admin screen for one person, and the whole
+       * reason to look at it is to find out what happened.
+       */}
+      <details open className="panneau mt-8">
+        <summary className="panneau-titre cursor-pointer select-none">
+          Détails techniques
+        </summary>
+        <div className="panneau-corps overflow-x-auto">
+          <table className="w-full min-w-[52rem] border-collapse font-mono text-xs">
+            <thead>
+              <tr className="border-b-[3px] border-ink text-left">
+                <th className="py-1.5 pr-3">étape</th>
+                <th className="py-1.5 pr-3">état</th>
+                <th className="py-1.5 pr-3 text-right">essai</th>
+                <th className="py-1.5 pr-3 text-right">durée</th>
+                <th className="py-1.5 pr-3 text-right">tok. in</th>
+                <th className="py-1.5 pr-3 text-right">tok. out</th>
+                <th className="py-1.5 pr-3 text-right">cache r/w</th>
+                <th className="py-1.5 pr-3 text-right">coût ¢</th>
+                <th className="py-1.5">modèle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.steps.map((step) => (
+                <tr key={step.key} className="border-b border-line align-top">
+                  <td className="py-1.5 pr-3">{step.key}</td>
+                  <td className="py-1.5 pr-3">{step.status}</td>
+                  <td className="py-1.5 pr-3 text-right tabular">{step.attempt}</td>
+                  <td className="py-1.5 pr-3 text-right tabular">
+                    {step.durationMs === null ? '—' : `${(step.durationMs / 1000).toFixed(1)}s`}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular">{step.tokensIn ?? '—'}</td>
+                  {/* The number that explains the wait. */}
+                  <td className="py-1.5 pr-3 text-right tabular font-bold">
+                    {step.tokensOut ?? '—'}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular">
+                    {step.cacheReadTokens === null && step.cacheWriteTokens === null
+                      ? '—'
+                      : `${step.cacheReadTokens ?? 0}/${step.cacheWriteTokens ?? 0}`}
+                  </td>
+                  <td className="py-1.5 pr-3 text-right tabular">
+                    {step.costCents === 0 ? '—' : step.costCents.toFixed(3)}
+                  </td>
+                  <td className="py-1.5 break-all">{step.modelId ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <dl className="mt-4 grid grid-cols-[10rem_1fr] gap-x-3 gap-y-1 font-mono text-xs">
+            <dt className="text-muted">run</dt>
+            <dd className="break-all text-primary">{view.run.id}</dd>
+            <dt className="text-muted">chapitre</dt>
+            <dd className="text-primary">
+              {view.run.chapterNumber} · <span className="break-all">{view.run.chapterId}</span>
+            </dd>
+            <dt className="text-muted">fournisseur</dt>
+            <dd className="text-primary">{view.run.provider}</dd>
+            <dt className="text-muted">version pipeline</dt>
+            <dd className="text-primary">{view.run.pipelineVersion}</dd>
+            <dt className="text-muted">créé</dt>
+            <dd className="text-primary">{new Date(view.run.createdAt).toISOString()}</dd>
+            <dt className="text-muted">démarré</dt>
+            <dd className="text-primary">
+              {view.run.startedAt ? new Date(view.run.startedAt).toISOString() : '—'}
+            </dd>
+            <dt className="text-muted">terminé</dt>
+            <dd className="text-primary">
+              {view.run.finishedAt ? new Date(view.run.finishedAt).toISOString() : '—'}
+            </dd>
+            <dt className="text-muted">temps de travail</dt>
+            <dd className="text-primary">{(workedFor / 1000).toFixed(1)}s cumulés sur les étapes</dd>
+          </dl>
+
+          {view.steps.some((step) => step.note || step.error) && (
+            <div className="mt-4 space-y-2 font-mono text-xs">
+              {view.steps
+                .filter((step) => step.note || step.error)
+                .map((step) => (
+                  <p key={step.key} className="break-words">
+                    <span className="text-muted">{step.key} — </span>
+                    <span className={step.error ? 'text-[var(--epi-contradicted)]' : 'text-primary'}>
+                      {step.error ?? step.note}
+                    </span>
+                  </p>
+                ))}
+            </div>
+          )}
+        </div>
+      </details>
 
       {terminal && (
         <div className="mt-8 flex flex-wrap gap-3">

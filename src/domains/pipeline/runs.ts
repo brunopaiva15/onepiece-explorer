@@ -50,6 +50,22 @@ export interface StepSummary {
   error: string | null
   /** Why a step was skipped, when it was. */
   note: string | null
+  /*
+   * What it actually cost, in the units that explain the bill and the wait.
+   *
+   * Recorded since the first version of this table and shown nowhere, which is
+   * how "why is extraction slow" became a question nobody could answer from the
+   * screen: output tokens are the wait, and they were sitting in a column.
+   */
+  tokensIn: number | null
+  tokensOut: number | null
+  cacheReadTokens: number | null
+  cacheWriteTokens: number | null
+  modelId: string | null
+  /** Null means "always re-run"; a value means this step can be reused. */
+  inputHash: string | null
+  startedAt: Date | null
+  finishedAt: Date | null
 }
 
 export interface RunView {
@@ -364,6 +380,14 @@ export async function getRun(userId: string, runId: string): Promise<RunView | n
         costCents: ingestionSteps.costCents,
         error: ingestionSteps.error,
         outputRef: ingestionSteps.outputRef,
+        tokensIn: ingestionSteps.tokensIn,
+        tokensOut: ingestionSteps.tokensOut,
+        cacheReadTokens: ingestionSteps.cacheReadTokens,
+        cacheWriteTokens: ingestionSteps.cacheWriteTokens,
+        modelId: ingestionSteps.modelId,
+        inputHash: ingestionSteps.inputHash,
+        stepStartedAt: ingestionSteps.startedAt,
+        stepFinishedAt: ingestionSteps.finishedAt,
       })
       .from(ingestionSteps)
       .where(eq(ingestionSteps.runId, runId))
@@ -388,6 +412,14 @@ export async function getRun(userId: string, runId: string): Promise<RunView | n
         costCents: row?.costCents ?? 0,
         error: row?.error ?? null,
         note: row?.outputRef ?? null,
+        tokensIn: row?.tokensIn ?? null,
+        tokensOut: row?.tokensOut ?? null,
+        cacheReadTokens: row?.cacheReadTokens ?? null,
+        cacheWriteTokens: row?.cacheWriteTokens ?? null,
+        modelId: row?.modelId ?? null,
+        inputHash: row?.inputHash ?? null,
+        startedAt: row?.stepStartedAt ?? null,
+        finishedAt: row?.stepFinishedAt ?? null,
       }
     })
 

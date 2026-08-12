@@ -562,6 +562,21 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       modelId: result.usage.modelId,
     }
 
+    /*
+     * The number that explains the wait, per call, while it is still running.
+     *
+     * A step writes its totals only once it finishes, so a slow extraction
+     * offers nothing to look at until it is over. Output tokens are the wait —
+     * a call emitting twelve thousand of them takes minutes — and printing them
+     * per slice turns "it seems stuck" into a figure, in the host's logs, as it
+     * happens.
+     */
+    console.log(
+      `[extract] tranche rendue : ${result.usage.outputTokens} tokens écrits, ` +
+        `${result.usage.inputTokens} lus, ${result.value.entities.length} entités, ` +
+        `${result.value.assertions.length} assertions`,
+    )
+
     if (result.refusal) {
       refusal = result.refusal
       continue
