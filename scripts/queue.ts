@@ -17,7 +17,7 @@
  */
 import '../src/lib/load-env.ts'
 import postgres from 'postgres'
-import { connectionStringIssue } from '../src/lib/connection-string.ts'
+import { connectionStringIssue, endpointOf } from '../src/lib/connection-string.ts'
 
 const testDb = process.env.TEST_DB === '1'
 const url = testDb
@@ -36,11 +36,16 @@ const schema = process.env.PGBOSS_SCHEMA ?? 'pgboss'
 const QUEUE = 'chapter.process'
 
 /**
- * How long a job may sit `active` before it is presumed dead.
+ * How long a job may sit untouched before it is presumed abandoned.
  *
- * A chapter legitimately takes minutes. Ten of them without the worker having
- * touched the row means the worker is gone — it would otherwise have finished
- * it, failed it, or still be holding it open with a live connection.
+ * A chapter legitimately takes minutes. Ten of them without a worker having
+ * moved the row means no worker is on it — it would otherwise have finished it,
+ * failed it, or still be holding it open with a live connection.
+ *
+ * This used to apply to `active` jobs only, which left the state that actually
+ * happened uncovered: two jobs, one `retry` and one `created`, both due, both
+ * sixteen hours old, and the script reporting "rien de bloqué". A job nothing
+ * has picked up in sixteen hours is stuck whatever its state says.
  */
 const PRESUMED_DEAD_MINUTES = 10
 
@@ -53,8 +58,22 @@ interface JobRow {
   retry_count: number
   run_id: string | null
   minutes: number | null
+  waiting_minutes: number
   start_after: Date
   deferred: boolean
+}
+
+/**
+ * Is this job going nowhere?
+ *
+ * Due, old, and either held by a worker that is not there or waiting for one
+ * that never came. The caller is told to stop its worker first, so a live
+ * worker legitimately holding a job is not the case being judged here.
+ */
+function abandoned(job: JobRow): boolean {
+  if (job.deferred) return false
+  if (job.state === 'active') return (job.minutes ?? 0) > PRESUMED_DEAD_MINUTES
+  return job.waiting_minutes > PRESUMED_DEAD_MINUTES
 }
 
 /**
@@ -99,6 +118,17 @@ async function reportRuns(
 }
 
 async function main(): Promise<void> {
+  /*
+   * Which database, and which schema.
+   *
+   * The one fact that separates "the queue is wedged" from "the worker is
+   * looking somewhere else", and neither the run page nor the worker's own
+   * output says it. Compare this line with `pnpm doctor` on the machine running
+   * the worker: if they differ, nothing here is broken and the two processes
+   * simply do not share a queue. Host and port carry no secret.
+   */
+  console.log(`File : ${endpointOf(url)}, schéma « ${schema} »\n`)
+
   const sql = postgres(url, { max: 2, onnotice: () => {} })
 
   const installed = await sql<Array<{ exists: boolean }>>`
@@ -125,6 +155,7 @@ async function main(): Promise<void> {
       retry_count,
       data->>'runId' AS run_id,
       EXTRACT(EPOCH FROM (now() - started_on)) / 60 AS minutes,
+      EXTRACT(EPOCH FROM (now() - created_on)) / 60 AS waiting_minutes,
       start_after,
       start_after > now() AS deferred
     FROM ${sql(schema)}.job
@@ -139,15 +170,16 @@ async function main(): Promise<void> {
   } else {
     console.log(`${jobs.length} job(s) dans « ${QUEUE} » :\n`)
     for (const job of jobs) {
-      const age = job.minutes === null ? '' : ` depuis ${Math.round(job.minutes)} min`
+      const age = ` depuis ${Math.round(job.minutes ?? job.waiting_minutes)} min`
       const chapter = job.singleton_key ? ` chapitre ${job.singleton_key.slice(0, 8)}` : ''
       const run = job.run_id ? ` run ${job.run_id.slice(0, 8)}` : ''
-      const suspect =
-        job.state === 'active' && (job.minutes ?? 0) > PRESUMED_DEAD_MINUTES
-          ? '  ← bloqué, aucun worker ne le tient'
-          : job.deferred
-            ? `  ← différé jusqu'à ${job.start_after.toISOString()}, aucun worker ne le prendra avant`
-            : ''
+      const suspect = job.deferred
+        ? `  ← différé jusqu'à ${job.start_after.toISOString()}, aucun worker ne le prendra avant`
+        : abandoned(job)
+          ? job.state === 'active'
+            ? '  ← bloqué, aucun worker ne le tient'
+            : '  ← en attente depuis trop longtemps, aucun worker ne le prend'
+          : ''
       console.log(
         `  ${job.state.padEnd(8)}${chapter}${run}${age}` +
           (job.retry_count > 0 ? ` (${job.retry_count} tentative(s))` : '') +
@@ -156,9 +188,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const stuck = jobs.filter(
-    (job) => job.state === 'active' && (job.minutes ?? 0) > PRESUMED_DEAD_MINUTES,
-  )
+  const stuck = jobs.filter(abandoned)
 
   if (stuck.length === 0) {
     console.log('\nRien de bloqué.')
