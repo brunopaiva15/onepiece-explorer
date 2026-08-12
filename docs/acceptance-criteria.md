@@ -126,3 +126,14 @@ Ouverte seulement si `PUBLIC_LIBRARY_OWNER_ID` est posée sur une bibliothèque 
 - [x] Une documentation d'exploitation existe : déploiement, surveillance, sauvegarde, rétention, pannes courantes — [docs/operations.md](operations.md).
 - [x] Le parcours complet est exécutable sans clé API et sans navigateur — `pnpm demo`.
 - [ ] Tests de navigateur (Playwright). Non écrits, et non prévus tant qu'ils exigeraient un projet Supabase joignable : la suite perdrait l'hermétisme qui permet aux tests anti-spoiler d'être bloquants.
+
+## Site bilingue
+
+Le graphe reste rédigé en français ; l'anglais est une couche d'affichage. Voir migrations 0018 et 0019.
+
+- [x] **Bloquant** — la publication n'écrit un libellé anglais que lorsque le système en a réellement vu la forme (source anglaise ou texte parallèle), jamais une invention — `tests/review/bilingual-labels.test.ts`.
+- [x] Le nom affiché préfère la langue du lecteur et retombe sur le français, jamais sur rien — même test.
+- [x] La recherche lemmatise la requête dans la langue du lecteur et chaque texte stocké dans la sienne (`fr_unaccent` / `en_unaccent`) — même test.
+- [x] L'assistant répond dans la langue du lecteur ; les extraits cités restent dans la langue de leur source.
+- [x] Le vocabulaire interne du pipeline (rapprochement, embeddings, conflits, prompt d'extraction) ne lit que les libellés français : un nom n'est jamais proposé à la fusion avec sa propre traduction.
+- [x] La préférence vit dans le profil pour un lecteur connecté, dans un cookie pour un visiteur ; la position de lecture et la langue du propriétaire ne sont jamais exposées au visiteur.

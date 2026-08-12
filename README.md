@@ -72,6 +72,17 @@ le modèle la lit au lieu de la deviner. Elle n'est jamais citable — un fait
 qu'elle seule énoncerait n'entre pas dans le graphe, et une preuve qui la
 citerait est mise en quarantaine comme n'importe quelle référence inventée.
 
+**Le site se lit en français ou en anglais.** Le graphe reste rédigé en
+français — une seule forme canonique par nom, par résumé, par décision de
+nommage — et l'anglais est une couche d'affichage : libellés de l'ontologie
+(`label_en`), formes anglaises des noms d'entités quand le système en a vu une
+(formulation d'une source anglaise, ou lecture du texte parallèle), réponses de
+l'assistant, interface, recherche avec lemmatisation anglaise. La préférence se
+règle par la bascule FR / EN du bandeau : profil pour un lecteur connecté,
+cookie pour un visiteur. Ce que le système n'a jamais vu en anglais s'affiche
+en français — un repli, jamais une invention. Les citations, elles, restent
+dans la langue de leur source, dans les deux modes de lecture.
+
 ---
 
 ## Installation

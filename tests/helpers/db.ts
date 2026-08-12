@@ -99,13 +99,14 @@ export async function addLabel(
   kind: string,
   revealedInChapter: number,
   precedence: number,
+  lang: 'fr' | 'en' = 'fr',
 ): Promise<void> {
   await raw`
     INSERT INTO entity_labels
-      (entity_id, user_id, label, normalized_label, kind, revealed_in_chapter, precedence)
+      (entity_id, user_id, label, normalized_label, kind, lang, revealed_in_chapter, precedence)
     VALUES
       (${entityId}, ${world.userId}, ${label}, ${label.toLowerCase()},
-       ${kind}::label_kind, ${revealedInChapter}, ${precedence})
+       ${kind}::label_kind, ${lang}, ${revealedInChapter}, ${precedence})
   `
 }
 
