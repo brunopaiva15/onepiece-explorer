@@ -1,6 +1,8 @@
 import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { normalizeText } from '../knowledge/normalize.ts'
 import type { SearchHit } from './types.ts'
 
@@ -35,7 +37,9 @@ export async function fuzzySearch(
   boundaryChapter: number,
   query: string,
   limit = 15,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<SearchHit[]> {
+  const t = getDictFor(locale).search
   const normalised = normalizeText(query)
   // Trigram similarity on one or two characters is meaningless — every short
   // string is similar to every other — and would flood the results.
@@ -73,10 +77,7 @@ export async function fuzzySearch(
         chapterNumber: Number(row.revealed_in_chapter),
         score,
         mode: 'fuzzy',
-        reason:
-          score > 0.7
-            ? `Nom très proche de ce que vous avez tapé.`
-            : `Nom approchant — orthographe ou transcription différente.`,
+        reason: score > 0.7 ? t.reasonFuzzyClose : t.reasonFuzzyApprox,
       })
     }
 

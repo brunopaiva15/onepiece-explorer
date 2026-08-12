@@ -3,6 +3,8 @@ import { and, eq, inArray, lte, sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { assertions, entities, entityLabels, events, mysteries } from '@/db/schema/knowledge.ts'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 /**
  * Two timelines, kept apart.
@@ -54,6 +56,7 @@ export interface Timeline {
 export async function getTimeline(
   userId: string,
   boundaryChapter: number,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<Timeline> {
   const entries = await withBoundary({ userId, boundaryChapter }, async (db) => {
     const eventRows = await db
@@ -91,6 +94,7 @@ export async function getTimeline(
             .select({
               entityId: entityLabels.entityId,
               label: entityLabels.label,
+              lang: entityLabels.lang,
               precedence: entityLabels.precedence,
             })
             .from(entityLabels)
@@ -100,21 +104,28 @@ export async function getTimeline(
     return { eventRows, mysteryRows, labels }
   })
 
-  const labelOf = new Map<string, string>()
+  // The reader's language first, canonical French as the fallback.
+  const inLocale = new Map<string, string>()
+  const inAny = new Map<string, string>()
   for (const row of entries.labels) {
-    if (!labelOf.has(row.entityId)) labelOf.set(row.entityId, row.label)
+    if (row.lang === locale && !inLocale.has(row.entityId)) {
+      inLocale.set(row.entityId, row.label)
+    }
+    if (!inAny.has(row.entityId)) inAny.set(row.entityId, row.label)
   }
+  const labelOf = new Map<string, string>()
+  for (const [id, label] of inAny) labelOf.set(id, inLocale.get(id) ?? label)
 
   const all: TimelineEntry[] = [
     ...entries.eventRows.map((row): TimelineEntry => ({
       entityId: row.entityId,
-      label: labelOf.get(row.entityId) ?? 'événement sans nom',
+      label: labelOf.get(row.entityId) ?? getDictFor(locale).common.unnamedEvent,
       summary: row.summary,
       // Told beats shown: a chapter that *recounts* an event is where the
       // reader learned of it, even if the art shows it later.
       knownFromChapter: row.toldInChapter ?? row.shownInChapter ?? 0,
       isFlashback: row.isFlashback,
-      storyTime: describeStoryTime(row.storyTime),
+      storyTime: describeStoryTime(row.storyTime, locale),
       kind: 'event',
       state: null,
       resolvedInChapter: null,
@@ -157,9 +168,13 @@ export async function getTimeline(
  * vingt ans plus tôt" is what the pages support; converting it to a year would
  * be inventing a fact to make a chart easier to draw.
  */
-function describeStoryTime(value: unknown): StoryTimeView | null {
+function describeStoryTime(
+  value: unknown,
+  locale: Locale = DEFAULT_LOCALE,
+): StoryTimeView | null {
   if (value === null || typeof value !== 'object') return null
   const time = value as Record<string, unknown>
+  const t = getDictFor(locale).timeline
 
   switch (time.kind) {
     case 'exact': {
@@ -171,18 +186,22 @@ function describeStoryTime(value: unknown): StoryTimeView | null {
     case 'approximate':
       return {
         kind: 'approximate',
+        // A stored description was authored with the graph — canonical
+        // French — and is shown as stored; only the composed fallback
+        // follows the reader.
         description:
           typeof time.description === 'string'
             ? time.description
-            : `environ ${String(time.yearsAgo ?? '?')} ans plus tôt`,
+            : t.yearsEarlier(String(time.yearsAgo ?? '?')),
       }
     case 'relative':
       return {
         kind: 'relative',
-        description: typeof time.note === 'string' ? time.note : 'ordre relatif connu',
+        description:
+          typeof time.note === 'string' ? time.note : t.relativeOrderKnown,
       }
     default:
-      return { kind: 'unknown', description: 'moment inconnu' }
+      return { kind: 'unknown', description: t.unknownMoment }
   }
 }
 
@@ -227,6 +246,7 @@ export interface NarrativeDelta {
 export async function getNarrativeDelta(
   userId: string,
   chapterNumber: number,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<NarrativeDelta | null> {
   // Chapter metadata is ownership-scoped, not boundary-scoped: knowing you
   // imported chapter 40 is not knowing what happens in it.
@@ -251,7 +271,8 @@ export async function getNarrativeDelta(
         label: sql<string | null>`(
           SELECT l.label FROM entity_labels l
           WHERE l.entity_id = ${entities.id}
-          ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
+          ORDER BY (l.lang = ${locale})::int DESC,
+                   l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
         )`,
       })
       .from(entities)
@@ -265,12 +286,14 @@ export async function getNarrativeDelta(
         subjectLabel: sql<string | null>`(
           SELECT l.label FROM entity_labels l
           WHERE l.entity_id = ${assertions.subjectEntityId}
-          ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
+          ORDER BY (l.lang = ${locale})::int DESC,
+                   l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
         )`,
         objectLabel: sql<string | null>`(
           SELECT l.label FROM entity_labels l
           WHERE l.entity_id = ${assertions.objectEntityId}
-          ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
+          ORDER BY (l.lang = ${locale})::int DESC,
+                   l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
         )`,
       })
       .from(assertions)
@@ -294,7 +317,8 @@ export async function getNarrativeDelta(
             subjectLabel: sql<string | null>`(
               SELECT l.label FROM entity_labels l
               WHERE l.entity_id = ${assertions.subjectEntityId}
-              ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
+              ORDER BY (l.lang = ${locale})::int DESC,
+                       l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
             )`,
           })
           .from(assertions)
@@ -308,7 +332,14 @@ export async function getNarrativeDelta(
         kind: entityLabels.kind,
       })
       .from(entityLabels)
-      .where(eq(entityLabels.revealedInChapter, chapterNumber))
+      .where(
+        and(
+          eq(entityLabels.revealedInChapter, chapterNumber),
+          // One row per name event: the English twin revealed alongside its
+          // French original is the same revelation, not a second one.
+          eq(entityLabels.lang, 'fr'),
+        ),
+      )
 
     // What each newly named entity was called before, so the delta can say
     // "the man in the striped scarf turns out to be Kaelo Renn".
@@ -325,9 +356,12 @@ export async function getNarrativeDelta(
                 })
                 .from(entityLabels)
                 .where(
-                  inArray(
-                    entityLabels.entityId,
-                    names.map((name) => name.entityId),
+                  and(
+                    inArray(
+                      entityLabels.entityId,
+                      names.map((name) => name.entityId),
+                    ),
+                    eq(entityLabels.lang, 'fr'),
                   ),
                 )
                 .orderBy(sql`${entityLabels.precedence} DESC`),
@@ -348,7 +382,7 @@ export async function getNarrativeDelta(
       chapterTitle: meta.title,
       newEntities: newEntities.map((row) => ({
         id: row.id,
-        label: row.label ?? 'entité sans nom révélé',
+        label: row.label ?? getDictFor(locale).common.unnamedEntity,
         nodeType: row.nodeType,
       })),
       newFacts: facts.map((row) => ({

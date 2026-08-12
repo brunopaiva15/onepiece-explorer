@@ -352,7 +352,7 @@ export class AnthropicProvider implements ModelProvider {
 
     return this.structured({
       tier: 'extract',
-      system: cacheable(answerSystem(request.boundaryChapter)),
+      system: cacheable(answerSystem(request.boundaryChapter, request.language)),
       schema: answerSchema,
       maxTokens: 4_000,
       content: [

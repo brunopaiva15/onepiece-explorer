@@ -96,7 +96,12 @@ export async function runConflicts(context: StepContext): Promise<StepResult> {
     const labels = await db
       .select({ entityId: entityLabels.entityId, label: entityLabels.label })
       .from(entityLabels)
-      .where(lte(entityLabels.revealedInChapter, chapterNumber))
+      .where(
+        and(
+          lte(entityLabels.revealedInChapter, chapterNumber),
+          eq(entityLabels.lang, 'fr'),
+        ),
+      )
 
     return { workId: chapter.workId, proposals, accepted, functional, labels }
   })

@@ -1,6 +1,8 @@
 import 'server-only'
 import { asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { assertions, entities, entityLabels, evidence } from '@/db/schema/knowledge.ts'
 import { storage } from '@/domains/storage/index.ts'
@@ -29,6 +31,8 @@ import { identityComponent } from './projection.ts'
 export interface SheetLabel {
   label: string
   kind: string
+  /** 'fr' for the canonical vocabulary, 'en' for a display twin. */
+  lang: string
   revealedInChapter: number
   precedence: number
 }
@@ -79,6 +83,7 @@ export async function getEntitySheet(
   userId: string,
   boundaryChapter: number,
   entityId: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<EntitySheet | null> {
   // Defence in depth. The queries below bind their parameters, so this is not
   // load-bearing — but a malformed id should be a null result rather than a
@@ -105,6 +110,7 @@ export async function getEntitySheet(
       .select({
         label: entityLabels.label,
         kind: entityLabels.kind,
+        lang: entityLabels.lang,
         revealedInChapter: entityLabels.revealedInChapter,
         precedence: entityLabels.precedence,
       })
@@ -159,10 +165,13 @@ export async function getEntitySheet(
             .select({
               id: entities.id,
               nodeType: entities.nodeType,
+              // The reader's language first, best label within it, French
+              // as the fallback — same rule as displayLabel().
               label: sql<string | null>`(
                 SELECT l.label FROM entity_labels l
                 WHERE l.entity_id = ${entities.id}
-                ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+                ORDER BY (l.lang = ${locale})::int DESC,
+                         l.precedence DESC, l.revealed_in_chapter DESC
                 LIMIT 1
               )`,
             })
@@ -224,16 +233,20 @@ export async function getEntitySheet(
   const labels: SheetLabel[] = data.labelRows.map((row) => ({
     label: row.label,
     kind: row.kind,
+    lang: row.lang,
     revealedInChapter: row.revealedInChapter,
     precedence: row.precedence,
   }))
+
+  // Best label in the reader's language; the canonical French one otherwise.
+  const display = labels.find((label) => label.lang === locale) ?? labels[0]
 
   return {
     id: memberIds[0]!,
     memberIds,
     nodeType: data.entityRows[0]!.nodeType,
-    displayLabel: labels[0]?.label ?? 'entité sans nom révélé',
-    displayKind: labels[0]?.kind ?? 'placeholder',
+    displayLabel: display?.label ?? getDictFor(locale).common.unnamedEntity,
+    displayKind: display?.kind ?? 'placeholder',
     firstSeenChapter: Math.min(...data.entityRows.map((row) => row.firstSeenChapter)),
     labels,
     facts: data.factRows.map((row): SheetFact => {

@@ -1,6 +1,8 @@
 import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import type { SearchHit } from './types.ts'
 
 /**
@@ -36,12 +38,23 @@ export async function lexicalSearch(
   boundaryChapter: number,
   query: string,
   limit = 30,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<SearchHit[]> {
   const trimmed = query.trim()
   if (trimmed.length === 0) return []
+  const t = getDictFor(locale).search
 
   return withBoundary({ userId, boundaryChapter }, async (db) => {
-    const tsquery = sql`websearch_to_tsquery('fr_unaccent', ${trimmed})`
+    /*
+     * The query is stemmed in the reader's language; each stored vector was
+     * stemmed in its row's own language (migration 0019). An English query
+     * meets English-stemmed labels and text blocks head on, and still matches
+     * French rows wherever the words survive stemming — proper nouns mostly,
+     * which is most of what gets searched. The fuzzy and graph modes cover the
+     * cross-language remainder.
+     */
+    const config = locale === 'en' ? 'en_unaccent' : 'fr_unaccent'
+    const tsquery = sql`websearch_to_tsquery(${config}::regconfig, ${trimmed})`
 
     const labels = await db.execute<Row>(sql`
       SELECT
@@ -68,7 +81,7 @@ export async function lexicalSearch(
         tb.id                           AS id,
         NULL                            AS entity_id,
         coalesce(left(tb.text, 60), '') AS title,
-        ts_headline('fr_unaccent', tb.text, ${tsquery},
+        ts_headline(${config}::regconfig, tb.text, ${tsquery},
                     'MaxWords=28, MinWords=8, StartSel=«, StopSel=»') AS snippet,
         tb.chapter_number               AS chapter_number,
         ts_rank_cd(tb.search_vector, ${tsquery}) AS rank
@@ -83,7 +96,7 @@ export async function lexicalSearch(
         e.entity_id                     AS id,
         e.entity_id                     AS entity_id,
         coalesce(left(e.summary, 80), '') AS title,
-        ts_headline('fr_unaccent', coalesce(e.summary, ''), ${tsquery},
+        ts_headline(${config}::regconfig, coalesce(e.summary, ''), ${tsquery},
                     'MaxWords=28, MinWords=8, StartSel=«, StopSel=»') AS snippet,
         coalesce(e.told_in_chapter, e.shown_in_chapter, 0) AS chapter_number,
         ts_rank_cd(e.search_vector, ${tsquery}) AS rank
@@ -111,8 +124,8 @@ export async function lexicalSearch(
       SELECT
         p.id                            AS id,
         NULL                            AS entity_id,
-        'case ' || (p.index + 1)::text  AS title,
-        ts_headline('fr_unaccent', coalesce(p.description, ''), ${tsquery},
+        (p.index + 1)::text             AS title,
+        ts_headline(${config}::regconfig, coalesce(p.description, ''), ${tsquery},
                     'MaxWords=28, MinWords=8, StartSel=«, StopSel=»') AS snippet,
         p.chapter_number                AS chapter_number,
         ts_rank_cd(p.search_vector, ${tsquery}) AS rank
@@ -122,12 +135,16 @@ export async function lexicalSearch(
       LIMIT ${limit}
     `)
 
+    for (const row of panelRows) {
+      row.title = t.panelTitle(Number(row.title))
+    }
+
     return [
-      ...toHits(labels, 'entity', 'Le nom correspond aux mots cherchés.'),
-      ...toHits(blocks, 'text_block', 'Le texte de la page contient ces mots.'),
-      ...toHits(eventRows, 'event', "Le résumé de l'événement correspond."),
-      ...toHits(mysteryRows, 'mystery', 'La question du mystère correspond.'),
-      ...toHits(panelRows, 'panel', 'La description de la case correspond.'),
+      ...toHits(labels, 'entity', t.reasonNameMatch),
+      ...toHits(blocks, 'text_block', t.reasonTextMatch),
+      ...toHits(eventRows, 'event', t.reasonEventMatch),
+      ...toHits(mysteryRows, 'mystery', t.reasonMysteryMatch),
+      ...toHits(panelRows, 'panel', t.reasonPanelMatch),
     ].sort((a, b) => b.score - a.score)
   })
 }

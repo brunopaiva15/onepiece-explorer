@@ -273,6 +273,10 @@ async function blockByTrigram(
           eq(entities.reviewStatus, 'accepted'),
           lte(entities.firstSeenChapter, chapterNumber),
           lte(entityLabels.revealedInChapter, chapterNumber),
+          // French rows only: the canonical vocabulary. An English twin close
+          // to its own French form is not a merge candidate, it is a
+          // translation.
+          eq(entityLabels.lang, 'fr'),
           sql`similarity(${entityLabels.normalizedLabel}, ${normalised}) >= ${TRIGRAM_FLOOR}`,
         ),
       )
@@ -308,6 +312,7 @@ async function descriptorsForEntity(
     .where(
       and(
         eq(entityLabels.entityId, entityId),
+        eq(entityLabels.lang, 'fr'),
         lte(entityLabels.revealedInChapter, chapterNumber),
       ),
     )

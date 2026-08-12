@@ -1,4 +1,6 @@
 import 'server-only'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { modelProvider } from '../ai/index.ts'
 import { fuzzySearch } from './fuzzy.ts'
 import { expandNeighbours } from './graph.ts'
@@ -45,6 +47,12 @@ export interface SearchOptions {
   limit?: number
   /** Skip the graph expansion when only direct matches are wanted. */
   expand?: boolean
+  /**
+   * The reader's language: decides which stemmer parses the query, which
+   * entity labels title the hits, and the language of every reason attached
+   * to them. Content itself stays in the language it was written in.
+   */
+  locale?: Locale
 }
 
 export async function search(
@@ -54,6 +62,8 @@ export async function search(
   options: SearchOptions = {},
 ): Promise<SearchResult> {
   const limit = options.limit ?? 25
+  const locale = options.locale ?? DEFAULT_LOCALE
+  const t = getDictFor(locale).search
   const trimmed = query.trim()
 
   const modes: SearchResult['modes'] = []
@@ -63,20 +73,24 @@ export async function search(
   }
 
   const [lexical, fuzzy] = await Promise.all([
-    lexicalSearch(userId, boundaryChapter, trimmed, limit * 2),
-    fuzzySearch(userId, boundaryChapter, trimmed, limit),
+    lexicalSearch(userId, boundaryChapter, trimmed, limit * 2, locale),
+    fuzzySearch(userId, boundaryChapter, trimmed, limit, locale),
   ])
 
   modes.push({ mode: 'lexical', ran: true })
   modes.push({
     mode: 'fuzzy',
     ran: true,
-    ...(trimmed.length < 3
-      ? { note: 'Requête trop courte pour une comparaison approchante.' }
-      : {}),
+    ...(trimmed.length < 3 ? { note: t.noteQueryTooShort } : {}),
   })
 
-  const semantic = await semanticSearch(userId, boundaryChapter, trimmed, limit)
+  const semantic = await semanticSearch(
+    userId,
+    boundaryChapter,
+    trimmed,
+    limit,
+    locale,
+  )
   modes.push(semantic.status)
 
   /*
@@ -91,20 +105,20 @@ export async function search(
     .map((hit) => hit.entityId!)
 
   if (options.expand !== false && seeds.length > 0) {
-    graph = await expandNeighbours(userId, boundaryChapter, seeds, limit)
+    graph = await expandNeighbours(userId, boundaryChapter, seeds, limit, locale)
     modes.push({ mode: 'graph', ran: true })
   } else {
     modes.push({
       mode: 'graph',
       ran: false,
-      note: 'Aucune entité trouvée par les autres modes : rien à étendre.',
+      note: t.noteNothingToExpand,
     })
   }
 
   return {
     query: trimmed,
     boundaryChapter,
-    hits: fuse([lexical, fuzzy, semantic.hits, graph], limit),
+    hits: fuse([lexical, fuzzy, semantic.hits, graph], limit, locale),
     modes,
   }
 }
@@ -118,7 +132,12 @@ export async function search(
  * reader is told the strongest reason the result is present rather than
  * whichever mode happened to be processed last.
  */
-function fuse(lists: SearchHit[][], limit: number): SearchHit[] {
+function fuse(
+  lists: SearchHit[][],
+  limit: number,
+  locale: Locale = DEFAULT_LOCALE,
+): SearchHit[] {
+  const t = getDictFor(locale).search
   const scored = new Map<string, { hit: SearchHit; score: number; modes: Set<SearchMode> }>()
 
   for (const list of lists) {
@@ -153,7 +172,7 @@ function fuse(lists: SearchHit[][], limit: number): SearchHit[] {
       score: entry.score,
       reason:
         entry.modes.size > 1
-          ? `${entry.hit.reason} (trouvé aussi par ${entry.modes.size - 1} autre${entry.modes.size > 2 ? 's' : ''} méthode${entry.modes.size > 2 ? 's' : ''})`
+          ? `${entry.hit.reason} ${t.alsoFoundBy(entry.modes.size - 1)}`
           : entry.hit.reason,
     }))
 }
@@ -170,7 +189,9 @@ async function semanticSearch(
   boundaryChapter: number,
   query: string,
   limit: number,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<{ hits: SearchHit[]; status: SearchResult['modes'][number] }> {
+  const t = getDictFor(locale).search
   const store = await vectorStore()
 
   if (store.unavailableReason !== null) {
@@ -189,7 +210,7 @@ async function semanticSearch(
         status: {
           mode: 'semantic',
           ran: false,
-          note: "Le fournisseur n'a pas produit de vecteur pour cette requête.",
+          note: t.noteNoVector,
         },
       }
     }
@@ -206,7 +227,7 @@ async function semanticSearch(
         chapterNumber: hit.chapterNumber,
         score: hit.similarity,
         mode: 'semantic' as const,
-        reason: 'Sens proche de votre question.',
+        reason: t.reasonSemanticClose,
       })),
       status: { mode: 'semantic', ran: true },
     }
@@ -218,9 +239,9 @@ async function semanticSearch(
       status: {
         mode: 'semantic',
         ran: false,
-        note: `Recherche sémantique indisponible : ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        note: t.noteSemanticDown(
+          error instanceof Error ? error.message : String(error),
+        ),
       },
     }
   }

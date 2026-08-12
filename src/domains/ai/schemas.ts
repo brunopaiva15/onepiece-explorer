@@ -177,6 +177,17 @@ export const candidateEntitySchema = z.object({
    */
   source_term: z.string().max(200).nullable(),
   /**
+   * The English form of this entity's name, read off an English parallel text.
+   *
+   * Only set when the chapter carries a parallel text in English that names
+   * this entity — the form is then a fact on screen, copied rather than
+   * invented. Null everywhere else: when the source itself is English the
+   * wording already sits in `source_term`, and when no English text was
+   * supplied there is nothing to copy from. Feeds the English display layer
+   * (entity_labels.lang = 'en', glossary english_term); never canonical.
+   */
+  english_term: z.string().max(200).nullable().optional(),
+  /**
    * Whether the model is sure how this should be called in French.
    *
    * False sends the entity to explicit review with an editable name, however

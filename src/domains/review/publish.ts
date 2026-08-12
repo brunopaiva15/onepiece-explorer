@@ -101,6 +101,7 @@ export async function publishDecisions(
         chapterId: reviewItems.chapterId,
         workId: chapters.workId,
         chapterNumber: chapters.number,
+        chapterLanguage: chapters.language,
       })
       .from(reviewItems)
       .innerJoin(chapters, eq(chapters.id, reviewItems.chapterId))
@@ -208,6 +209,40 @@ export async function publishDecisions(
       result.labelsCreated++
 
       /*
+       * The English twin, when the system has actually seen one.
+       *
+       * Two honest sources and no third: the source wording of an English
+       * chapter (that is what `source_term` is on an English source), or the
+       * form the model read off an English parallel text. Same kind, same
+       * precedence, same reveal chapter as the French label — a name the
+       * reader has not met in one language is still unmet in the other. Only
+       * written when it differs from the French form: "Luffy" twice would be
+       * a duplicate row buying nothing, and display falls back to French
+       * anyway.
+       */
+      const englishForm =
+        (run.chapterLanguage === 'en' ? candidate.source_term : null) ??
+        candidate.english_term ??
+        null
+      const trimmedEnglish = englishForm?.trim() ?? ''
+      if (
+        trimmedEnglish.length > 0 &&
+        normalizeText(trimmedEnglish) !== normalizeText(candidate.label)
+      ) {
+        await db.insert(entityLabels).values({
+          entityId: entity.id,
+          userId,
+          label: trimmedEnglish,
+          normalizedLabel: normalizeText(trimmedEnglish),
+          kind: candidate.label_kind,
+          lang: 'en',
+          revealedInChapter: run.chapterNumber,
+          precedence: precedenceFor(candidate.label_kind),
+        })
+        result.labelsCreated++
+      }
+
+      /*
        * The naming decision, recorded so it is never asked again.
        *
        * The model flagged that it did not know the French form; you supplied
@@ -225,6 +260,16 @@ export async function publishDecisions(
         candidate.source_term.trim().length > 0
       ) {
         const sourceTerm = candidate.source_term.trim()
+        /*
+         * The English side of the decision, recorded when it is known: an
+         * English source's wording is the English form, and a parallel-text
+         * reading supplied one for a French source. Null otherwise — display
+         * falls back to the French form rather than to a guess.
+         */
+        const englishTerm =
+          (run.chapterLanguage === 'en' ? sourceTerm : null) ??
+          candidate.english_term?.trim() ??
+          null
         await db
           .insert(glossaryTerms)
           .values({
@@ -233,13 +278,18 @@ export async function publishDecisions(
             sourceTerm,
             normalizedSource: normalizeText(sourceTerm),
             frenchTerm: candidate.label,
+            englishTerm,
             decidedInChapter: run.chapterNumber,
           })
           .onConflictDoUpdate({
             target: [glossaryTerms.workId, glossaryTerms.normalizedSource],
             // Answering again replaces the answer. Keeping the first one would
             // make a correction of a correction impossible.
-            set: { frenchTerm: candidate.label, updatedAt: new Date() },
+            set: {
+              frenchTerm: candidate.label,
+              ...(englishTerm ? { englishTerm } : {}),
+              updatedAt: new Date(),
+            },
           })
       }
 

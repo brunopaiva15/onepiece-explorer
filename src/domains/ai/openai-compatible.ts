@@ -304,7 +304,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       .join('\n')
 
     return this.structured({
-      system: answerSystem(request.boundaryChapter),
+      system: answerSystem(request.boundaryChapter, request.language),
       schema: answerSchema,
       name: 'answer',
       maxTokens: 4_000,

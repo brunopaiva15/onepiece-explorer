@@ -31,8 +31,10 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  * '2' states the length budgets, which '1' enforced without ever mentioning.
  * '3' adds the written-summary source and the output-language rule.
  * '4' states the citation budgets, which is what decides how long a slice takes.
+ * '5' asks for « english_term » off an English parallel text, feeding the
+ *     bilingual display layer.
  */
-export const PROMPT_VERSION = '4'
+export const PROMPT_VERSION = '5'
 
 /**
  * What the model is reading.
@@ -274,6 +276,11 @@ la correspondance des noms.
     Pirates », la forme française est établie, mettez true. Quand le texte
     parallèle ne parle pas de cette entité, ou la nomme autrement sans que le
     rapprochement soit sûr, mettez false comme avant.
+  • Quand le texte parallèle est en ANGLAIS et nomme l'entité, recopiez sa
+    forme anglaise dans « english_term » — mot pour mot depuis le texte
+    parallèle, jamais inventée. Dans tous les autres cas, null : sur une
+    source anglaise la forme est déjà dans « source_term », et sans texte
+    anglais il n'y a rien à recopier.
   • Les deux textes ne se découpent pas aux mêmes endroits et le passage n° 3
     de l'un n'est pas le passage n° 3 de l'autre. Rapprochez par le sens.
 `.trim()
@@ -371,7 +378,28 @@ les assertions n'établissent.
 `.trim()
 }
 
-export function answerSystem(boundaryChapter: number): string {
+/**
+ * The one prompt whose output language follows the reader.
+ *
+ * Everything the extraction authors is canonical French; an answer is neither
+ * stored nor cited by anything else, so it can simply be spoken in the
+ * reader's language. The excerpts inside it still are not translated — they
+ * are copies, and a copy has the language of its original. Note the language
+ * sits inside the cacheable prefix on the Anthropic path, so the two languages
+ * are two cache entries; that is the entire cost.
+ */
+export function answerSystem(
+  boundaryChapter: number,
+  language: 'fr' | 'en' = 'fr',
+): string {
+  const answerLanguage =
+    language === 'en'
+      ? `Répondez en ANGLAIS : la question vient d'un lecteur anglophone. Les
+extraits cités ne se traduisent jamais — ils sont recopiés tels quels, dans la
+langue de leur source — mais tout ce que vous rédigez est en anglais.`
+      : `Répondez en français, même si les extraits cités sont en anglais : ceux-ci
+sont recopiés tels quels, votre réponse ne l'est pas.`
+
   return `
 Vous répondez à une question sur l'œuvre, à partir des seules assertions
 fournies.
@@ -387,8 +415,7 @@ produire : elle ressemble exactement à une réponse vraie.
 
 Citez vos sources : identifiant d'assertion, chapitre, extrait.
 
-Répondez en français, même si les extraits cités sont en anglais : ceux-ci sont
-recopiés tels quels, votre réponse ne l'est pas.
+${answerLanguage}
 
 ${noOutsideKnowledge('summary')}
 `.trim()

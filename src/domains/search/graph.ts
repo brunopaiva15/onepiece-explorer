@@ -1,4 +1,6 @@
 import 'server-only'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { projectGraph, type GraphProjection } from '../temporal/projection.ts'
 import type { SearchHit } from './types.ts'
 
@@ -47,8 +49,9 @@ export async function neighbourhood(
   boundaryChapter: number,
   entityId: string,
   hops = 2,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<Neighbourhood | null> {
-  const projection = await projectGraph(userId, boundaryChapter)
+  const projection = await projectGraph(userId, boundaryChapter, { locale })
 
   // The requested entity may have been folded into another node by a merge the
   // reader has now seen. Resolving through memberIds means a link built at
@@ -100,8 +103,9 @@ export async function shortestPath(
   fromId: string,
   toId: string,
   maxHops = 6,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<{ steps: PathStep[]; labels: Map<string, string> } | null> {
-  const projection = await projectGraph(userId, boundaryChapter)
+  const projection = await projectGraph(userId, boundaryChapter, { locale })
   const resolve = (id: string): string | undefined =>
     projection.nodes.find((node) => node.id === id || node.memberIds.includes(id))?.id
 
@@ -192,10 +196,12 @@ export async function expandNeighbours(
   boundaryChapter: number,
   entityIds: string[],
   limit = 20,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<SearchHit[]> {
   if (entityIds.length === 0) return []
 
-  const projection = await projectGraph(userId, boundaryChapter)
+  const t = getDictFor(locale).search
+  const projection = await projectGraph(userId, boundaryChapter, { locale })
   const links = adjacency(projection)
   const byId = new Map(projection.nodes.map((node) => [node.id, node]))
 
@@ -214,7 +220,7 @@ export async function expandNeighbours(
   const seen = new Set(roots)
 
   for (const root of roots) {
-    const rootLabel = byId.get(root)?.label ?? 'une entité'
+    const rootLabel = byId.get(root)?.label ?? t.fallbackEntity
     for (const neighbour of links.get(root) ?? []) {
       if (seen.has(neighbour)) continue
       seen.add(neighbour)
@@ -232,7 +238,7 @@ export async function expandNeighbours(
         // relation simply by being connected to everything.
         score: 1 / (1 + Math.log1p(node.degree)),
         mode: 'graph',
-        reason: `En relation directe avec « ${rootLabel} ».`,
+        reason: t.reasonNeighbour(rootLabel),
       })
 
       if (hits.length >= limit) return hits

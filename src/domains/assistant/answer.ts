@@ -2,6 +2,8 @@ import 'server-only'
 import { modelProvider } from '../ai/index.ts'
 import { normalizeText } from '../knowledge/normalize.ts'
 import { isAssistantEnabled } from '@/lib/env.ts'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { consume } from '../observability/rate-limit.ts'
 import { buildContext, type AssistantContext, type ContextEntry } from './context.ts'
 
@@ -55,11 +57,13 @@ export async function ask(
   userId: string,
   boundaryChapter: number,
   question: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<AssistantAnswer> {
+  const t = getDictFor(locale).ask
   const trimmed = question.trim()
 
   if (trimmed.length === 0) {
-    return empty(trimmed, boundaryChapter, 'Posez une question.')
+    return empty(trimmed, boundaryChapter, t.askSomething)
   }
 
   /*
@@ -70,15 +74,7 @@ export async function ask(
    * away, and the thing being guarded is somebody's card.
    */
   if (!isAssistantEnabled()) {
-    return empty(
-      trimmed,
-      boundaryChapter,
-      "L'assistant conversationnel est désactivé. Chaque question appelle un " +
-        'modèle et se facture à la question, indéfiniment — ce n’est pas ce que cet ' +
-        'outil est. Pour l’activer malgré tout : ASSISTANT_ENABLED=1. La recherche ' +
-        'plein texte, approchante et par graphe, elle, ne coûte rien et cherche dans ' +
-        'les mêmes données.',
-    )
+    return empty(trimmed, boundaryChapter, t.disabled)
   }
 
   /*
@@ -93,12 +89,15 @@ export async function ask(
     return empty(
       trimmed,
       boundaryChapter,
-      `Limite atteinte : ${allowance.used} questions dans l'heure. ` +
-        `Réessayez dans ${allowance.retryInMinutes} minute(s). ${allowance.explain}`,
+      t.rateLimited(
+        allowance.used,
+        allowance.retryInMinutes ?? 1,
+        allowance.explain,
+      ),
     )
   }
 
-  const context = await buildContext(userId, boundaryChapter, trimmed)
+  const context = await buildContext(userId, boundaryChapter, trimmed, locale)
 
   /*
    * No context means no call.
@@ -114,9 +113,8 @@ export async function ask(
         trimmed,
         boundaryChapter,
         boundaryChapter === 0
-          ? "Aucun chapitre n'est encore publié : il n'y a rien à interroger."
-          : `Rien dans les chapitres 1 à ${boundaryChapter} ne se rapporte à cette question. ` +
-            `Élargissez la question, remontez le curseur, ou importez le chapitre concerné.`,
+          ? t.nothingPublished
+          : t.nothingRelevant(boundaryChapter),
       ),
       entityIds: context.entityIds,
       notes: context.notes,
@@ -133,6 +131,7 @@ export async function ask(
       excerpt: entry.excerpt,
     })),
     boundaryChapter,
+    language: locale,
   })
 
   if (result.refusal) {
@@ -145,7 +144,7 @@ export async function ask(
     }
   }
 
-  const verified = verifyCitations(result.value.citations, context)
+  const verified = verifyCitations(result.value.citations, context, locale)
 
   /*
    * An answer whose citations all failed is not a partly-good answer.
@@ -164,10 +163,7 @@ export async function ask(
       question: trimmed,
       boundaryChapter,
       insufficientData: true,
-      answer:
-        "Aucune des sources citées ne correspond à ce que vos chapitres contiennent. " +
-        "La réponse a été écartée plutôt que présentée : une affirmation sans source " +
-        'vérifiable ressemble exactement à une affirmation vraie.',
+      answer: t.unsupportedAnswer,
       citations: [],
       droppedCitations: verified.dropped,
       entityIds: context.entityIds,
@@ -206,7 +202,9 @@ export async function ask(
 export function verifyCitations(
   claimed: Array<{ assertion_id: string; chapter: number; excerpt: string }>,
   context: AssistantContext,
+  locale: Locale = DEFAULT_LOCALE,
 ): { citations: Citation[]; dropped: Array<{ assertionId: string; why: string }> } {
+  const t = getDictFor(locale).ask
   const byId = new Map(context.entries.map((entry) => [entry.assertionId, entry]))
 
   const citations: Citation[] = []
@@ -219,9 +217,7 @@ export function verifyCitations(
     if (!entry) {
       dropped.push({
         assertionId: citation.assertion_id,
-        why:
-          "Cet identifiant ne figure pas dans le contexte fourni au modèle. " +
-          "C'est le signe d'une source inventée.",
+        why: t.droppedUnknownId,
       })
       continue
     }
@@ -235,7 +231,7 @@ export function verifyCitations(
        */
       dropped.push({
         assertionId: citation.assertion_id,
-        why: `Assertion du chapitre ${entry.chapter}, au-delà de la frontière ${context.boundaryChapter}.`,
+        why: t.droppedBeyondBoundary(entry.chapter, context.boundaryChapter),
       })
       continue
     }

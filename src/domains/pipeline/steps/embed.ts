@@ -70,7 +70,12 @@ export async function runEmbed(context: StepContext): Promise<StepResult> {
     const labels = await db
       .select({ entityId: entityLabels.entityId, label: entityLabels.label })
       .from(entityLabels)
-      .where(inArray(entityLabels.entityId, involved))
+      .where(
+        and(
+          inArray(entityLabels.entityId, involved),
+          eq(entityLabels.lang, 'fr'),
+        ),
+      )
       .orderBy(sql`${entityLabels.precedence} DESC`)
 
     const labelOf = new Map<string, string>()

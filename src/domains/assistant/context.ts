@@ -2,6 +2,8 @@ import 'server-only'
 import { and, inArray, sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
 import { assertions, entityLabels, evidence } from '@/db/schema/knowledge.ts'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { normalizeText } from '../knowledge/normalize.ts'
 import { search } from '../search/index.ts'
 
@@ -46,8 +48,12 @@ export async function buildContext(
   userId: string,
   boundaryChapter: number,
   question: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<AssistantContext> {
-  let found = await search(userId, boundaryChapter, question, { limit: 20 })
+  let found = await search(userId, boundaryChapter, question, {
+    limit: 20,
+    locale,
+  })
   let entityIds = entitiesIn(found.hits)
 
   /*
@@ -67,9 +73,12 @@ export async function buildContext(
    * passes, and every citation is still checked against what came back.
    */
   if (entityIds.length === 0) {
-    const broadened = disjoin(question)
+    const broadened = disjoin(question, locale)
     if (broadened !== null) {
-      found = await search(userId, boundaryChapter, broadened, { limit: 20 })
+      found = await search(userId, boundaryChapter, broadened, {
+        limit: 20,
+        locale,
+      })
       entityIds = entitiesIn(found.hits)
     }
   }
@@ -121,14 +130,28 @@ export async function buildContext(
       .select({
         entityId: entityLabels.entityId,
         label: entityLabels.label,
+        lang: entityLabels.lang,
       })
       .from(entityLabels)
       .where(inArray(entityLabels.entityId, involved))
       .orderBy(sql`${entityLabels.precedence} DESC`)
 
-    const labelOf = new Map<string, string>()
+    /*
+     * Best label in the reader's language, best label at all as the fallback —
+     * an entity whose English form was never seen keeps its French name rather
+     * than disappearing behind a placeholder.
+     */
+    const inLocale = new Map<string, string>()
+    const inAny = new Map<string, string>()
     for (const row of labels) {
-      if (!labelOf.has(row.entityId)) labelOf.set(row.entityId, row.label)
+      if (row.lang === locale && !inLocale.has(row.entityId)) {
+        inLocale.set(row.entityId, row.label)
+      }
+      if (!inAny.has(row.entityId)) inAny.set(row.entityId, row.label)
+    }
+    const labelOf = new Map<string, string>()
+    for (const [id, label] of inAny) {
+      labelOf.set(id, inLocale.get(id) ?? label)
     }
 
     // One excerpt per assertion, so the model can quote what the page said
@@ -153,10 +176,11 @@ export async function buildContext(
       }
     }
 
+    const unnamed = getDictFor(locale).common.unnamedEntity
     return rows.map((row): ContextEntry => {
-      const subject = labelOf.get(row.subjectId) ?? 'une entité sans nom révélé'
+      const subject = labelOf.get(row.subjectId) ?? unnamed
       const object = row.objectId
-        ? (labelOf.get(row.objectId) ?? 'une entité sans nom révélé')
+        ? (labelOf.get(row.objectId) ?? unnamed)
         : literalOf(row.objectValue)
 
       return {
@@ -194,14 +218,26 @@ function entitiesIn(hits: Array<{ entityId: string | null }>): string[] {
  * the right rows — is worse than the failure it fixes, because the model will
  * happily build an answer from them.
  */
-const QUESTION_WORDS = new Set([
-  'que', 'qui', 'quoi', 'quel', 'quelle', 'quels', 'quelles', 'quand', 'ou',
-  'comment', 'pourquoi', 'combien', 'est', 'sont', 'etait', 'etaient', 'sait',
-  'savons', 'connait', 'peux', 'peut', 'dis', 'dit', 'moi', 'nous', 'vous',
-  'les', 'des', 'une', 'aux', 'dans', 'pour', 'avec', 'sur', 'par', 'plus',
-  'tout', 'tous', 'toute', 'toutes', 'cette', 'ces', 'son', 'sa', 'ses',
-  'leur', 'leurs', 'passe', 'arrive', 'fait', 'donne', 'parle', 'raconte',
-])
+const QUESTION_WORDS: Record<Locale, Set<string>> = {
+  fr: new Set([
+    'que', 'qui', 'quoi', 'quel', 'quelle', 'quels', 'quelles', 'quand', 'ou',
+    'comment', 'pourquoi', 'combien', 'est', 'sont', 'etait', 'etaient', 'sait',
+    'savons', 'connait', 'peux', 'peut', 'dis', 'dit', 'moi', 'nous', 'vous',
+    'les', 'des', 'une', 'aux', 'dans', 'pour', 'avec', 'sur', 'par', 'plus',
+    'tout', 'tous', 'toute', 'toutes', 'cette', 'ces', 'son', 'sa', 'ses',
+    'leur', 'leurs', 'passe', 'arrive', 'fait', 'donne', 'parle', 'raconte',
+  ]),
+  // The English twin, same shape and same restraint: asking words, never
+  // naming words.
+  en: new Set([
+    'what', 'who', 'whom', 'whose', 'which', 'when', 'where', 'how', 'why',
+    'does', 'did', 'was', 'were', 'are', 'the', 'and', 'that', 'this',
+    'these', 'those', 'their', 'there', 'they', 'them', 'his', 'her', 'its',
+    'about', 'know', 'known', 'tell', 'can', 'could', 'have', 'has', 'had',
+    'happen', 'happens', 'happened', 'with', 'from', 'into', 'over', 'more',
+    'most', 'some', 'you', 'your',
+  ]),
+}
 
 /**
  * Rewrite a question as a disjunction the same search path understands.
@@ -211,10 +247,14 @@ const QUESTION_WORDS = new Set([
  * null when nothing is left to broaden with — a one-word question is already
  * as broad as it gets, and re-running it would just cost a round trip.
  */
-export function disjoin(question: string): string | null {
+export function disjoin(
+  question: string,
+  locale: Locale = DEFAULT_LOCALE,
+): string | null {
+  const stopwords = QUESTION_WORDS[locale]
   const words = normalizeText(question)
     .split(' ')
-    .filter((word) => word.length > 2 && !QUESTION_WORDS.has(word))
+    .filter((word) => word.length > 2 && !stopwords.has(word))
 
   const unique = [...new Set(words)]
   if (unique.length < 2) return null

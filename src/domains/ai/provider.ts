@@ -145,6 +145,12 @@ export interface AnswerRequest {
     excerpt: string | null
   }>
   boundaryChapter: number
+  /**
+   * The language the answer is written in — the reader's, not the graph's.
+   * Excerpts stay in their source language regardless; they are copies.
+   * Absent means French, which every request before this field existed was.
+   */
+  language?: 'fr' | 'en'
 }
 
 export interface EmbedRequest {

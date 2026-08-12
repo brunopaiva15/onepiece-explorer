@@ -355,6 +355,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         entityLabels,
         and(
           eq(entityLabels.entityId, entities.id),
+          eq(entityLabels.lang, 'fr'),
           lte(entityLabels.revealedInChapter, chapterNumber),
         ),
       )

@@ -1,6 +1,8 @@
 import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary, type BoundaryDb } from '@/db/boundary.ts'
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 /**
  * The graph, as it stood at one chapter.
@@ -130,6 +132,7 @@ interface LabelRow extends Record<string, unknown> {
   entity_id: string
   label: string
   kind: string
+  lang: string
   precedence: number
   revealed_in_chapter: number
 }
@@ -161,7 +164,7 @@ const DEFAULT_NODE_CAP = 25_000
 export async function projectGraph(
   userId: string,
   boundaryChapter: number,
-  options: { nodeTypes?: string[]; limit?: number } = {},
+  options: { nodeTypes?: string[]; limit?: number; locale?: Locale } = {},
 ): Promise<GraphProjection> {
   const limit = options.limit ?? DEFAULT_NODE_CAP
 
@@ -192,7 +195,7 @@ export async function projectGraph(
     `)
 
     const labels = await db.execute<LabelRow>(sql`
-      SELECT entity_id, label, kind::text AS kind, precedence, revealed_in_chapter
+      SELECT entity_id, label, kind::text AS kind, lang, precedence, revealed_in_chapter
       FROM entity_labels
       ORDER BY precedence DESC, revealed_in_chapter DESC
     `)
@@ -211,6 +214,7 @@ export async function projectGraph(
       labels,
       assertions,
       options.nodeTypes,
+      options.locale,
     )
 
     return {
@@ -233,6 +237,7 @@ export function assemble(
   labels: LabelRow[],
   assertions: AssertionRow[],
   nodeTypes?: string[],
+  locale: Locale = DEFAULT_LOCALE,
 ): GraphProjection {
   const identity = new UnionFind()
   for (const entity of entities) identity.find(entity.id)
@@ -256,11 +261,20 @@ export function assemble(
 
   const entityById = new Map(entities.map((entity) => [entity.id, entity]))
 
-  // Best visible label per entity. The rows arrive already ordered by
-  // precedence then recency, so the first one wins.
+  /*
+   * Best visible label per entity — twice. The rows arrive already ordered by
+   * precedence then recency, so the first one wins. The reader's language is
+   * preferred; the unrestricted map is the fallback, so an entity whose
+   * English form was never seen keeps its French name rather than vanishing
+   * behind a placeholder.
+   */
   const labelOf = new Map<string, LabelRow>()
+  const labelInLocale = new Map<string, LabelRow>()
   for (const label of labels) {
     if (!labelOf.has(label.entity_id)) labelOf.set(label.entity_id, label)
+    if (label.lang === locale && !labelInLocale.has(label.entity_id)) {
+      labelInLocale.set(label.entity_id, label)
+    }
   }
 
   const degree = new Map<string, number>()
@@ -333,13 +347,13 @@ export function assemble(
      * all members is what makes a merged character display as "Kaelo Renn"
      * rather than as whichever silhouette happened to sort first.
      */
-    const best = bestLabel(members, labelOf)
+    const best = bestLabel(members, labelInLocale) ?? bestLabel(members, labelOf)
 
     nodes.push({
       id: root,
       memberIds: members,
       nodeType: rootEntity.node_type,
-      label: best?.label ?? 'entité sans nom révélé',
+      label: best?.label ?? getDictFor(locale).common.unnamedEntity,
       labelKind: best?.kind ?? 'placeholder',
       // The earliest appearance in the component: when the reader first met
       // anyone who turns out to be this person.
@@ -390,13 +404,19 @@ export async function displayLabel(
   userId: string,
   boundaryChapter: number,
   entityId: string,
+  locale: Locale = DEFAULT_LOCALE,
 ): Promise<{ label: string; kind: string; revealedInChapter: number } | null> {
   return withBoundary({ userId, boundaryChapter }, async (db) => {
+    /*
+     * Labels in the reader's language sort first, best label within each
+     * group; an entity with no label in that language falls back to its
+     * canonical French one rather than to nothing.
+     */
     const rows = await db.execute<LabelRow>(sql`
-      SELECT entity_id, label, kind::text AS kind, precedence, revealed_in_chapter
+      SELECT entity_id, label, kind::text AS kind, lang, precedence, revealed_in_chapter
       FROM entity_labels
       WHERE entity_id = ${entityId}
-      ORDER BY precedence DESC, revealed_in_chapter DESC
+      ORDER BY (lang = ${locale})::int DESC, precedence DESC, revealed_in_chapter DESC
       LIMIT 1
     `)
     const row = rows[0]
