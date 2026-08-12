@@ -3,9 +3,13 @@ import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 import { Portrait } from '@/app/components/portrait.tsx'
 
-export const metadata: Metadata = { title: 'Graphe — vue tableau' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.entity.tableTitle }
+}
 export const dynamic = 'force-dynamic'
 
 /**
@@ -28,7 +32,11 @@ export default async function GraphTablePage({
 }) {
   const { ch } = await searchParams
   const session = await getViewerSession(ch)
-  const projection = await projectGraph(session.userId, session.boundaryChapter)
+  const dict = await getDict()
+  const t = dict.entity
+  const projection = await projectGraph(session.userId, session.boundaryChapter, {
+    locale: session.locale,
+  })
 
   const labelOf = new Map(projection.nodes.map((node) => [node.id, node.label]))
   const byDegree = [...projection.nodes].sort((a, b) => b.degree - a.degree)
@@ -55,63 +63,62 @@ export default async function GraphTablePage({
     return null
   }
 
+  const epistemicLabel = (status: string): string =>
+    dict.common.epistemic[status] ?? t.epistemicExtra[status] ?? status
+
   return (
     <>
 
       <main id="contenu" className="mx-auto max-w-5xl px-6 py-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <h1 className="text-3xl font-semibold text-primary">
-            Graphe — vue tableau
+            {t.tableTitle}
           </h1>
           <Link
             href={`/graph?ch=${session.boundaryChapter}`}
             className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
           >
-            Vue graphique
+            {t.graphView}
           </Link>
         </div>
 
-        <p className="mt-2 text-sm text-secondary">
-          Mêmes données que la vue graphique, au même chapitre. Aucun WebGL requis.
-        </p>
+        <p className="mt-2 text-sm text-secondary">{t.tableIntro}</p>
 
         {projection.truncated && (
           <p
             role="status"
             className="mt-4 rounded-sm border border-[var(--epi-hypothetical)] bg-surface-raised p-3 text-sm text-primary"
           >
-            Liste tronquée : {projection.truncated.shown} entités sur{' '}
-            {projection.truncated.total}, les plus connectées d&apos;abord.
+            {t.listTruncated(projection.truncated.shown, projection.truncated.total)}
           </p>
         )}
 
         <section className="mt-8">
           <h2 className="text-lg font-semibold text-primary">
-            Entités ({projection.nodes.length})
+            {t.entitiesHeading(projection.nodes.length)}
           </h2>
 
           {projection.nodes.length === 0 ? (
             <p className="mt-3 rounded-sm border border-line bg-surface-raised p-4 text-secondary">
-              Rien de connu au chapitre {session.boundaryChapter}.
+              {t.nothingKnownAt(session.boundaryChapter)}
             </p>
           ) : (
             <table className="mt-3 w-full border-collapse text-sm">
               <caption className="sr-only">
-                Entités connues au chapitre {session.boundaryChapter}, par nombre de
-                relations.
+                {t.entitiesCaption(session.boundaryChapter)}
                 {projection.nodes.length > shown.length &&
-                  ` Les illustrations ne sont chargées que pour les ${shown.length} entités les plus reliées ; les autres lignes sont complètes mais sans image.`}
+                  t.entitiesCaptionImages(shown.length)}
               </caption>
               <thead>
                 <tr className="border-b border-line-strong text-left text-muted">
                   <th scope="col" className="w-12 py-2 pr-3 font-medium">
-                    <span className="sr-only">Illustration</span>
+                    <span className="sr-only">{t.thIllustration}</span>
                   </th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Nom</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Type</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Vue depuis</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Relations</th>
-                  <th scope="col" className="py-2 font-medium">Apparitions</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thName}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thType}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thSeenFrom}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thRelations}</th>
+                  <th scope="col" className="py-2 font-medium">{t.thAppearances}</th>
                 </tr>
               </thead>
               <tbody>
@@ -134,15 +141,15 @@ export default async function GraphTablePage({
                       {node.labelKind === 'placeholder' && (
                         <span
                           className="ml-2 text-xs text-muted"
-                          title="Aucun nom donné à ce stade : désignation tirée de l’image"
+                          title={t.unnamedBadgeTitle}
                         >
-                          (sans nom)
+                          {t.unnamedBadge}
                         </span>
                       )}
                     </td>
                     <td className="py-2 pr-3 text-secondary">{node.nodeType}</td>
                     <td className="py-2 pr-3 font-mono text-secondary">
-                      ch. {node.firstSeenChapter}
+                      {t.ch(node.firstSeenChapter)}
                     </td>
                     <td className="py-2 pr-3 text-secondary">{node.degree}</td>
                     <td className="py-2 text-secondary">
@@ -160,19 +167,19 @@ export default async function GraphTablePage({
         {projection.edges.length > 0 && (
           <section className="mt-12">
             <h2 className="text-lg font-semibold text-primary">
-              Relations ({projection.edges.length})
+              {t.relationsHeading(projection.edges.length)}
             </h2>
             <table className="mt-3 w-full border-collapse text-sm">
               <caption className="sr-only">
-                Relations connues au chapitre {session.boundaryChapter}
+                {t.relationsCaption(session.boundaryChapter)}
               </caption>
               <thead>
                 <tr className="border-b border-line-strong text-left text-muted">
-                  <th scope="col" className="py-2 pr-3 font-medium">Sujet</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Relation</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Objet</th>
-                  <th scope="col" className="py-2 pr-3 font-medium">Statut</th>
-                  <th scope="col" className="py-2 font-medium">Su depuis</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thSubject}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thRelation}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thObject}</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">{t.thStatus}</th>
+                  <th scope="col" className="py-2 font-medium">{t.thKnownSince}</th>
                 </tr>
               </thead>
               <tbody>
@@ -189,7 +196,7 @@ export default async function GraphTablePage({
                       {epistemicLabel(edge.epistemicStatus)}
                     </td>
                     <td className="py-2 font-mono text-secondary">
-                      ch. {edge.knowledgeFromChapter}
+                      {t.ch(edge.knowledgeFromChapter)}
                     </td>
                   </tr>
                 ))}
@@ -200,16 +207,4 @@ export default async function GraphTablePage({
       </main>
     </>
   )
-}
-
-function epistemicLabel(status: string): string {
-  const labels: Record<string, string> = {
-    explicit: 'affirmé',
-    inferred_strong: 'déduit',
-    hypothetical: 'hypothèse',
-    contradicted: 'contredit',
-    refuted: 'réfuté',
-    user_validated: 'validé par vous',
-  }
-  return labels[status] ?? status
 }

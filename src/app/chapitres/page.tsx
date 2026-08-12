@@ -4,8 +4,13 @@ import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts'
 import { PageTitle } from '@/app/ui/page-title.tsx'
 import { StatusBadge } from '@/app/ui/status-badge.tsx'
+import { getDict } from '@/lib/i18n/server.ts'
+import type { Dict } from '@/lib/i18n/dictionaries.ts'
 
-export const metadata: Metadata = { title: 'Chapitres' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.chapters.metaTitle }
+}
 /**
  * Per-user and cookie-dependent: never prerendered, and never in a shared
  * cache. Signed asset URLs expire within the minute, so a cached render would
@@ -25,25 +30,30 @@ export const dynamic = 'force-dynamic'
  */
 
 /** What you can do next, which depends entirely on where the chapter is. */
-function nextAction(chapter: ChapterSummary): { href: string; label: string; kind: string } {
+function nextAction(
+  chapter: ChapterSummary,
+  t: Dict['chapters'],
+): { href: string; label: string; kind: string } {
   switch (chapter.status) {
     case 'draft':
     case 'uploaded':
-      return { href: `/chapitres/${chapter.id}`, label: 'Traiter', kind: 'bouton-primaire' }
+      return { href: `/chapitres/${chapter.id}`, label: t.actionProcess, kind: 'bouton-primaire' }
     case 'processing':
-      return { href: `/chapitres/${chapter.id}`, label: 'Suivre', kind: 'bouton-mer' }
+      return { href: `/chapitres/${chapter.id}`, label: t.actionFollow, kind: 'bouton-mer' }
     case 'review':
-      return { href: `/chapitres/${chapter.id}`, label: 'Relire', kind: 'bouton-primaire' }
+      return { href: `/chapitres/${chapter.id}`, label: t.actionReview, kind: 'bouton-primaire' }
     case 'published':
-      return { href: `/delta/${chapter.number}`, label: 'Le delta', kind: '' }
+      return { href: `/delta/${chapter.number}`, label: t.actionDelta, kind: '' }
     default:
-      return { href: `/chapitres/${chapter.id}`, label: 'Ouvrir', kind: '' }
+      return { href: `/chapitres/${chapter.id}`, label: t.actionOpen, kind: '' }
   }
 }
 
 export default async function ChaptersPage() {
   const session = await getReaderSession()
   const chapters = await listChapters(session.userId, session.workId)
+  const dict = await getDict()
+  const t = dict.chapters
 
   const counts = {
     total: chapters.length,
@@ -57,10 +67,10 @@ export default async function ChaptersPage() {
   return (
     <main id="contenu" className="mx-auto max-w-6xl px-5 py-8">
       <PageTitle
-        title="Chapitres"
+        title={t.title}
         action={
           <Link href="/import" className="bouton bouton-primaire">
-            + Importer
+            {t.importCta}
           </Link>
         }
       />
@@ -69,10 +79,10 @@ export default async function ChaptersPage() {
           any sentence, and this page had no answer to that at all. */}
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
-          ['Importés', counts.total, ''],
-          ['À relire', counts.aRelire, counts.aRelire > 0 ? 'bg-accent' : ''],
-          ['Publiés', counts.publies, ''],
-          ['Pages', counts.pages, ''],
+          [t.statImported, counts.total, ''],
+          [t.statToReview, counts.aRelire, counts.aRelire > 0 ? 'bg-accent' : ''],
+          [t.statPublished, counts.publies, ''],
+          [t.statPages, counts.pages, ''],
         ].map(([label, value, tint]) => (
           <div
             key={String(label)}
@@ -87,21 +97,18 @@ export default async function ChaptersPage() {
 
       {chapters.length === 0 ? (
         <section className="panneau mt-8">
-          <h2 className="panneau-titre panneau-titre-vedette">Rien encore</h2>
+          <h2 className="panneau-titre panneau-titre-vedette">{t.emptyTitle}</h2>
           <div className="panneau-corps">
-            <p className="text-secondary">
-              Commencez par le premier chapitre que vous avez lu : c&apos;est son
-              numéro qui datera tout ce qu&apos;il révèle.
-            </p>
+            <p className="text-secondary">{t.emptyBody}</p>
             <Link href="/import" className="bouton bouton-primaire mt-4">
-              Importer le chapitre 1
+              {t.emptyCta}
             </Link>
           </div>
         </section>
       ) : (
         <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {chapters.map((chapter) => {
-            const action = nextAction(chapter)
+            const action = nextAction(chapter, t)
             return (
               <li key={chapter.id} className="panneau flex flex-col">
                 <div className="flex items-stretch">
@@ -119,7 +126,7 @@ export default async function ChaptersPage() {
                         href={`/chapitres/${chapter.id}`}
                         className="min-w-0 font-display text-lg uppercase leading-tight text-primary no-underline hover:underline"
                       >
-                        {chapter.title ?? `Chapitre ${chapter.number}`}
+                        {chapter.title ?? dict.common.chapterN(chapter.number)}
                       </Link>
                       <StatusBadge status={chapter.status} />
                     </div>
@@ -127,16 +134,16 @@ export default async function ChaptersPage() {
                     <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
                       <span className="tabular">
                         {chapter.sourceKind === 'summary'
-                          ? `${chapter.passageCount} passages`
-                          : `${chapter.pageCount} pages`}
+                          ? t.passagesN(chapter.passageCount)
+                          : t.pagesN(chapter.pageCount)}
                       </span>
-                      {chapter.volume !== null && <span>tome {chapter.volume}</span>}
+                      {chapter.volume !== null && <span>{t.volumeN(chapter.volume)}</span>}
                       {/* Where this chapter's citable text comes from. A
                           written chapter anchors against exactly the characters
                           you typed; a file-imported one against OCR, which is an
                           approximation and says so. */}
-                      <span title={chapter.sourceKind === 'summary' ? 'Chapitre écrit : les extraits citent votre texte, au caractère près' : chapter.hasTextLayer ? 'Couche texte : extraction exacte, sans OCR' : 'Pas de couche texte : OCR requis'}>
-                        {chapter.sourceKind === 'summary' ? 'texte écrit' : chapter.hasTextLayer ? 'texte exact' : 'OCR'}
+                      <span title={chapter.sourceKind === 'summary' ? t.sourceWrittenTitle : chapter.hasTextLayer ? t.sourceTextLayerTitle : t.sourceOcrTitle}>
+                        {chapter.sourceKind === 'summary' ? t.sourceWritten : chapter.hasTextLayer ? t.sourceTextLayer : t.sourceOcr}
                       </span>
                     </p>
                   </div>

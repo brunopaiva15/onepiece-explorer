@@ -1,4 +1,5 @@
 import type { DisplayImage } from '@/domains/images/index.ts'
+import { getDict } from '@/lib/i18n/server.ts'
 
 /**
  * An entity's portrait, and the honesty that has to travel with it.
@@ -18,7 +19,7 @@ import type { DisplayImage } from '@/domains/images/index.ts'
  * one thing private assets must never have.
  */
 
-export function Portrait({
+export async function Portrait({
   image,
   label,
   size = 'large',
@@ -43,12 +44,14 @@ export function Portrait({
     )
   }
 
+  const t = (await getDict()).entity
+
   return (
     <figure className="shrink-0">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={image.url}
-        alt={`Illustration de ${label}`}
+        alt={t.illustrationAlt(label)}
         loading="lazy"
         className="w-40 rounded-sm border border-line bg-surface-raised object-contain"
       />
@@ -61,30 +64,13 @@ export function Portrait({
         >
           {image.attribution}
         </a>{' '}
-        · rapprochée depuis «&nbsp;{image.matchedLabel}&nbsp;»
-        {image.matchScore < 1 && ` (${matchWording(image.matchMethod)})`}
+        {t.matchedFrom(image.matchedLabel)}
+        {/* How the match was made, in words rather than a number: "0.7" tells
+            the reader nothing about whether to trust the face. "nom partiel"
+            tells them exactly what to check. */}
+        {image.matchScore < 1 &&
+          ` (${t.matchMethod[image.matchMethod] ?? image.matchMethod})`}
       </figcaption>
     </figure>
   )
-}
-
-/**
- * How the match was made, in words rather than a number.
- *
- * "0.7" tells the reader nothing about whether to trust the face. "nom partiel"
- * tells them exactly what to check.
- */
-function matchWording(method: string): string {
-  switch (method) {
-    case 'exact':
-      return 'nom identique'
-    case 'tokens':
-      return 'mêmes mots, autre ordre'
-    case 'subset':
-      return 'nom partiel'
-    case 'trigram':
-      return 'orthographe proche'
-    default:
-      return method
-  }
 }

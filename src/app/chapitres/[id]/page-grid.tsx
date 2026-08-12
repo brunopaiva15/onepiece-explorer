@@ -3,6 +3,8 @@
 import { useMemo, useState, useTransition } from 'react'
 import type { PageView } from '@/domains/chapters/queries.ts'
 import { reorderPagesAction } from '@/app/import/actions.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
+import type { Locale } from '@/lib/i18n/index.ts'
 
 /**
  * Page preview and reordering.
@@ -23,6 +25,7 @@ interface Props {
   chapterNumber: number
   readingDirection: 'rtl' | 'ltr'
   pages: PageView[]
+  locale: Locale
 }
 
 interface Draft {
@@ -30,7 +33,9 @@ interface Draft {
   excluded: boolean
 }
 
-export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: Props) {
+export function PageGrid({ chapterId, chapterNumber, readingDirection, pages, locale }: Props) {
+  const dict = getDictFor(locale)
+  const t = dict.chapters
   const initial = useMemo(
     () => pages.map((page) => ({ page, excluded: page.excluded })),
     [pages],
@@ -81,7 +86,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
           excluded: entry.excluded,
         })),
       )
-      setMessage(result.ok ? 'Ordre enregistré.' : (result.error ?? 'Échec.'))
+      setMessage(result.ok ? t.orderSaved : (result.error ?? t.orderFailed))
     })
   }
 
@@ -91,14 +96,12 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
     <section className="mt-8">
       <div className="flex flex-wrap items-center gap-3 border-b border-line pb-3">
         <p className="text-sm text-secondary">
-          {kept} page{kept > 1 ? 's' : ''} retenue{kept > 1 ? 's' : ''}
-          {kept !== draft.length && ` · ${draft.length - kept} exclue(s)`}
+          {t.keptCount(kept)}
+          {kept !== draft.length && ` · ${t.excludedCount(draft.length - kept)}`}
         </p>
 
         <p className="text-sm text-muted">
-          {readingDirection === 'rtl'
-            ? 'Lecture droite à gauche'
-            : 'Lecture gauche à droite'}
+          {readingDirection === 'rtl' ? t.readingRtl : t.readingLtr}
         </p>
 
         <div className="ml-auto flex items-center gap-3">
@@ -111,7 +114,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
               }}
               className="rounded-sm border border-line-strong px-3 py-1.5 text-sm text-primary hover:bg-surface-raised"
             >
-              Annuler
+              {dict.common.cancel}
             </button>
           )}
           <button
@@ -120,7 +123,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
             disabled={!dirty || saving}
             className="rounded-sm bg-accent px-4 py-1.5 text-sm font-medium text-inverted hover:bg-accent-strong disabled:opacity-40"
           >
-            {saving ? 'Enregistrement…' : 'Enregistrer l’ordre'}
+            {saving ? t.savingEllipsis : t.saveOrder}
           </button>
         </div>
       </div>
@@ -131,11 +134,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
         </p>
       )}
 
-      <p className="mt-3 text-sm text-muted">
-        Sélectionnez une page puis utilisez les flèches ← → pour la déplacer, ou
-        les boutons. « Exclure » conserve la page et son fichier d&apos;origine :
-        elle cesse simplement de compter.
-      </p>
+      <p className="mt-3 text-sm text-muted">{t.gridHelp}</p>
 
       <ol className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {draft.map((entry, index) => (
@@ -143,7 +142,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
             <div
               tabIndex={0}
               role="button"
-              aria-label={`Page ${index + 1}${entry.excluded ? ', exclue' : ''}`}
+              aria-label={t.pageAria(index + 1, entry.excluded)}
               onFocus={() => setFocused(entry.page.id)}
               onKeyDown={(event) => {
                 // Arrow semantics follow the reading direction so "left" means
@@ -174,7 +173,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={entry.page.thumbUrl}
-                  alt={`Page ${index + 1} du chapitre ${chapterNumber}`}
+                  alt={t.pageAlt(index + 1, chapterNumber)}
                   width={entry.page.width}
                   height={entry.page.height}
                   loading="lazy"
@@ -182,7 +181,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                 />
               ) : (
                 <div className="flex aspect-2/3 items-center justify-center text-sm text-muted">
-                  Aperçu indisponible
+                  {t.noPreview}
                 </div>
               )}
 
@@ -192,15 +191,15 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                 </span>
                 {entry.page.isDoubleSpread && (
                   <span
-                    title="Double page probable"
+                    title={t.doubleSpreadTitle}
                     className="rounded-sm bg-surface-sunken px-1 text-[0.65rem] text-secondary"
                   >
-                    double
+                    {t.doubleSpreadBadge}
                   </span>
                 )}
                 {entry.page.textBlockCount > 0 && (
                   <span
-                    title={`${entry.page.textBlockCount} blocs de texte extraits`}
+                    title={t.textBlocksTitle(entry.page.textBlockCount)}
                     className="rounded-sm bg-surface-sunken px-1 text-[0.65rem] text-secondary"
                   >
                     {entry.page.textBlockCount} txt
@@ -212,7 +211,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                     type="button"
                     onClick={() => move(entry.page.id, -1)}
                     disabled={index === 0}
-                    aria-label={`Déplacer la page ${index + 1} plus tôt`}
+                    aria-label={t.moveEarlier(index + 1)}
                     className="px-1.5 text-secondary hover:text-primary disabled:opacity-30"
                   >
                     {readingDirection === 'rtl' ? '→' : '←'}
@@ -221,7 +220,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                     type="button"
                     onClick={() => move(entry.page.id, 1)}
                     disabled={index === draft.length - 1}
-                    aria-label={`Déplacer la page ${index + 1} plus tard`}
+                    aria-label={t.moveLater(index + 1)}
                     className="px-1.5 text-secondary hover:text-primary disabled:opacity-30"
                   >
                     {readingDirection === 'rtl' ? '←' : '→'}
@@ -230,7 +229,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                     type="button"
                     onClick={() => toggleExcluded(entry.page.id)}
                     aria-pressed={entry.excluded}
-                    aria-label={`${entry.excluded ? 'Réintégrer' : 'Exclure'} la page ${index + 1}`}
+                    aria-label={t.toggleExcludeAria(index + 1, entry.excluded)}
                     className="px-1.5 text-secondary hover:text-primary"
                   >
                     {entry.excluded ? '+' : '×'}

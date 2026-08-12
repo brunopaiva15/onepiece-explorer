@@ -8,8 +8,12 @@ import { latestRunForChapter } from '@/domains/pipeline/runs.ts'
 import { PageGrid } from './page-grid.tsx'
 import { providerOptions } from '@/domains/ai/index.ts'
 import { StartRun } from './start-run.tsx'
+import { getDict } from '@/lib/i18n/server.ts'
 
-export const metadata: Metadata = { title: 'Source du chapitre' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.chapters.detailMetaTitle }
+}
 
 /**
  * Signed asset URLs live about a minute, so this page must never be cached.
@@ -43,6 +47,8 @@ export default async function ChapterPage({
 }) {
   const { id } = await params
   const session = await getReaderSession()
+  const dict = await getDict()
+  const t = dict.chapters
 
   const chapter = await getChapter(session.userId, id)
   if (!chapter) notFound()
@@ -69,11 +75,11 @@ export default async function ChapterPage({
     <main id="contenu" className="mx-auto max-w-4xl px-4 py-6">
       <nav className="flex flex-wrap items-center gap-2 text-sm">
         <Link href="/" className="text-muted hover:text-primary">
-          Journal
+          {t.breadcrumbJournal}
         </Link>
         <span className="text-muted">/</span>
         <Link href="/import" className="text-muted hover:text-primary">
-          Import
+          {t.breadcrumbImport}
         </Link>
       </nav>
 
@@ -85,49 +91,49 @@ export default async function ChapterPage({
        */}
       <header className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-2">
         <span className="flex items-baseline gap-2">
-          <span className="cartouche">Chapitre</span>
+          <span className="cartouche">{t.chapterCartouche}</span>
           <span className="chiffre text-4xl leading-none">{chapter.number}</span>
         </span>
         {chapter.title && <p className="text-xl text-secondary">{chapter.title}</p>}
 
         <span className="flex items-baseline gap-1.5">
           <span className="chiffre text-2xl">{units}</span>
-          <span className="cartouche">{written ? 'passages' : 'pages'}</span>
+          <span className="cartouche">{written ? t.unitPassages : t.unitPages}</span>
         </span>
         {written && (
           <span className="flex items-baseline gap-1.5">
             <span className="chiffre text-2xl">{characters}</span>
-            <span className="cartouche">caractères</span>
+            <span className="cartouche">{t.unitCharacters}</span>
           </span>
         )}
         {written && chapter.language !== 'fr' && (
-          <span className="badge badge-gris" title="Langue de la source : celle des extraits cités">
-            source {chapter.language}
+          <span className="badge badge-gris" title={t.sourceLanguageTitle}>
+            {t.sourceLanguageBadge(chapter.language)}
           </span>
         )}
 
-        <span className="badge ml-auto">{statusLabel(chapter.status)}</span>
+        <span className="badge ml-auto">
+          {dict.common.status[chapter.status] ?? chapter.status}
+        </span>
       </header>
 
       <div className="mt-5 flex flex-wrap items-start gap-3">
         {units > 0 && <StartRun chapterId={chapter.id} options={providerOptions()} />}
         {lastRunId && (
           <Link href={`/runs/${lastRunId}`} className="bouton !py-1.5 !text-sm">
-            Dernier traitement
+            {t.lastRun}
           </Link>
         )}
         {written && (
           <Link href="/import" className="bouton !py-1.5 !text-sm">
-            Corriger le texte
+            {t.fixText}
           </Link>
         )}
       </div>
 
       {units === 0 ? (
         <p className="mt-8 border-[3px] border-ink bg-[var(--accent)] px-4 py-3 text-ink">
-          {written
-            ? "Ce chapitre n'a aucun passage. Réimportez son texte."
-            : "Aucune page enregistrée pour ce chapitre. Relancez l'import."}
+          {written ? t.emptyWritten : t.emptyPages}
         </p>
       ) : written ? (
         <>
@@ -167,20 +173,13 @@ export default async function ChapterPage({
              */
             <details className="mt-8 border-[3px] border-ink bg-surface-raised">
               <summary className="cursor-pointer px-3 py-2.5 font-display text-sm uppercase text-primary">
-                Le même chapitre en{' '}
-                {chapter.parallelLanguage === 'fr' ? 'français' : 'anglais'}
+                {t.parallelHeading(chapter.parallelLanguage ?? '')}
                 <span className="ml-2 font-sans normal-case text-muted">
-                  {chapter.parallelText.length} caractères · non citable
+                  {t.parallelMeta(chapter.parallelText.length)}
                 </span>
               </summary>
               <div className="border-t-[3px] border-ink px-3 py-2.5">
-                <p className="text-sm text-secondary">
-                  Fourni au modèle pour les noms uniquement&nbsp;: la mise en
-                  regard des deux langues donne la forme française d&apos;un nom
-                  au lieu de la lui faire deviner. Aucune preuve ne peut renvoyer
-                  ici, et un fait que ce texte serait seul à énoncer n&apos;entre
-                  pas dans le graphe.
-                </p>
+                <p className="text-sm text-secondary">{t.parallelExplain}</p>
                 <p className="mt-3 whitespace-pre-wrap text-primary">
                   {chapter.parallelText}
                 </p>
@@ -189,10 +188,7 @@ export default async function ChapterPage({
           )}
 
           <p className="mt-10 border-t border-line pt-6 text-sm text-muted">
-            Chaque proposition devra citer mot pour mot un de ces passages. Un
-            extrait qui n&apos;y apparaît pas est mis en quarantaine et
-            n&apos;atteint jamais la revue — c&apos;est ce qui empêche le modèle
-            d&apos;ajouter ce qu&apos;il sait de One&nbsp;Piece par ailleurs.
+            {t.citeFooterWritten}
           </p>
         </>
       ) : (
@@ -202,26 +198,13 @@ export default async function ChapterPage({
             chapterNumber={chapter.number}
             readingDirection={chapter.readingDirection}
             pages={pages}
+            locale={session.locale}
           />
           <p className="mt-10 border-t border-line pt-6 text-sm text-muted">
-            Les aperçus sont servis par des liens signés valables une minute.
-            Aucune page n&apos;a d&apos;adresse permanente&nbsp;: un lien copié
-            cesse de fonctionner.
+            {t.citeFooterPages}
           </p>
         </>
       )}
     </main>
   )
-}
-
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft: 'brouillon',
-    uploaded: 'importé',
-    processing: 'en traitement',
-    review: 'à revoir',
-    published: 'publié',
-    failed: 'échec',
-  }
-  return labels[status] ?? status
 }

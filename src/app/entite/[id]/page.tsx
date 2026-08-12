@@ -4,8 +4,15 @@ import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
+import { PREDICATE_BY_KEY } from '@/domains/knowledge/ontology.ts'
+import { localizedLabel, type Locale } from '@/lib/i18n/index.ts'
+import { getDict } from '@/lib/i18n/server.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
-export const metadata: Metadata = { title: 'Fiche' }
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return { title: dict.entity.sheetTitle }
+}
 export const dynamic = 'force-dynamic'
 
 export default async function EntityPage({
@@ -18,8 +25,15 @@ export default async function EntityPage({
   const { id } = await params
   const { ch } = await searchParams
   const session = await getViewerSession(ch)
+  const dict = await getDict()
+  const t = dict.entity
 
-  const sheet = await getEntitySheet(session.userId, session.boundaryChapter, id)
+  const sheet = await getEntitySheet(
+    session.userId,
+    session.boundaryChapter,
+    id,
+    session.locale,
+  )
   if (!sheet) notFound()
   // Every member of the identity component: after a merge the picture may hang
   // off the half that is no longer the representative.
@@ -55,7 +69,7 @@ export default async function EntityPage({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={portrait.url}
-                  alt={`Illustration de ${sheet.displayLabel}`}
+                  alt={t.illustrationAlt(sheet.displayLabel)}
                   loading="eager"
                   className="h-44 w-36 object-cover"
                 />
@@ -74,22 +88,30 @@ export default async function EntityPage({
 
               <div className="mt-3 flex flex-wrap gap-4">
                 <span>
-                  <span className="cartouche block !text-white/70">1re apparition</span>
-                  <span className="chiffre text-2xl">ch. {sheet.firstSeenChapter}</span>
+                  <span className="cartouche block !text-white/70">
+                    {t.firstAppearance}
+                  </span>
+                  <span className="chiffre text-2xl">
+                    {t.ch(sheet.firstSeenChapter)}
+                  </span>
                 </span>
                 <span>
-                  <span className="cartouche block !text-white/70">Faits</span>
+                  <span className="cartouche block !text-white/70">{t.factsLabel}</span>
                   <span className="chiffre text-2xl">{sheet.facts.length}</span>
                 </span>
                 {sheet.memberIds.length > 1 && (
-                  <span title="Apparitions distinctes identifiées comme une seule personne">
-                    <span className="cartouche block !text-white/70">Fusionnées</span>
+                  <span title={t.mergedPersonTitle}>
+                    <span className="cartouche block !text-white/70">
+                      {t.mergedLabel}
+                    </span>
                     <span className="chiffre text-2xl">{sheet.memberIds.length}</span>
                   </span>
                 )}
                 {sheet.labels.length > 1 && (
                   <span>
-                    <span className="cartouche block !text-white/70">Noms connus</span>
+                    <span className="cartouche block !text-white/70">
+                      {t.namesLabel}
+                    </span>
                     <span className="chiffre text-2xl">{sheet.labels.length}</span>
                   </span>
                 )}
@@ -99,8 +121,7 @@ export default async function EntityPage({
 
           {sheet.displayKind === 'placeholder' && (
             <p className="border-t-[3px] border-ink bg-[var(--accent)] px-4 py-1.5 text-sm text-ink">
-              Aucun nom n&apos;est donné à ce stade : cette désignation vient de
-              l&apos;image.
+              {t.placeholderNote}
             </p>
           )}
 
@@ -109,7 +130,7 @@ export default async function EntityPage({
                shown without saying so reads as something the pipeline
                established from your pages. It did not. */
             <p className="border-t-[3px] border-ink px-4 py-1.5 text-xs text-muted">
-              Illustration{' '}
+              {t.captionLead}{' '}
               <a
                 href={portrait.sourceUrl}
                 target="_blank"
@@ -118,18 +139,15 @@ export default async function EntityPage({
               >
                 {portrait.attribution}
               </a>
-              , rapprochée par le nom — pas une preuve tirée de vos pages.
+              {t.captionMatchedByName}
             </p>
           )}
         </header>
 
         {sheet.labels.length > 1 && (
           <section className="mt-8">
-            <h2 className="text-lg font-semibold text-primary">Noms connus</h2>
-            <p className="mt-1 text-sm text-secondary">
-              L&apos;historique de ce qu&apos;il fallait l&apos;appeler. Reculez le
-              curseur et le nom affiché change avec lui.
-            </p>
+            <h2 className="text-lg font-semibold text-primary">{t.namesLabel}</h2>
+            <p className="mt-1 text-sm text-secondary">{t.namesIntro}</p>
             <ul className="mt-3 divide-y divide-[var(--border)]">
               {sheet.labels.map((label) => (
                 <li
@@ -138,10 +156,10 @@ export default async function EntityPage({
                 >
                   <span className="text-primary">{label.label}</span>
                   <span className="text-sm text-muted">
-                    {labelKindLabel(label.kind)}
+                    {dict.common.labelKind[label.kind] ?? label.kind}
                   </span>
                   <span className="ml-auto font-mono text-sm text-muted">
-                    révélé ch. {label.revealedInChapter}
+                    {t.revealedCh(label.revealedInChapter)}
                   </span>
                 </li>
               ))}
@@ -150,24 +168,25 @@ export default async function EntityPage({
         )}
 
         <FactList
-          title="Ce que l’on sait"
+          title={t.knownFactsTitle}
           facts={outgoing}
           boundary={session.boundaryChapter}
-          empty="Rien d’affirmé à propos de cette entité à ce chapitre."
+          empty={t.knownFactsEmpty}
+          locale={session.locale}
         />
 
         {incoming.length > 0 && (
           <FactList
-            title="Ce que l’on dit d’elle"
+            title={t.saidFactsTitle}
             facts={incoming}
             boundary={session.boundaryChapter}
             empty=""
+            locale={session.locale}
           />
         )}
 
         <p className="mt-14 border-t border-line pt-6 text-sm text-muted">
-          Chaque fait porte le chapitre où vous avez pu l&apos;apprendre et la case
-          qui le prouve. Un fait sans preuve n&apos;entre pas ici.
+          {t.provenanceNote}
         </p>
       </main>
     </>
@@ -179,13 +198,18 @@ function FactList({
   facts,
   boundary,
   empty,
+  locale,
 }: {
   title: string
   facts: SheetFact[]
   boundary: number
   empty: string
+  locale: Locale
 }) {
   if (facts.length === 0 && empty === '') return null
+
+  const dict = getDictFor(locale)
+  const t = dict.entity
 
   return (
     <section className="mt-10">
@@ -203,13 +227,15 @@ function FactList({
               className="rounded-sm border border-line bg-surface-raised p-4"
             >
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-sm text-accent">{fact.predicate}</span>
+                <span className="font-mono text-sm text-accent">
+                  {predicateLabel(fact.predicate, locale)}
+                </span>
                 {fact.otherId ? (
                   <Link
                     href={`/entite/${fact.otherId}?ch=${boundary}`}
                     className="font-medium text-primary hover:underline"
                   >
-                    {fact.otherLabel ?? 'entité sans nom révélé'}
+                    {fact.otherLabel ?? dict.common.unnamedEntity}
                   </Link>
                 ) : (
                   <span className="font-medium text-primary">{fact.literalValue}</span>
@@ -222,20 +248,22 @@ function FactList({
                     border: `1px solid ${epistemicColour(fact.epistemicStatus)}`,
                   }}
                 >
-                  {epistemicLabel(fact.epistemicStatus)}
+                  {dict.common.epistemic[fact.epistemicStatus] ??
+                    t.epistemicExtra[fact.epistemicStatus] ??
+                    fact.epistemicStatus}
                 </span>
 
                 {fact.locked && (
                   <span
                     className="rounded-sm border border-line px-1.5 text-[0.7rem] text-muted"
-                    title="Corrigé par vous : jamais remplacé par une nouvelle extraction"
+                    title={t.yourCorrectionTitle}
                   >
-                    votre correction
+                    {t.yourCorrection}
                   </span>
                 )}
 
                 <span className="ml-auto font-mono text-xs text-muted">
-                  su depuis ch. {fact.knowledgeFromChapter}
+                  {t.knownSinceCh(fact.knowledgeFromChapter)}
                 </span>
               </div>
 
@@ -244,7 +272,7 @@ function FactList({
                    not yet refuted. Saying so is the point of the two-axis
                    model — a wiki would simply have deleted it. */
                 <p className="mt-1.5 text-sm text-[var(--epi-hypothetical)]">
-                  Cette croyance sera démentie au chapitre {fact.knowledgeUntilChapter}.
+                  {t.beliefRefuted(fact.knowledgeUntilChapter)}
                 </p>
               )}
 
@@ -259,7 +287,7 @@ function FactList({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={evidence.panelImageUrl}
-                          alt={`Case source, page ${(evidence.pageIndex ?? 0) + 1}`}
+                          alt={t.evidenceAlt((evidence.pageIndex ?? 0) + 1)}
                           loading="lazy"
                           className="max-h-40 w-auto rounded-sm border border-line"
                         />
@@ -272,9 +300,9 @@ function FactList({
                         )}
                         <p className="mt-1 font-mono text-xs text-muted">
                           {evidence.chapterNumber !== null &&
-                            `ch. ${evidence.chapterNumber}`}
+                            t.ch(evidence.chapterNumber)}
                           {evidence.pageIndex !== null &&
-                            ` · page ${evidence.pageIndex + 1}`}
+                            t.pageDot(evidence.pageIndex + 1)}
                         </p>
                       </div>
                     </li>
@@ -289,27 +317,14 @@ function FactList({
   )
 }
 
-function labelKindLabel(kind: string): string {
-  const labels: Record<string, string> = {
-    placeholder: 'désignation provisoire',
-    alias: 'surnom',
-    true_name: 'vrai nom',
-    epithet: 'épithète',
-    translation: 'traduction',
-  }
-  return labels[kind] ?? kind
-}
-
-function epistemicLabel(status: string): string {
-  const labels: Record<string, string> = {
-    explicit: 'affirmé',
-    inferred_strong: 'déduit',
-    hypothetical: 'hypothèse',
-    contradicted: 'contredit',
-    refuted: 'réfuté',
-    user_validated: 'validé par vous',
-  }
-  return labels[status] ?? status
+/**
+ * The predicate's localized label from the ontology, the raw key when the
+ * predicate is unknown there — a raw key is still legible, an empty span is
+ * not.
+ */
+function predicateLabel(key: string, locale: Locale): string {
+  const def = PREDICATE_BY_KEY.get(key)
+  return def ? localizedLabel(def, locale) : key
 }
 
 function epistemicColour(status: string): string {
