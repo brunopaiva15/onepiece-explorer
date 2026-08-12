@@ -86,6 +86,22 @@ const SLICE_PASSAGES = 15
 /** How many times a failing slice may be halved before it is given up on. */
 const MAX_SPLIT_DEPTH = 2
 
+/**
+ * How many slices are in flight at once.
+ *
+ * They ran strictly one after another, which was defensible when a chapter was
+ * six slices of panels and the concern was rate limits. It is not defensible at
+ * two slices: the second waits out the first for no reason, and the wall clock
+ * is the sum where it could be the maximum.
+ *
+ * Three rather than "all of them" because the slices of one chapter share a
+ * prompt cache and an account-level rate limit, and because a failure that
+ * splits a slice pushes more work back onto the queue — an unbounded fan-out
+ * would turn a bad chapter into a burst. Three keeps a normal chapter to a
+ * single round while leaving headroom.
+ */
+const SLICE_CONCURRENCY = 3
+
 interface Slice {
   descriptions: PanelDescription[]
   blocks: PromptBlock[]
@@ -475,7 +491,17 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   let failedSlices = 0
   let lastFailure: string | null = null
 
-  while (pending.length > 0) {
+  /*
+   * A pool over the shared queue, not a map over a fixed list.
+   *
+   * The queue is mutated while it drains: a slice that fails is pushed back
+   * whole for a retry, or halved and pushed back as two. A `Promise.all` over
+   * the initial slices could not express that. Workers pulling from one array
+   * can, and `shift()` between awaits is safe here because nothing yields
+   * inside the read-modify-write.
+   */
+  async function drain(): Promise<void> {
+   while (pending.length > 0) {
     const { slice, depth, retried } = pending.shift()!
     done++
     if (slices.length > 1) {
@@ -573,7 +599,14 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       sliceKey(slice),
       JSON.stringify(sliceFiltered),
     )
+   }
   }
+
+  await Promise.all(
+    Array.from({ length: Math.min(SLICE_CONCURRENCY, Math.max(pending.length, 1)) }, () =>
+      drain(),
+    ),
+  )
 
   if (failedSlices > 0 && failedSlices === slices.length) {
     // Every slice failed: not a bad patch, a broken step. Failing puts the

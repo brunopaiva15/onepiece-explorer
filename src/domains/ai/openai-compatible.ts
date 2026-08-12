@@ -13,6 +13,7 @@ import {
 } from './prompts.ts'
 import {
   answerSchema,
+  clampExtraction,
   clampPanelDescriptions,
   extractionSchema,
   panelDescriptionsSchema,
@@ -203,7 +204,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       )
       .join('\n\n')
 
-    return this.structured({
+    const result = await this.structured({
       system: extractionSystem(request.ontology, request.source),
       schema: extractionSchema,
       name: 'extraction',
@@ -221,6 +222,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
         },
       ],
     })
+
+    return { ...result, value: clampExtraction(result.value) }
   }
 
   async resolve(request: ResolveRequest): Promise<ProviderResult<Resolution>> {

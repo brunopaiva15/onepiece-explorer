@@ -21,6 +21,7 @@ import {
 } from './prompts.ts'
 import {
   answerSchema,
+  clampExtraction,
   extractionSchema,
   panelDescriptionsSchema,
   resolutionSchema,
@@ -87,8 +88,18 @@ const CACHE_TTL = '1h' as const
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic' as const
   private readonly client: Anthropic
-  /** Prefixes already warmed this process, keyed by their own hash. */
-  private readonly warmed = new Set<string>()
+  /**
+   * Prefixes warmed this process, keyed by their own hash — the *promise*, not
+   * a flag.
+   *
+   * A Set marked before the await, so a second caller arriving while the
+   * warm-up was still in flight saw "already warmed" and went straight out with
+   * a cache that did not exist yet. That is precisely the race the warm-up
+   * exists to prevent, and it stayed harmless only while slices ran one at a
+   * time. Holding the promise makes concurrent callers wait for the same
+   * warm-up and then all read the same cache entry.
+   */
+  private readonly warmed = new Map<string, Promise<void>>()
 
   constructor(apiKey: string) {
     this.client = new Anthropic({ apiKey })
@@ -208,7 +219,7 @@ export class AnthropicProvider implements ModelProvider {
       )
       .join('\n\n')
 
-    return this.structured({
+    const result = await this.structured({
       tier: 'extract',
       system,
       schema: extractionSchema,
@@ -237,6 +248,10 @@ export class AnthropicProvider implements ModelProvider {
         },
       ],
     })
+
+    // Clamped, not rejected. The budgets are advisory to the model and binding
+    // here — an answer a little over must not lose the slice it came from.
+    return { ...result, value: clampExtraction(result.value) }
   }
 
   async resolve(request: ResolveRequest): Promise<ProviderResult<Resolution>> {
@@ -334,22 +349,28 @@ export class AnthropicProvider implements ModelProvider {
    */
   private async warm(model: string, system: TextBlockParam[]): Promise<void> {
     const key = `${model}:${JSON.stringify(system)}`
-    if (this.warmed.has(key)) return
-    this.warmed.add(key)
 
-    try {
-      await this.client.messages.create({
-        model,
-        system,
-        // 1, not 0: the API requires at least one output token. The point is to
-        // populate the cache, not to read the reply.
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'ok' }],
-      })
-    } catch {
-      // A failed warm-up costs a little money and nothing else; the real call
-      // will simply write the cache itself.
-    }
+    const existing = this.warmed.get(key)
+    if (existing) return existing
+
+    const started = (async () => {
+      try {
+        await this.client.messages.create({
+          model,
+          system,
+          // 1, not 0: the API requires at least one output token. The point is
+          // to populate the cache, not to read the reply.
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'ok' }],
+        })
+      } catch {
+        // A failed warm-up costs a little money and nothing else; the real call
+        // will simply write the cache itself.
+      }
+    })()
+
+    this.warmed.set(key, started)
+    return started
   }
 
   private async structured<S extends z.ZodType>(options: {

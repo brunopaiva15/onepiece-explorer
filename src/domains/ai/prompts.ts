@@ -24,14 +24,15 @@
  *      document is ever fetched.
  */
 
-import { DESCRIPTION_BUDGET } from './schemas.ts'
+import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
 
 /**
  * Bumped when the wording changes in a way that could change what comes back.
  * '2' states the length budgets, which '1' enforced without ever mentioning.
  * '3' adds the written-summary source and the output-language rule.
+ * '4' states the citation budgets, which is what decides how long a slice takes.
  */
-export const PROMPT_VERSION = '3'
+export const PROMPT_VERSION = '4'
 
 /**
  * What the model is reading.
@@ -184,6 +185,16 @@ description de la case dit.
 
 S'il n'y a pas de preuve, il n'y a pas d'élément. Ne produisez rien plutôt que
 de produire quelque chose d'invérifiable.
+
+BUDGETS, à respecter — c'est la longueur de vos citations qui décide du temps de
+traitement, puisque chaque caractère recopié est un caractère à écrire :
+  • « excerpt » : au plus ${EXTRACTION_BUDGET.excerpt} caractères. Une phrase
+    suffit. Citez le fragment le plus court qui établit le fait, pas le
+    paragraphe qui l'entoure.
+  • « evidence » : ${EXTRACTION_BUDGET.evidencePerItem} preuves au maximum par
+    élément, et une seule dans la grande majorité des cas. Toutes doivent tenir
+    pour que l'élément soit retenu : une preuve de plus est un risque de plus,
+    jamais un argument de plus.
 `.trim()
 
 export function transcriptionSystem(): string {

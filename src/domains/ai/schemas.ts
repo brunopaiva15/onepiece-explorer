@@ -115,6 +115,30 @@ export function clampPanelDescriptions(panels: PanelDescription[]): PanelDescrip
  * review queue, let alone the graph. That check is what stops the model
  * answering from what it already knows about One Piece (ADR 0003).
  */
+/**
+ * Budgets for extraction, enforced the same way as the description ones: stated
+ * in the prompt, clamped on arrival, never used to reject an answer.
+ *
+ * The excerpt budget is where the latency was. An excerpt is *copied* from the
+ * source, so every character is an output token, and the ceiling was six
+ * hundred. A slice proposing ninety items with quotes that long writes more
+ * than the chapter it read — three or four minutes of generation for one call,
+ * close enough to the token ceiling that a dense chapter truncates and pays for
+ * a retry it did not need.
+ *
+ * A hundred and eighty characters is a full sentence, which is all an anchor
+ * has to be, and shortening one costs nothing: the check is that the excerpt
+ * occurs in the passage, and a prefix of a substring is still a substring.
+ *
+ * Two citations rather than six for the same reason, plus a better one:
+ * `firstFailure` requires *every* citation to hold, so a fourth and fifth
+ * citation add output length and quarantine risk and no evidential weight.
+ */
+export const EXTRACTION_BUDGET = {
+  excerpt: 180,
+  evidencePerItem: 2,
+} as const
+
 export const evidenceRefSchema = z.object({
   /** A panel_ref or block_ref from the whitelist supplied in the prompt. */
   ref: z.string(),
@@ -122,6 +146,13 @@ export const evidenceRefSchema = z.object({
   /**
    * For kind 'text': must occur verbatim in the cited block.
    * For kind 'visual': must match a description produced in this same run.
+   *
+   * Deliberately generous here, and tight in the prompt. The Messages API does
+   * not enforce string length from a JSON Schema, so a snug `.max()` is not a
+   * constraint on the model — it is a licence to throw at one, and a single
+   * over-long quote would fail the parse and lose the whole slice. The real
+   * budget is EXTRACTION_BUDGET.excerpt, stated in the prompt and clamped on
+   * arrival.
    */
   excerpt: z.string().max(600),
 })
@@ -203,6 +234,31 @@ export const extractionSchema = z.object({
   events: z.array(candidateEventSchema).max(20),
   mysteries: z.array(candidateMysterySchema).max(10),
 })
+
+/**
+ * Bring an extraction inside its budgets rather than reject it for missing them.
+ *
+ * Truncation is safe precisely here and nowhere else in this file: an excerpt is
+ * checked by asking whether it occurs inside the cited passage, and a prefix of
+ * a substring is still a substring. Note the absence of an ellipsis — `cut()`
+ * appends one, which would make the excerpt match nothing at all and quarantine
+ * every item it touched.
+ */
+export function clampExtraction(extraction: Extraction): Extraction {
+  const trim = <T extends { evidence: EvidenceRef[] }>(item: T): T => ({
+    ...item,
+    evidence: item.evidence
+      .slice(0, EXTRACTION_BUDGET.evidencePerItem)
+      .map((ref) => ({ ...ref, excerpt: ref.excerpt.slice(0, EXTRACTION_BUDGET.excerpt) })),
+  })
+
+  return {
+    entities: extraction.entities.map(trim),
+    assertions: extraction.assertions.map(trim),
+    events: extraction.events.map(trim),
+    mysteries: extraction.mysteries.map(trim),
+  }
+}
 
 export type Extraction = z.infer<typeof extractionSchema>
 export type CandidateEntity = z.infer<typeof candidateEntitySchema>
