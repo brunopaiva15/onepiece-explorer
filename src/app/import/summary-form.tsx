@@ -9,6 +9,8 @@ import {
   splitPassages,
   type SummaryLanguage,
 } from '@/domains/ingestion/passages.ts'
+import { type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 import { importSummaryAction, type SummaryActionResult } from './actions.ts'
 
 /**
@@ -29,6 +31,7 @@ import { importSummaryAction, type SummaryActionResult } from './actions.ts'
 
 interface Props {
   suggestedNumber: number
+  locale: Locale
 }
 
 /**
@@ -41,7 +44,8 @@ interface Props {
  */
 const PASSAGES_PER_CALL = 15
 
-export function SummaryForm({ suggestedNumber }: Props) {
+export function SummaryForm({ suggestedNumber, locale }: Props) {
+  const t = getDictFor(locale).importer
   const [state, submit, pending] = useActionState<SummaryActionResult | null, FormData>(
     importSummaryAction,
     null,
@@ -145,7 +149,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
         <div className="grid gap-4 sm:grid-cols-[7rem_1fr_7rem]">
           <label className="block">
             <span className="text-sm font-medium text-primary" id={numberId}>
-              Chapitre
+              {t.labelChapter}
             </span>
             <input
               name="chapterNumber"
@@ -162,7 +166,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
 
           <label className="block">
             <span className="text-sm font-medium text-primary" id={titleId}>
-              Titre <span className="font-normal text-muted">(facultatif)</span>
+              {t.labelTitle} <span className="font-normal text-muted">{t.optionalTag}</span>
             </span>
             <input
               name="title"
@@ -175,7 +179,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
 
           <label className="block">
             <span className="text-sm font-medium text-primary" id={volumeId}>
-              Tome <span className="font-normal text-muted">(facultatif)</span>
+              {t.labelVolume} <span className="font-normal text-muted">{t.optionalTag}</span>
             </span>
             <input
               name="volume"
@@ -193,7 +197,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
             htmlFor={summaryId}
             className="font-display text-lg uppercase text-primary"
           >
-            Le chapitre, raconté
+            {t.summaryLabel}
           </label>
           <textarea
             id={summaryId}
@@ -204,13 +208,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
             maxLength={MAX_SUMMARY_CHARS}
             rows={16}
             spellCheck
-            placeholder={
-              'Collez ici le résumé le plus détaillé que vous ayez du chapitre.\n\n' +
-              'Un paragraphe par scène. Les noms tels que le chapitre les donne — ' +
-              "et seulement ceux qu'il donne.\n\n" +
-              'Chaque fait du graphe devra citer une phrase de ce texte : ' +
-              "ce qui n'y est pas écrit n'entrera pas."
-            }
+            placeholder={t.summaryPlaceholder}
             className="mt-2 w-full resize-y border-[3px] border-ink bg-surface-raised px-3 py-2.5 font-sans text-primary placeholder:text-muted/70"
             style={{ boxShadow: 'var(--shadow-hard)' }}
           />
@@ -225,29 +223,26 @@ export function SummaryForm({ suggestedNumber }: Props) {
           <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-2">
             <span className="flex items-baseline gap-1.5">
               <span className="chiffre text-2xl">{trimmed.length}</span>
-              <span className="cartouche">caractères</span>
+              <span className="cartouche">{t.unitCharacters}</span>
             </span>
             <span className="flex items-baseline gap-1.5">
               <span className="chiffre text-2xl">{passages.length}</span>
-              <span className="cartouche">passages citables</span>
+              <span className="cartouche">{t.unitCitablePassages}</span>
             </span>
-            <span className="flex items-baseline gap-1.5" title="Une tranche d'extraction par groupe de passages">
+            <span className="flex items-baseline gap-1.5" title={t.modelCallsTitle}>
               <span className="chiffre text-2xl">{passages.length === 0 ? 0 : calls}</span>
-              <span className="cartouche">appel{calls > 1 ? 's' : ''} au modèle</span>
+              <span className="cartouche">{t.modelCalls(calls)}</span>
             </span>
           </div>
 
           {tooShort && (
             <p className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink">
-              Encore {MIN_SUMMARY_CHARS - trimmed.length} caractères. Un résumé
-              trop court produit un graphe vide : chaque fait doit pouvoir citer
-              une phrase.
+              {t.tooShort(MIN_SUMMARY_CHARS - trimmed.length)}
             </p>
           )}
           {tooLong && (
             <p className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
-              Au-delà de {MAX_SUMMARY_CHARS} caractères. Coupez le texte, ou
-              importez-le en deux chapitres.
+              {t.tooLong(MAX_SUMMARY_CHARS)}
             </p>
           )}
         </div>
@@ -255,14 +250,14 @@ export function SummaryForm({ suggestedNumber }: Props) {
         {/* --- Language ---------------------------------------------------- */}
         <fieldset className="rounded-sm border border-line p-4">
           <legend className="px-1.5 text-sm font-medium text-primary">
-            Langue de la source
+            {t.languageLegend}
           </legend>
           <div className="mt-1 flex flex-wrap gap-5">
             {(
               [
-                ['auto', 'Détecter'],
-                ['fr', 'Français'],
-                ['en', 'English'],
+                ['auto', t.languageAuto],
+                ['fr', t.languageFr],
+                ['en', t.languageEn],
               ] as const
             ).map(([value, label]) => (
               <label key={value} className="flex items-center gap-2 text-sm text-secondary">
@@ -290,47 +285,37 @@ export function SummaryForm({ suggestedNumber }: Props) {
               role="status"
               className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink"
             >
-              Je n&apos;arrive pas à trancher — {guess.french} marqueurs
-              français contre {guess.english} anglais, c&apos;est trop serré
-              pour décider à votre place. Choisissez ci-dessus.
+              {t.mustChooseLanguage(guess.french, guess.english)}
             </p>
           )}
 
           <p className="mt-2 text-sm text-muted">
-            Le graphe reste en français quelle que soit la réponse. Seuls les
-            extraits cités gardent la langue de la source&nbsp;: une citation est
-            une copie, vérifiée caractère par caractère — la traduire la
-            rendrait invérifiable.
+            {t.languageNote}
           </p>
         </fieldset>
 
         {/* --- The same chapter, in the other language --------------------- */}
         <details className="rounded-sm border border-line p-4">
           <summary className="cursor-pointer text-sm font-medium text-primary">
-            Le même chapitre dans l’autre langue
-            <span className="font-normal text-muted"> (facultatif)</span>
+            {t.parallelSummaryTitle}
+            <span className="font-normal text-muted"> {t.optionalTag}</span>
             {parallelTrimmed.length > 0 && (
               <span className="badge badge-gris ml-2">
-                {otherLanguage ?? 'autre langue'}
+                {otherLanguage ?? t.parallelBadgeFallback}
               </span>
             )}
           </summary>
 
           <p className="mt-3 max-w-3xl text-sm text-secondary">
-            Si vous avez les deux versions, collez la seconde ici. Elle{' '}
-            <strong>n’est pas une source</strong>&nbsp;: rien ne pourra la citer, et
-            un fait qu’elle seule énonce n’entrera pas dans le graphe. Elle sert à
-            lire la correspondance des noms — « Straw Hat Pirates » en regard de
-            « Équipage du Chapeau de Paille » —, ce qu’aucun texte seul ne peut
-            donner. Le modèle cesse alors de deviner la forme française&nbsp;: il la
-            lit.
+            {t.parallelIntro}{' '}
+            <strong>{t.parallelIntroStrong}</strong>{t.parallelIntroRest}
           </p>
 
           <textarea
             name="parallelSummary"
             // Labelled here rather than by a <label>: the visible name sits in
             // the <summary> of the disclosure, which cannot label a control.
-            aria-label="Le même chapitre dans l’autre langue"
+            aria-label={t.parallelSummaryTitle}
             value={parallel}
             onChange={(event) => setParallel(event.target.value)}
             maxLength={MAX_SUMMARY_CHARS}
@@ -338,31 +323,28 @@ export function SummaryForm({ suggestedNumber }: Props) {
             spellCheck
             placeholder={
               otherLanguage === 'fr'
-                ? 'La version française du même chapitre.'
+                ? t.parallelPlaceholderFr
                 : otherLanguage === 'en'
-                  ? 'The same chapter, in English.'
-                  : 'La version du chapitre dans l’autre langue.'
+                  ? t.parallelPlaceholderEn
+                  : t.parallelPlaceholderOther
             }
             className="mt-3 w-full resize-y rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 font-sans text-primary placeholder:text-muted/70"
           />
 
           {parallelTrimmed.length > 0 && (
             <p className="mt-2 text-sm text-muted">
-              {parallelTrimmed.length} caractères, fournis au modèle à chaque
-              tranche — pour les noms, jamais comme preuve.
+              {t.parallelChars(parallelTrimmed.length)}
             </p>
           )}
 
           {parallelTooShort && (
             <p className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink">
-              Encore {MIN_SUMMARY_CHARS - parallelTrimmed.length} caractères, ou
-              laissez vide&nbsp;: trop court, ce texte ne contient aucune
-              correspondance de noms exploitable.
+              {t.parallelTooShort(MIN_SUMMARY_CHARS - parallelTrimmed.length)}
             </p>
           )}
           {parallelTooLong && (
             <p className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
-              Au-delà de {MAX_SUMMARY_CHARS} caractères.
+              {t.parallelTooLong(MAX_SUMMARY_CHARS)}
             </p>
           )}
           {parallelSameLanguage && (
@@ -370,9 +352,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
               role="alert"
               className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white"
             >
-              Ce texte semble être dans la même langue que le premier. C’est la
-              mise en regard des deux langues qui donne les noms&nbsp;; deux fois
-              le même résumé ne donne rien et double le coût de chaque tranche.
+              {t.parallelSameLanguage}
             </p>
           )}
         </details>
@@ -392,11 +372,11 @@ export function SummaryForm({ suggestedNumber }: Props) {
           >
             {pending
               ? autoRun
-                ? 'Import et traitement…'
-                : 'Enregistrement…'
+                ? t.submitPendingRun
+                : t.submitPendingOnly
               : autoRun
-                ? 'Importer et traiter'
-                : 'Importer seulement'}
+                ? t.submitRun
+                : t.submitOnly}
           </button>
 
           {/*
@@ -414,7 +394,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
               onChange={(event) => setAutoRun(event.target.checked)}
               className="accent-[var(--accent)]"
             />
-            Lancer le traitement dans la foulée
+            {t.autoRunLabel}
           </label>
         </div>
       </fieldset>
@@ -438,16 +418,16 @@ export function SummaryForm({ suggestedNumber }: Props) {
         >
           <p className="font-medium text-primary">
             {state.unchanged
-              ? 'Texte identique au précédent import — rien n’a été réécrit.'
+              ? t.successUnchanged
               : state.replaced
-                ? 'Chapitre remplacé'
-                : 'Chapitre importé'}{' '}
-            — {state.passageCount} passage{(state.passageCount ?? 0) > 1 ? 's' : ''}
-            {state.language === 'en' && ', source en anglais'}.
+                ? t.successReplaced
+                : t.successImported}{' '}
+            — {t.successPassages(state.passageCount ?? 0)}
+            {state.language === 'en' && t.successEnglishSource}.
           </p>
           {state.runError && (
             <p className="mt-2 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink">
-              Le chapitre est enregistré, mais le traitement n’a pas démarré :{' '}
+              {t.runNotStarted}{' '}
               {state.runError}
             </p>
           )}
@@ -455,17 +435,16 @@ export function SummaryForm({ suggestedNumber }: Props) {
           <div className="mt-3 flex flex-wrap gap-2">
             {state.runId && (
               <Link href={`/runs/${state.runId}`} className="bouton bouton-primaire !py-1.5 !text-sm">
-                Suivre le traitement
+                {t.followRun}
               </Link>
             )}
             <Link href={`/chapitres/${state.chapterId}`} className="bouton !py-1.5 !text-sm">
-              Voir le chapitre
+              {t.viewChapter}
             </Link>
           </div>
 
           <p className="mt-3 text-sm text-muted">
-            Le formulaire est prêt pour le chapitre {nextNumber} — collez la
-            suite sans recharger la page.
+            {t.readyForNext(nextNumber)}
           </p>
         </div>
       )}

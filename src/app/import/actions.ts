@@ -8,6 +8,8 @@ import { MAX_SUMMARY_CHARS, type SummaryLanguage } from '@/domains/ingestion/pas
 import { reorderPages } from '@/domains/ingestion/persist.ts'
 import { importSummary } from '@/domains/ingestion/summary.ts'
 import { startChapterRun } from '@/domains/pipeline/start.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
+import { getLocale } from '@/lib/i18n/server.ts'
 
 /**
  * Import a chapter from the browser.
@@ -38,6 +40,7 @@ export async function importChapterAction(
 ): Promise<ImportActionResult> {
   try {
     const session = await requireOwner()
+    const t = getDictFor(session.locale).importer
 
     const numberRaw = formData.get('chapterNumber')
     const chapterNumber = Number(numberRaw)
@@ -45,8 +48,8 @@ export async function importChapterAction(
       return {
         ok: false,
         error: {
-          message: 'Numéro de chapitre invalide.',
-          hint: 'Indiquez un entier positif, par exemple 1.',
+          message: t.invalidChapterNumber,
+          hint: t.invalidChapterNumberHint,
         },
       }
     }
@@ -60,8 +63,8 @@ export async function importChapterAction(
       return {
         ok: false,
         error: {
-          message: 'Aucun fichier sélectionné.',
-          hint: 'Choisissez un PDF, une archive CBZ, ou les images du chapitre.',
+          message: t.noFile,
+          hint: t.noFileHint,
         },
       }
     }
@@ -113,12 +116,12 @@ export async function importChapterAction(
     if (error instanceof IngestionRejection) {
       return { ok: false, error: { message: error.message, hint: error.hint } }
     }
+    const t = getDictFor(await getLocale()).importer
     return {
       ok: false,
       error: {
-        message:
-          error instanceof Error ? error.message : "L'import a échoué pour une raison inconnue.",
-        hint: "Ceci n'est pas une erreur attendue. Consultez les journaux du serveur.",
+        message: error instanceof Error ? error.message : t.unknownFailure,
+        hint: t.unexpectedHint,
       },
     }
   }
@@ -160,14 +163,15 @@ export async function importSummaryAction(
 ): Promise<SummaryActionResult> {
   try {
     const session = await requireOwner()
+    const t = getDictFor(session.locale).importer
 
     const chapterNumber = Number(formData.get('chapterNumber'))
     if (!Number.isInteger(chapterNumber) || chapterNumber < 0) {
       return {
         ok: false,
         error: {
-          message: 'Numéro de chapitre invalide.',
-          hint: 'Indiquez un entier positif, par exemple 1.',
+          message: t.invalidChapterNumber,
+          hint: t.invalidChapterNumberHint,
         },
       }
     }
@@ -177,8 +181,8 @@ export async function importSummaryAction(
       return {
         ok: false,
         error: {
-          message: 'Aucun texte fourni.',
-          hint: 'Collez le résumé détaillé du chapitre dans la zone de texte.',
+          message: t.noText,
+          hint: t.noTextHint,
         },
       }
     }
@@ -263,12 +267,12 @@ export async function importSummaryAction(
     if (error instanceof IngestionRejection) {
       return { ok: false, error: { message: error.message, hint: error.hint } }
     }
+    const t = getDictFor(await getLocale()).importer
     return {
       ok: false,
       error: {
-        message:
-          error instanceof Error ? error.message : "L'import a échoué pour une raison inconnue.",
-        hint: "Ceci n'est pas une erreur attendue. Consultez les journaux du serveur.",
+        message: error instanceof Error ? error.message : t.unknownFailure,
+        hint: t.unexpectedHint,
       },
     }
   }
@@ -289,9 +293,10 @@ export async function reorderPagesAction(
     revalidatePath(`/chapitres/${chapterId}`)
     return { ok: true }
   } catch (error) {
+    const t = getDictFor(await getLocale()).importer
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'Réorganisation impossible.',
+      error: error instanceof Error ? error.message : t.reorderFailed,
     }
   }
 }
