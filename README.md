@@ -67,8 +67,10 @@ peut-être pas — le modèle le déclare au lieu de trancher, l'entité part en
 avec un champ modifiable, et votre réponse sert à tous les chapitres suivants.
 
 Le chapitre peut être **récupéré depuis le One Piece Fandom** par son numéro :
-les deux versions arrivent d'un coup, la française comme texte citable et
-l'anglaise en regard pour les noms ([ADR 0009](docs/adr/0009-fetching-the-chapter-from-the-wiki.md)).
+les deux versions arrivent d'un coup, l'anglaise comme texte citable — c'est la
+plus détaillée, et un graphe ne contient que ce que sa source affirme — et la
+française en regard pour la forme française des noms
+([ADR 0009](docs/adr/0009-fetching-the-chapter-from-the-wiki.md)).
 Le champ accepte une URL par confort, mais aucune requête n'en est construite —
 seuls ses chiffres sont lus, et les points d'entrée sont des constantes. Le texte
 récupéré reste modifiable avant l'import, et l'écrire soi-même reste possible.

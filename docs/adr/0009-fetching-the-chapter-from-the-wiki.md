@@ -21,9 +21,23 @@ texte existe déjà, écrit par d'autres, sous une API publique.
 
 **Un chapitre peut être récupéré depuis le One Piece Fandom, par son numéro.**
 Les deux versions sont demandées à l'API MediaWiki — section « Long Summary » sur
-le wiki anglais, « Résumé approfondi » sur le français. La française devient les
-passages citables, l'anglaise le texte parallèle (0017). Écrire soi-même reste
-possible, replié dans le formulaire.
+le wiki anglais, « Résumé approfondi » sur le français. **L'anglaise devient les
+passages citables, la française le texte parallèle** (0017). Écrire soi-même
+reste possible, replié dans le formulaire.
+
+Cet ordre est l'inverse de l'intuition pour un graphe qui se lit en français, et
+il tient à ce que chacun des deux textes est réellement. Le « Long Summary »
+anglais est le récit détaillé ; le « Résumé approfondi » français est plus court
+là où il existe, et un graphe ne contient jamais que ce que son texte citable
+affirme — une source plus maigre donne un graphe plus maigre, chapitre après
+chapitre, et aucune revue ne rattrape un fait que la source n'a pas mentionné.
+Le texte français vaut davantage comme aide au nommage : ce qu'il porte
+d'unique, c'est la **convention** — comment un lecteur français rend « Straw Hat
+Pirates » — et c'est précisément la question qu'un texte anglais ne peut pas
+trancher. Les citations sont donc en anglais, ce que l'ADR 0008 avait déjà
+accepté : une citation est une copie vérifiée caractère par caractère, la
+traduire la ferait ne correspondre à rien. Tout ce que le modèle rédige reste
+français.
 
 ## Ce qui ne change pas, et pourquoi la règle tenait ailleurs
 

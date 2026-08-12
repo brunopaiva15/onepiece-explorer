@@ -15,10 +15,8 @@
  * and then thrown away. Nothing a document contains can direct a request.
  *
  * Two summaries, one per language, which is exactly the pair the extraction step
- * wants: the French one becomes the citable passages, the English one rides
- * along as the naming aid (migration 0017). Neither is invented — both are what
- * the wiki says, quoted, and every fact the pipeline proposes will still have to
- * point at a sentence of the French one.
+ * wants (migration 0017). Which one is citable is decided by `citableAndParallel`
+ * below, and it is not the obvious one — see the reasoning there.
  *
  * The content is Fandom's, under CC BY-SA. Stored in a private library for one
  * reader, which is what this tool is; anything published from it would owe the
@@ -68,6 +66,47 @@ export interface FandomFetch {
 export type Fetcher = (url: string) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>
 
 export class FandomError extends Error {}
+
+/**
+ * Which text the graph is built from, and which one only names things.
+ *
+ * English is the citable source when the wiki has it, and that is the opposite
+ * of what French-first intuition suggests. Two reasons, both about what each
+ * text actually is:
+ *
+ *   The English "Long Summary" is the detailed one. The French wiki's
+ *   "Résumé approfondi" is a shorter retelling where it exists at all, and the
+ *   graph can only ever contain what its citable text states — a thinner source
+ *   is a thinner graph, chapter after chapter, and no amount of review recovers
+ *   a fact the source never mentioned.
+ *
+ *   The French text is worth more as the naming aid than as the source. What it
+ *   uniquely carries is the *convention*: how a French reader renders « Straw
+ *   Hat Pirates ». That is precisely the question the model cannot answer from
+ *   an English text and the one thing it is asked to stop guessing at.
+ *
+ * What it costs is that excerpts are quoted in English, which the review centre
+ * and the entity sheets will show. That was already the accepted trade in ADR
+ * 0008: a citation is a copy, verified character by character, and translating
+ * it would make it match nothing. Everything the model *writes* stays French.
+ *
+ * With only one language available there is no choice to make: it is the source,
+ * and there is no naming aid.
+ */
+export function citableAndParallel(fetched: FandomFetch): {
+  citable: FandomSummary
+  naming: FandomSummary | null
+} {
+  const english = fetched.summaries.find((summary) => summary.language === 'en')
+  const french = fetched.summaries.find((summary) => summary.language === 'fr')
+
+  if (english) return { citable: english, naming: french ?? null }
+  if (french) return { citable: french, naming: null }
+
+  // fetchChapterSummaries throws rather than return nothing, so this is
+  // unreachable; saying so beats a non-null assertion that hides the reason.
+  throw new FandomError('Aucun résumé à publier pour ce chapitre.')
+}
 
 /**
  * The chapter number, from a URL or from the number itself.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   chapterNumberFrom,
+  citableAndParallel,
   decodeEntities,
   fetchChapterSummaries,
   htmlToParagraphs,
@@ -121,6 +122,45 @@ describe('fetching both languages', () => {
 
     const result = await fetchChapterSummaries(1, fetcher).catch((error: Error) => error)
     expect(String(result)).toContain('introuvable')
+  })
+})
+
+describe('which text becomes the source', () => {
+  /**
+   * English is citable and French only names things, which is the opposite of
+   * what a French-language graph suggests. The English "Long Summary" is the
+   * detailed one, and a graph can only contain what its citable text states; the
+   * French page's value is the convention it carries — how a French reader
+   * renders a name — which is exactly what the model cannot derive from English.
+   */
+  const summary = (language: 'fr' | 'en', text: string) => ({
+    language,
+    page: language === 'fr' ? 'Chapitre 1' : 'Chapter 1',
+    url: 'https://onepiece.fandom.com/',
+    section: language === 'fr' ? 'Résumé approfondi' : 'Long Summary',
+    text,
+  })
+
+  it('cites the English and names from the French', () => {
+    const { citable, naming } = citableAndParallel({
+      chapterNumber: 1,
+      summaries: [summary('fr', 'Version française.'), summary('en', 'English version.')],
+      problems: [],
+    })
+
+    expect(citable.language).toBe('en')
+    expect(naming?.language).toBe('fr')
+  })
+
+  it('uses the only language there is, with no naming aid', () => {
+    const { citable, naming } = citableAndParallel({
+      chapterNumber: 1,
+      summaries: [summary('fr', 'Version française.')],
+      problems: [],
+    })
+
+    expect(citable.language).toBe('fr')
+    expect(naming).toBeNull()
   })
 })
 

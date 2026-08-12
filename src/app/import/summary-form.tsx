@@ -182,8 +182,9 @@ export function SummaryForm({ suggestedNumber }: Props) {
           </label>
           <p className="mt-1 text-sm text-secondary">
             L’adresse d’un chapitre sur le wiki One Piece, ou son numéro. Les deux
-            versions sont récupérées&nbsp;: la française devient le texte citable,
-            l’anglaise sert aux noms.
+            versions sont récupérées&nbsp;: l’anglaise devient le texte citable —
+            c’est la plus détaillée — et la française sert à lire la forme
+            française des noms.
           </p>
 
           <div className="mt-3 flex flex-wrap gap-2">

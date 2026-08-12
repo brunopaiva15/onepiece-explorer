@@ -8,6 +8,7 @@ import { MAX_SUMMARY_CHARS, type SummaryLanguage } from '@/domains/ingestion/pas
 import { reorderPages } from '@/domains/ingestion/persist.ts'
 import {
   chapterNumberFrom,
+  citableAndParallel,
   fetchChapterSummaries,
   type FandomLanguage,
 } from '@/domains/ingestion/fandom.ts'
@@ -335,10 +336,8 @@ export interface FandomActionResult {
  * domain module. That is what keeps "no request built from an address found in
  * input" true while adding a feature that looks exactly like breaking it.
  *
- * French is the citable text when it exists, because the graph is read in French
- * and an excerpt is quoted in the language of its source. English then rides
- * along as the naming aid — which is the pair the extraction step was taught to
- * read in migration 0017.
+ * Which text becomes the source and which becomes the naming aid is decided by
+ * `citableAndParallel`, in the domain, with the reasoning attached to it.
  */
 export async function fetchFandomAction(input: string): Promise<FandomActionResult> {
   try {
@@ -347,17 +346,14 @@ export async function fetchFandomAction(input: string): Promise<FandomActionResu
     const chapterNumber = chapterNumberFrom(input)
     const fetched = await fetchChapterSummaries(chapterNumber)
 
-    const french = fetched.summaries.find((summary) => summary.language === 'fr')
-    const english = fetched.summaries.find((summary) => summary.language === 'en')
-    const primary = french ?? english!
-    const parallel = french ? english : undefined
+    const { citable, naming } = citableAndParallel(fetched)
 
     return {
       ok: true,
       chapterNumber,
-      primary: { language: primary.language, text: primary.text, url: primary.url },
-      ...(parallel
-        ? { parallel: { language: parallel.language, text: parallel.text, url: parallel.url } }
+      primary: { language: citable.language, text: citable.text, url: citable.url },
+      ...(naming
+        ? { parallel: { language: naming.language, text: naming.text, url: naming.url } }
         : {}),
       problems: fetched.problems.map(
         (problem) => `${problem.language === 'fr' ? 'Français' : 'Anglais'} : ${problem.reason}`,
