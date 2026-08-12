@@ -88,6 +88,16 @@ export interface LocalModelConfig {
    * spent on GPU time that produces no field of the answer.
    */
   reasoningEffort: string
+  /**
+   * Délai maximal d'un appel, en millisecondes.
+   *
+   * Sans lui, un serveur qui accepte la connexion puis se fige — modèle en
+   * cours de chargement, GPU saturé, processus suspendu — retient le pipeline
+   * pour toujours : `fetch` n'a aucun timeout par défaut. Dix minutes par
+   * défaut, parce qu'un petit modèle sur CPU est légitimement lent ; réglable
+   * par LOCAL_AI_TIMEOUT_MS pour du matériel plus lent encore.
+   */
+  timeoutMs: number
 }
 
 export function localModelConfig(): LocalModelConfig | null {
@@ -101,6 +111,7 @@ export function localModelConfig(): LocalModelConfig | null {
     embedModel: process.env.LOCAL_AI_EMBED_MODEL?.trim() || null,
     apiKey: process.env.LOCAL_AI_API_KEY?.trim() || null,
     reasoningEffort: process.env.LOCAL_AI_REASONING_EFFORT?.trim() || 'none',
+    timeoutMs: Number(process.env.LOCAL_AI_TIMEOUT_MS) || 600_000,
   }
 }
 
@@ -438,8 +449,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
+        // Sans borne, un serveur qui accepte puis se fige retient le pipeline
+        // pour toujours ; l'étape sait retenter un appel, pas ressusciter un
+        // appel qui ne rend jamais la main.
+        signal: AbortSignal.timeout(this.config.timeoutMs),
       })
     } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        throw new Error(
+          `${url} n’a pas répondu en ${Math.round(this.config.timeoutMs / 1000)} s : ` +
+            'appel abandonné. Le serveur de modèle est probablement figé ou surchargé ; ' +
+            'LOCAL_AI_TIMEOUT_MS ajuste ce délai si le matériel est simplement lent.',
+        )
+      }
       /*
        * The endpoint is bound to localhost on the machine that hosts the model.
        * A refused connection here almost always means this process is running

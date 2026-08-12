@@ -192,7 +192,17 @@ function looksLikeNetwork(message: string): boolean {
     m.includes('socket') ||
     m.includes('fetch failed') ||
     m.includes('unterminated string') ||
-    m.includes('unexpected end of json')
+    m.includes('unexpected end of json') ||
+    // Le chien de garde du fournisseur : un flux resté muet a été abandonné.
+    // C'est une connexion morte, pas une réponse trop grande — on redemande
+    // la même tranche au lieu de la couper en deux.
+    m.includes('flux inactif') ||
+    m.includes('aborted') ||
+    m.includes('timed out') ||
+    m.includes('timeout') ||
+    // Le fournisseur auto-hébergé qui n'a pas répondu dans le délai imparti.
+    m.includes('n’a pas répondu') ||
+    m.includes("n'a pas répondu")
   )
 }
 

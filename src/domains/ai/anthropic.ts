@@ -85,6 +85,23 @@ import {
 const IMAGE_TOKEN_ESTIMATE = 1_600
 const CACHE_TTL = '1h' as const
 
+/**
+ * Silence maximal toléré sur un flux avant de l'abandonner.
+ *
+ * Le timeout du SDK ne couvre que l'attente des en-têtes : une fois le flux
+ * ouvert, plus rien ne borne la lecture. Une connexion qui meurt sans se
+ * fermer — Wi-Fi qui change, machine en veille, proxy qui coupe — laisse
+ * `finalMessage()` en attente pour toujours, sans erreur, donc sans retry :
+ * l'étape reste « en cours » un quart d'heure avant que quiconque comprenne.
+ *
+ * Deux minutes parce que le pire silence légitime est le premier token d'un
+ * prompt volumineux non caché — quelques dizaines de secondes — et qu'entre
+ * deux événements d'un flux vivant l'écart se mesure en secondes. Un appel
+ * coupé ici est relancé par l'étape au prix d'un appel, contre un run entier
+ * perdu sinon.
+ */
+const STREAM_IDLE_MS = 120_000
+
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic' as const
   private readonly client: Anthropic
@@ -113,11 +130,16 @@ export class AnthropicProvider implements ModelProvider {
     const probe = describeForEstimate(request)
 
     try {
-      const counted = await this.client.messages.countTokens({
-        model,
-        system: probe.system,
-        messages: [{ role: 'user', content: probe.text }],
-      })
+      const counted = await this.client.messages.countTokens(
+        {
+          model,
+          system: probe.system,
+          messages: [{ role: 'user', content: probe.text }],
+        },
+        // Une estimation est une politesse ; elle n'a pas le droit de faire
+        // attendre le lancement dix minutes sur une connexion qui pend.
+        { timeout: 10_000, maxRetries: 0 },
+      )
       // Images are not sent to countTokens — uploading a chapter's pages just to
       // price them would cost more time than the estimate saves. A page reduced
       // to ~1568px is about 1 600 tokens, which is close enough for a figure
@@ -355,14 +377,24 @@ export class AnthropicProvider implements ModelProvider {
 
     const started = (async () => {
       try {
-        await this.client.messages.create({
-          model,
-          system,
-          // 1, not 0: the API requires at least one output token. The point is
-          // to populate the cache, not to read the reply.
-          max_tokens: 1,
-          messages: [{ role: 'user', content: 'ok' }],
-        })
+        await this.client.messages.create(
+          {
+            model,
+            system,
+            // 1, not 0: the API requires at least one output token. The point is
+            // to populate the cache, not to read the reply.
+            max_tokens: 1,
+            messages: [{ role: 'user', content: 'ok' }],
+          },
+          /*
+           * Borné court, parce que tout attend derrière. Le timeout par défaut
+           * du SDK est de dix minutes, retenté deux fois : un réchauffage qui
+           * pend pouvait bloquer la première tranche une demi-heure avant
+           * qu'elle n'envoie quoi que ce soit. Une optimisation de cache ne
+           * mérite pas ce pouvoir — au pire, l'appel réel écrit le cache.
+           */
+          { timeout: 30_000, maxRetries: 1 },
+        )
       } catch {
         // A failed warm-up costs a little money and nothing else; the real call
         // will simply write the cache itself.
@@ -413,10 +445,34 @@ export class AnthropicProvider implements ModelProvider {
      * the incremental events are of no use to a batch pipeline, only the
      * connection staying alive is.
      */
+    /*
+     * Chien de garde d'inactivité, réarmé à chaque événement du flux.
+     *
+     * `abort()` fait rejeter `finalMessage()`, ce qui transforme une
+     * connexion morte — qui pendait indéfiniment — en une erreur que la
+     * boucle de tranches sait déjà retenter. Le SDK ne retente pas un abort
+     * lui-même, et c'est voulu : le retry appartient à l'étape, qui sait ce
+     * qu'une tranche vaut.
+     */
+    const stream = this.client.messages.stream(params)
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
+    const rearm = () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => stream.abort(), STREAM_IDLE_MS)
+    }
+    rearm()
+    stream.on('streamEvent', rearm)
+
     let message: Awaited<ReturnType<typeof this.client.messages.parse<typeof params>>>
     try {
-      message = await this.client.messages.stream(params).finalMessage()
+      message = await stream.finalMessage()
     } catch (error: unknown) {
+      if (stream.aborted) {
+        throw new Error(
+          `Flux inactif : aucun événement de ${model} depuis ${STREAM_IDLE_MS / 1000} s. ` +
+            'La connexion est probablement morte ; l’appel est abandonné pour être retenté.',
+        )
+      }
       /*
        * The SDK parses the accumulated JSON inside finalMessage(), so a
        * truncated answer arrives here as a parse error and never reaches the
@@ -432,6 +488,8 @@ export class AnthropicProvider implements ModelProvider {
           ' · Un JSON coupé après quelques milliers de caractères vient d’un flux' +
           ' interrompu, pas du plafond.',
       )
+    } finally {
+      clearTimeout(idleTimer)
     }
     const usage = readUsage(model, message.usage)
 
