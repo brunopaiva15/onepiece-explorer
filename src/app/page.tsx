@@ -54,16 +54,20 @@ export default async function HomePage() {
     <main id="contenu" className="mx-auto max-w-6xl px-5 py-10">
       {/* The masthead: a title that behaves like the head of a chart, not a
           marketing hero. Rule above, rule below, subtitle in the middle. */}
-      <section className="text-center">
-        <hr className="regle" />
-        <h1 className="mt-5 text-4xl leading-tight text-primary sm:text-5xl">
-          Ce que l&apos;on savait, chapitre après chapitre
-        </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-lg text-secondary">
-          Un atlas de One Piece construit à partir des chapitres que vous
-          possédez, où chaque fait porte la date à laquelle il a été révélé.
+      {/* The title as a cover, not a hero: straw block, ink outline, hard
+          shadow, and one line under it instead of three paragraphs. */}
+      <section className="rayons">
+        <div
+          className="border-[4px] border-ink bg-[var(--accent)] px-5 py-6 text-center"
+          style={{ boxShadow: 'var(--shadow-hard)' }}
+        >
+          <h1 className="text-ink">Ce que l&apos;on savait,<br />chapitre après chapitre</h1>
+        </div>
+        <p className="mx-auto mt-4 max-w-2xl text-center text-secondary">
+          Un atlas construit à partir des chapitres que vous possédez. Chaque
+          fait porte le numéro où il a été révélé&nbsp;— reculez le curseur, le
+          graphe oublie la suite.
         </p>
-        <hr className="regle mt-6" />
       </section>
 
       <section className="mt-10 grid gap-5 md:grid-cols-3">
@@ -81,7 +85,7 @@ export default async function HomePage() {
           <div className="panneau-corps">
             <ul className="space-y-3">
               <li>
-                <Link href="/graph" className="font-display text-lg text-accent hover:underline">
+                <Link href="/graph" className="font-display text-xl uppercase text-primary underline decoration-[var(--accent)] decoration-[4px] underline-offset-2 hover:decoration-[6px]">
                   Explorer le graphe
                 </Link>
                 <p className="text-sm text-secondary">
@@ -91,7 +95,7 @@ export default async function HomePage() {
                 </p>
               </li>
               <li>
-                <Link href="/chronologie" className="font-display text-lg text-accent hover:underline">
+                <Link href="/chronologie" className="font-display text-xl uppercase text-primary underline decoration-[var(--accent)] decoration-[4px] underline-offset-2 hover:decoration-[6px]">
                   Remonter la chronologie
                 </Link>
                 <p className="text-sm text-secondary">
@@ -101,7 +105,7 @@ export default async function HomePage() {
                 </p>
               </li>
               <li>
-                <Link href="/recherche" className="font-display text-lg text-accent hover:underline">
+                <Link href="/recherche" className="font-display text-xl uppercase text-primary underline decoration-[var(--accent)] decoration-[4px] underline-offset-2 hover:decoration-[6px]">
                   Chercher un nom, un lieu, une phrase
                 </Link>
                 <p className="text-sm text-secondary">
@@ -111,7 +115,7 @@ export default async function HomePage() {
               </li>
               {isOwner && (
                 <li>
-                  <Link href="/import" className="font-display text-lg text-accent hover:underline">
+                  <Link href="/import" className="font-display text-xl uppercase text-primary underline decoration-[var(--accent)] decoration-[4px] underline-offset-2 hover:decoration-[6px]">
                     Importer le prochain chapitre
                   </Link>
                   <p className="text-sm text-secondary">

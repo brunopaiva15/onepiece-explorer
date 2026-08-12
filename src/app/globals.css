@@ -1,167 +1,172 @@
 @import 'tailwindcss';
 
 /* --------------------------------------------------------------------------
-   One Piece Explorer — chart room and logbook.
+   One Piece Explorer — inked panels.
 
-   What this is reacting against, stated plainly because it was the brief: the
-   first version looked like every interface a language model produces when
-   nobody decides anything — a centred column of prose, a row of pill buttons,
-   uniform rounded rectangles, a system sans, and colour used only for status.
-   Nothing about it said what the product was or who it was for.
+   The first version of this file was a chart room: parchment, a book type from
+   1660, brass rules. Defensible, and wrong. This is a tool for reading manga,
+   and the register it needs is loud.
 
-   The vocabulary here is nautical cartography and 17th-century print: inked
-   paper, a sea-blue banner over every block of content, brass rules, old-style
-   figures. It is borrowed from the *genre*, never from the work: no official
-   One Piece logo, typeface, colour or illustration appears anywhere in this
-   file or in the repository.
+   Four devices, all borrowed from how a comic page is *printed* rather than
+   from any published artwork — no official logo, typeface, colour or
+   illustration appears anywhere in this repository:
 
-   Three rules the components below all follow:
+     1. **Ink outlines.** Every surface has a 2–3px black border. Nothing floats
+        on a soft shadow; things are drawn.
+     2. **Hard shadows.** Solid offset blocks, no blur. That is how a sticker
+        sits on a page, and it is the fastest way to make a button look
+        pressable.
+     3. **Halftone.** Dot screens instead of gradients, because a gradient is
+        the single most recognisable tell of an interface nobody chose.
+     4. **Volume.** Numbers and states are set in a poster face at sizes that
+        would be absurd in a dashboard, which is the point: the chapter number
+        is the most important thing on a chapter card, so it is the biggest
+        thing on it.
 
-     1. A block of content wears a banner. That is the wiki idiom, and it is
-        good interface design before it is decoration — a coloured title bar
-        makes a long page scannable at a glance.
-     2. Corners are square or nearly. Uniform 16px radius on everything is the
-        single clearest tell of an interface nobody chose.
-     3. Colour carries meaning or structure, never mood. Sea blue is chrome,
-        brass is action, and the six epistemic colours mean exactly one thing
-        each and are always paired with a word.
-
-   Every colour is defined on bare :root so a token always has a value; the
-   dark palette only redefines tokens.
+   Colour is structural, not decorative: straw yellow is the product's own,
+   sea blue is chrome, red is danger, green is done. Six epistemic colours mean
+   exactly one thing each and are always paired with a word.
    -------------------------------------------------------------------------- */
 
 @theme {
-  --font-display: var(--font-display-loaded), Georgia, 'Times New Roman', serif;
-  --font-sans: var(--font-sans-loaded), Optima, Candara, 'Segoe UI', system-ui, sans-serif;
+  --font-display: var(--font-display-loaded), Impact, 'Arial Narrow Bold', sans-serif;
+  --font-sans: var(--font-sans-loaded), 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 :root {
   color-scheme: light;
 
-  /* Paper. Warmer and more contrasted than before: parchment you can see,
-     not an off-white that reads as a bug. */
-  --surface-base: #efe4cd;
-  --surface-raised: #f8f1e0;
-  --surface-sunken: #e2d4b7;
-  --surface-overlay: #fdf9ef;
+  --surface-base: #fdf3dd;
+  --surface-raised: #fffaf0;
+  --surface-sunken: #f2e4c4;
+  --surface-overlay: #ffffff;
 
-  /* Ink */
-  --text-primary: #221a10;
-  --text-secondary: #4e4130;
-  --text-muted: #7a6a54;
-  --text-inverted: #fdf9ef;
+  --text-primary: #14181f;
+  --text-secondary: #414a58;
+  --text-muted: #6c7684;
+  --text-inverted: #fffaf0;
 
-  /* Brass — action, emphasis, the instrument accents */
-  --accent: #9c5a17;
-  --accent-strong: #7c4310;
-  --accent-soft: #e8d3ae;
-  --brass: #b0862f;
+  /* The ink every outline is drawn with. Not pure black: pure black on cream
+     buzzes, and this border is on every element on the page. */
+  --ink: #14181f;
 
-  /* Sea — the structural colour. Banners, chrome, headers. */
-  --sea: #1c5c86;
-  --sea-deep: #123f5e;
-  --sea-soft: #cfe0ea;
-  --sea-ink: #f4e9cf;
+  /* Straw — the product's own colour. Highlights, active states, the mark. */
+  --accent: #ffc93c;
+  --accent-strong: #f0a71b;
+  --accent-soft: #fff0c2;
 
-  /* Epistemic status — the palette that carries meaning.
-     Distinguishable without relying on hue alone; every use is paired with an
-     icon or a label. */
-  --epi-explicit: #1c6b62;
+  /* Sea — chrome, headers, structure. */
+  --sea: #1b6ca8;
+  --sea-deep: #0e4b78;
+  --sea-soft: #cfe4f5;
+  --sea-ink: #ffffff;
+
+  /* Coral — destructive, contradictions, refusals. */
+  --coral: #e4572e;
+
+  --epi-explicit: #12796b;
   --epi-inferred: #6a4c93;
-  --epi-hypothetical: #b0862f;
-  --epi-contradicted: #a63f22;
-  --epi-refuted: #857a6a;
-  --epi-validated: #2c6e49;
+  --epi-hypothetical: #d19a00;
+  --epi-contradicted: #d1441c;
+  --epi-refuted: #75808f;
+  --epi-validated: #17864f;
 
-  --border: #c9b48c;
-  --border-strong: #a68d5f;
-  --focus-ring: #9c5a17;
+  --border: var(--ink);
+  --border-strong: var(--ink);
+  --focus-ring: #1b6ca8;
 
-  /* Chart lines and paper grain, at strengths you can actually see. */
-  --rhumb: rgba(34, 26, 16, 0.05);
-  --grain: rgba(120, 90, 50, 0.05);
-  --shadow-panel: 0 1px 0 rgba(255, 250, 240, 0.6) inset, 0 2px 8px rgba(60, 44, 24, 0.09);
+  --halftone: rgba(20, 24, 31, 0.09);
+  --shadow-hard: 4px 4px 0 var(--ink);
+  --shadow-hard-sm: 3px 3px 0 var(--ink);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --surface-base: #10161c;
-    --surface-raised: #18222b;
-    --surface-sunken: #0a0f14;
-    --surface-overlay: #1e2a35;
+    --surface-base: #12161d;
+    --surface-raised: #1b212b;
+    --surface-sunken: #0b0e13;
+    --surface-overlay: #232b37;
 
-    --text-primary: #ece0c8;
-    --text-secondary: #b6ab97;
-    --text-muted: #837a6b;
-    --text-inverted: #10161c;
+    --text-primary: #f5efe2;
+    --text-secondary: #b9c2ce;
+    --text-muted: #8b95a3;
+    --text-inverted: #12161d;
 
-    --accent: #d08c3c;
-    --accent-strong: #e8ac60;
-    --accent-soft: #3a2a16;
-    --brass: #d4a24c;
+    /* In the dark the outline is what the paper was: the light edge that
+       separates one plane from the next. */
+    --ink: #000000;
 
-    --sea: #2d7fac;
-    --sea-deep: #17475f;
+    --accent: #ffc93c;
+    --accent-strong: #ffd96b;
+    --accent-soft: #3a2f10;
+
+    --sea: #2f8fd0;
+    --sea-deep: #14567f;
     --sea-soft: #16303d;
-    --sea-ink: #ece0c8;
+    --sea-ink: #ffffff;
 
-    --epi-explicit: #4fa89c;
-    --epi-inferred: #a58fd4;
-    --epi-hypothetical: #d4a24c;
-    --epi-contradicted: #e07a52;
-    --epi-refuted: #8b8375;
-    --epi-validated: #5cba8a;
+    --coral: #f0714a;
 
-    --border: #2e3b46;
-    --border-strong: #4a5b68;
-    --focus-ring: #d08c3c;
+    --epi-explicit: #3fbca9;
+    --epi-inferred: #b39ae0;
+    --epi-hypothetical: #ffc93c;
+    --epi-contradicted: #ff8a5f;
+    --epi-refuted: #8b95a3;
+    --epi-validated: #4ecb8b;
 
-    --rhumb: rgba(236, 224, 200, 0.045);
-    --grain: rgba(210, 190, 150, 0.03);
-    --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 2px 10px rgba(0, 0, 0, 0.35);
+    --border: #000000;
+    --border-strong: #000000;
+    --focus-ring: #ffc93c;
+
+    --halftone: rgba(255, 255, 255, 0.05);
+    --shadow-hard: 4px 4px 0 #000000;
+    --shadow-hard-sm: 3px 3px 0 #000000;
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --surface-base: #10161c;
-  --surface-raised: #18222b;
-  --surface-sunken: #0a0f14;
-  --surface-overlay: #1e2a35;
+  --surface-base: #12161d;
+  --surface-raised: #1b212b;
+  --surface-sunken: #0b0e13;
+  --surface-overlay: #232b37;
 
-  --text-primary: #ece0c8;
-  --text-secondary: #b6ab97;
-  --text-muted: #837a6b;
-  --text-inverted: #10161c;
+  --text-primary: #f5efe2;
+  --text-secondary: #b9c2ce;
+  --text-muted: #8b95a3;
+  --text-inverted: #12161d;
 
-  --accent: #d08c3c;
-  --accent-strong: #e8ac60;
-  --accent-soft: #3a2a16;
-  --brass: #d4a24c;
+  --ink: #000000;
 
-  --sea: #2d7fac;
-  --sea-deep: #17475f;
+  --accent: #ffc93c;
+  --accent-strong: #ffd96b;
+  --accent-soft: #3a2f10;
+
+  --sea: #2f8fd0;
+  --sea-deep: #14567f;
   --sea-soft: #16303d;
-  --sea-ink: #ece0c8;
+  --sea-ink: #ffffff;
 
-  --epi-explicit: #4fa89c;
-  --epi-inferred: #a58fd4;
-  --epi-hypothetical: #d4a24c;
-  --epi-contradicted: #e07a52;
-  --epi-refuted: #8b8375;
-  --epi-validated: #5cba8a;
+  --coral: #f0714a;
 
-  --border: #2e3b46;
-  --border-strong: #4a5b68;
-  --focus-ring: #d08c3c;
+  --epi-explicit: #3fbca9;
+  --epi-inferred: #b39ae0;
+  --epi-hypothetical: #ffc93c;
+  --epi-contradicted: #ff8a5f;
+  --epi-refuted: #8b95a3;
+  --epi-validated: #4ecb8b;
 
-  --rhumb: rgba(236, 224, 200, 0.045);
-  --grain: rgba(210, 190, 150, 0.03);
-  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 2px 10px rgba(0, 0, 0, 0.35);
+  --border: #000000;
+  --border-strong: #000000;
+  --focus-ring: #ffc93c;
+
+  --halftone: rgba(255, 255, 255, 0.05);
+  --shadow-hard: 4px 4px 0 #000000;
+  --shadow-hard-sm: 3px 3px 0 #000000;
 }
 
 @theme inline {
@@ -173,14 +178,16 @@
   --color-secondary: var(--text-secondary);
   --color-muted: var(--text-muted);
   --color-inverted: var(--text-inverted);
+  --color-ink: var(--ink);
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
   --color-accent-soft: var(--accent-soft);
-  --color-brass: var(--brass);
+  --color-brass: var(--accent-strong);
   --color-sea: var(--sea);
   --color-sea-deep: var(--sea-deep);
   --color-sea-soft: var(--sea-soft);
   --color-sea-ink: var(--sea-ink);
+  --color-coral: var(--coral);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-epi-explicit: var(--epi-explicit);
@@ -200,23 +207,15 @@ body {
   background-color: var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 1.0625rem;
-  line-height: 1.6;
+  font-size: 1rem;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 
-  /*
-   * Paper, then chart.
-   *
-   * A grain of fine dots so the ground is a material rather than a fill, and
-   * two sets of rhumb lines — the rules that radiate from a compass rose on a
-   * portolan chart. Both were present before at 4% and invisible, which is the
-   * worst of both: the cost of a texture with none of the effect.
-   */
-  background-image:
-    radial-gradient(var(--grain) 0.5px, transparent 0.5px),
-    repeating-linear-gradient(60deg, transparent 0 95px, var(--rhumb) 95px 96px),
-    repeating-linear-gradient(-60deg, transparent 0 95px, var(--rhumb) 95px 96px);
-  background-size: 4px 4px, auto, auto;
+  /* Screentone: the dot pattern a page is printed with, at a size you notice
+     only when you look for it. Gradients were the alternative, and a gradient
+     is the tell. */
+  background-image: radial-gradient(var(--halftone) 1px, transparent 1.1px);
+  background-size: 7px 7px;
   background-attachment: fixed;
 }
 
@@ -226,160 +225,188 @@ h3,
 .font-display {
   font-family: var(--font-display);
   font-weight: 400;
-  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 0.95;
 }
 
-/* Old-style figures wherever numbers sit in prose: chapter numbers, dates,
-   counts. They belong to the same century as the display face. */
-h1, h2, h3, .font-display, .prose-chart {
-  font-variant-numeric: oldstyle-nums;
+h1 {
+  font-size: clamp(2.2rem, 1.4rem + 3vw, 3.4rem);
+}
+h2 {
+  font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+}
+h3 {
+  font-size: 1.2rem;
 }
 
-/* Tabular figures wherever numbers are compared: costs, durations, tables. */
-table, .tabular {
+table,
+.tabular {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
 :focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
-  border-radius: 1px;
 }
 
 /* --------------------------------------------------------------------------
-   Panels — the one structural idiom.
-
-   A framed block with a sea-blue banner. Used for every section of every page,
-   which is what gives the application a shape you can learn once: the banner
-   says what this is, the frame says where it ends.
+   Panels — a drawn box, not a card.
    -------------------------------------------------------------------------- */
 
 .panneau {
-  border: 1px solid var(--border-strong);
+  border: 3px solid var(--ink);
   background: var(--surface-raised);
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-hard);
 }
 
 .panneau-titre {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.45rem 0.9rem;
-  background: linear-gradient(var(--sea), var(--sea-deep));
+  gap: 0.75rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--sea-deep);
   color: var(--sea-ink);
   font-family: var(--font-display);
-  font-size: 1.05rem;
-  line-height: 1.3;
-  border-bottom: 1px solid var(--sea-deep);
-  /* A brass hairline under the banner: the join between the two materials. */
-  box-shadow: 0 1px 0 var(--brass);
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  border-bottom: 3px solid var(--ink);
+}
+
+/* The variant that shouts: straw ground, black text. For the one panel on a
+   page that matters more than the others. */
+.panneau-titre-vedette {
+  background: var(--accent);
+  color: var(--ink);
 }
 
 .panneau-corps {
-  padding: 1rem 1.1rem;
-}
-
-/* A caption in small caps over a hairline — for labels above a value. */
-.cartouche {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text-muted);
-  font-weight: 500;
+  padding: 0.9rem 1rem;
 }
 
 /* --------------------------------------------------------------------------
-   Buttons. Square, weighty, with a pressed state you can feel.
+   Badges — a state you can read across the room.
+   -------------------------------------------------------------------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 2px solid var(--ink);
+  padding: 0.1rem 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  background: var(--surface-overlay);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.badge-or { background: var(--accent); color: var(--ink); }
+.badge-mer { background: var(--sea); color: #fff; }
+.badge-vert { background: var(--epi-validated); color: #fff; }
+.badge-rouge { background: var(--coral); color: #fff; }
+.badge-gris { background: var(--surface-sunken); color: var(--text-secondary); }
+
+/* --------------------------------------------------------------------------
+   Buttons — pressable, and they move when pressed.
    -------------------------------------------------------------------------- */
 
 .bouton {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--border-strong);
+  padding: 0.5rem 1.1rem;
+  border: 3px solid var(--ink);
   background: var(--surface-overlay);
   color: var(--text-primary);
-  font-weight: 500;
-  font-size: 0.95rem;
-  line-height: 1.2;
-  transition:
-    background-color 120ms,
-    transform 60ms;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  box-shadow: var(--shadow-hard-sm);
+  transition: transform 70ms, box-shadow 70ms;
 }
 
 .bouton:hover {
-  background: var(--surface-sunken);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
 }
 
+/* The shadow collapses under the button: it is being pushed into the page. */
 .bouton:active {
-  transform: translateY(1px);
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--ink);
 }
 
-.bouton-primaire {
-  background: linear-gradient(var(--accent), var(--accent-strong));
-  border-color: var(--accent-strong);
-  color: var(--text-inverted);
-}
-
-.bouton-primaire:hover {
-  background: var(--accent-strong);
-}
+.bouton-primaire { background: var(--accent); color: var(--ink); }
+.bouton-mer { background: var(--sea); color: #fff; }
+.bouton-danger { background: var(--coral); color: #fff; }
 
 .bouton:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--shadow-hard-sm);
 }
 
 /* --------------------------------------------------------------------------
-   Rules and ornaments.
+   Numbers, set as posters.
+
+   A chapter number is the most important thing on a chapter card, so it is the
+   biggest thing on it. Same for a count of proposals, a step number, a cost.
    -------------------------------------------------------------------------- */
 
-/* A divider that is not a 1px grey line: brass, fading at both ends. */
-.regle {
-  height: 1px;
-  border: 0;
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--border-strong) 15%,
-    var(--brass) 50%,
-    var(--border-strong) 85%,
-    transparent
+.chiffre {
+  font-family: var(--font-display);
+  line-height: 0.85;
+  letter-spacing: -0.01em;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.chiffre-xl { font-size: clamp(2.5rem, 2rem + 3vw, 4rem); }
+.chiffre-l { font-size: 2rem; }
+
+/* A label above a value: small, wide, unmissable as a label. */
+.cartouche {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+/* Speed lines, radiating from a corner. Used behind a page title, once. */
+.rayons {
+  position: relative;
+  isolation: isolate;
+}
+.rayons::before {
+  content: '';
+  position: absolute;
+  inset: -20% -10%;
+  z-index: -1;
+  background: repeating-conic-gradient(
+    from 0deg at 12% 50%,
+    var(--halftone) 0deg 1.1deg,
+    transparent 1.1deg 4deg
   );
+  mask-image: linear-gradient(to right, black, transparent 65%);
+  -webkit-mask-image: linear-gradient(to right, black, transparent 65%);
+  pointer-events: none;
 }
-
 
 /* --------------------------------------------------------------------------
-   Element defaults.
-
-   Twenty-two files draw their own bordered boxes and twenty carry a form
-   control. Styling the elements themselves is what keeps the pages that have
-   not been rewritten by hand from looking like a different application —
-   coherence that does not depend on remembering a class.
+   Element defaults, so pages not yet rebuilt still belong here.
    -------------------------------------------------------------------------- */
 
-main {
-  padding-bottom: 1rem;
-}
-
-h1 {
-  font-size: clamp(1.9rem, 1.3rem + 2vw, 2.6rem);
-  line-height: 1.15;
-}
-
-h2 {
-  font-size: 1.35rem;
-  line-height: 1.25;
-}
-
-h3 {
-  font-size: 1.1rem;
-  line-height: 1.3;
-}
-
-/* Form controls: paper sunk into paper, with a brass focus ring. */
 input[type='text'],
 input[type='email'],
 input[type='password'],
@@ -389,53 +416,52 @@ input[type='file'],
 select,
 textarea {
   background: var(--surface-overlay);
-  border: 1px solid var(--border-strong);
-  border-radius: 2px;
+  border: 3px solid var(--ink);
   padding: 0.45rem 0.6rem;
   color: var(--text-primary);
   font: inherit;
-  box-shadow: inset 0 1px 2px rgba(60, 44, 24, 0.07);
 }
 
-input::placeholder,
-textarea::placeholder {
-  color: var(--text-muted);
-}
-
-/* Ledger tables: a banner head, ruled rows, figures that line up. */
 table {
   width: 100%;
   border-collapse: collapse;
+  border: 3px solid var(--ink);
+  background: var(--surface-raised);
 }
 
 thead th {
   background: var(--sea-deep);
-  color: var(--sea-ink);
+  color: #fff;
   font-family: var(--font-display);
   font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
   text-align: left;
   padding: 0.4rem 0.7rem;
-  font-size: 0.95rem;
+  border-bottom: 3px solid var(--ink);
 }
 
 tbody td {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
   padding: 0.45rem 0.7rem;
   vertical-align: top;
 }
 
 tbody tr:nth-child(even) {
-  background: color-mix(in srgb, var(--surface-sunken) 45%, transparent);
+  background: color-mix(in srgb, var(--surface-sunken) 40%, transparent);
 }
 
-/* Anything that still draws its own box gets the paper, not a flat grey. */
+hr.regle {
+  height: 3px;
+  border: 0;
+  background: var(--ink);
+}
+
 ::selection {
-  background: var(--accent-soft);
-  color: var(--text-primary);
+  background: var(--accent);
+  color: var(--ink);
 }
 
-/* Respect the reader's motion preference: graph animations and delta
-   transitions all check this, and a static equivalent is always available. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -447,7 +473,6 @@ tbody tr:nth-child(even) {
   }
 }
 
-/* Skip link for keyboard navigation. */
 .skip-link {
   position: absolute;
   left: -9999px;
@@ -459,5 +484,5 @@ tbody tr:nth-child(even) {
   top: 0.5rem;
   padding: 0.5rem 0.75rem;
   background: var(--surface-overlay);
-  border: 1px solid var(--border-strong);
+  border: 3px solid var(--ink);
 }

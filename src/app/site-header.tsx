@@ -70,19 +70,16 @@ export async function SiteHeader() {
   const links = [...READING, ...(isOwner ? OWNER : [])]
 
   return (
-    <header className="border-b border-line-strong bg-[var(--sea-deep)] text-[var(--sea-ink)]">
+    <header className="border-b-[4px] border-ink bg-[var(--sea-deep)] text-white">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
         <Link href="/" className="flex items-center gap-3 no-underline">
-          <CompassRose className="h-9 w-9 shrink-0 text-[var(--brass)]" />
+          <CompassRose className="h-10 w-10 shrink-0 text-[var(--accent)]" />
           <span className="flex flex-col leading-none">
-            <span className="font-display text-xl tracking-wide text-[var(--sea-ink)]">
+            <span className="font-display text-2xl uppercase tracking-wide text-white">
               One Piece Explorer
             </span>
-            {/* --sea-soft is a *surface* in the dark palette, so using it for
-                text there put ink on ink. The wordmark sits on sea blue in both
-                themes, so its subtitle takes the same ink at lower weight. */}
-            <span className="mt-0.5 text-[0.65rem] uppercase tracking-[0.2em] text-[var(--sea-ink)] opacity-65">
-              Journal d&apos;exploration
+            <span className="mt-1 self-start bg-[var(--accent)] px-1.5 text-[0.6rem] font-black uppercase tracking-[0.15em] text-ink">
+              Atlas vivant
             </span>
           </span>
         </Link>
@@ -92,7 +89,7 @@ export async function SiteHeader() {
             <Link
               key={href}
               href={href}
-              className="px-2.5 py-1.5 text-sm text-[var(--sea-ink)] no-underline opacity-85 transition-opacity hover:opacity-100 hover:underline underline-offset-4"
+              className="border-[3px] border-transparent px-2.5 py-1 font-display text-sm uppercase tracking-wide text-white no-underline transition-colors hover:border-ink hover:bg-[var(--accent)] hover:text-ink"
             >
               {label}
             </Link>
@@ -100,7 +97,7 @@ export async function SiteHeader() {
           {!isOwner && (
             <Link
               href="/connexion"
-              className="ml-2 border border-[var(--brass)] px-3 py-1.5 text-sm text-[var(--brass)] no-underline hover:bg-[var(--brass)] hover:text-[var(--sea-deep)]"
+              className="bouton bouton-primaire ml-2 !py-1 !text-sm"
             >
               Se connecter
             </Link>
@@ -108,8 +105,9 @@ export async function SiteHeader() {
         </nav>
       </div>
 
-      {/* The brass rule that separates chrome from paper, on every page. */}
-      <div className="h-[2px] bg-gradient-to-r from-transparent via-[var(--brass)] to-transparent" />
+      {/* A straw band under the chrome: the one horizontal line that says the
+          header has ended, visible at any zoom and in either theme. */}
+      <div className="h-[6px] bg-[var(--accent)]" />
     </header>
   )
 }
@@ -119,10 +117,8 @@ export function SiteFooter() {
     <footer className="mx-auto mt-16 max-w-6xl px-5 pb-10">
       <hr className="regle" />
       <p className="mt-4 text-xs text-muted">
-        Bibliothèque privée. Les pages importées restent derrière
-        l&apos;authentification et ne sont jamais servies par une URL publique
-        permanente. Aucun logo, police ou illustration officiels ne sont
-        utilisés&nbsp;: la direction artistique est originale.{' '}
+        Bibliothèque privée · pages derrière authentification · direction
+        artistique originale, aucun asset officiel.{' '}
         <Link href="/etat" className="underline underline-offset-2 hover:text-secondary">
           État du déploiement
         </Link>

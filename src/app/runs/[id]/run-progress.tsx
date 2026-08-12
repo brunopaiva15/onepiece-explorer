@@ -114,53 +114,80 @@ export function RunProgress({ initial }: { initial: RunView }) {
         </p>
       )}
 
-      <ol className="mt-6 divide-y divide-[var(--border)]">
-        {view.steps.map((step) => (
-          <li
-            key={step.key}
-            className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 py-3 ${
-              step.implemented ? '' : 'opacity-55'
-            }`}
-          >
-            <span
-              aria-hidden
-              className="w-4 shrink-0 text-center font-mono text-sm"
-              style={{ color: colourFor(step.status) }}
+      {/*
+        * Nine tiles, not nine paragraphs.
+        *
+        * This was a stack of rows in which the step name, its state, its
+        * duration, its cost and a two-line explanation of what the step does
+        * all sat at roughly the same weight — a wall of text you had to read to
+        * find the one line that had changed. A tile carries its state as a
+        * colour and a number you can see from across the desk; the explanation
+        * is only shown for the step that is running, failed, or skipped for a
+        * reason, because those are the only ones where it tells you anything.
+        */}
+      <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {view.steps.map((step, index) => {
+          const tone = toneFor(step.status)
+          const explain = step.error ?? step.note
+          const showExplain =
+            step.status === 'failed' ||
+            step.status === 'running' ||
+            step.status === 'skipped' ||
+            !step.implemented
+
+          return (
+            <li
+              key={step.key}
+              className={`panneau flex flex-col ${step.implemented ? '' : 'opacity-70'}`}
+              style={{ boxShadow: 'var(--shadow-hard-sm)' }}
             >
-              {glyphFor(step.status)}
-            </span>
-
-            <span className="font-medium text-primary">{step.label}</span>
-
-            <span className="font-mono text-xs uppercase tracking-wide text-muted">
-              {LABELS[step.status] ?? step.status}
-            </span>
-
-            {step.usesModel && (
-              <span
-                title="Cette étape appelle un modèle"
-                className="rounded-sm border border-line px-1.5 text-[0.65rem] text-muted"
+              <div
+                className="flex items-center gap-2 border-b-[3px] border-ink px-2.5 py-1.5"
+                style={{ background: tone.bg, color: tone.fg }}
               >
-                modèle
-              </span>
-            )}
+                <span className="chiffre text-2xl leading-none opacity-70">{index + 1}</span>
+                <span className="font-display text-sm uppercase leading-tight">
+                  {LABELS[step.status] ?? step.status}
+                </span>
+                {step.attempt > 1 && (
+                  <span className="ml-auto font-display text-xs uppercase opacity-80">
+                    essai {step.attempt}
+                  </span>
+                )}
+              </div>
 
-            {step.attempt > 1 && (
-              <span className="text-xs text-muted">tentative {step.attempt}</span>
-            )}
+              <div className="flex flex-1 flex-col px-2.5 py-2">
+                <p className="font-display text-base uppercase leading-tight text-primary">
+                  {step.label}
+                </p>
 
-            <span className="ml-auto shrink-0 font-mono text-xs text-muted">
-              {step.durationMs !== null && step.durationMs > 0
-                ? formatDuration(step.durationMs)
-                : ''}
-              {step.costCents > 0 && ` · ${(step.costCents / 100).toFixed(3)} $`}
-            </span>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {step.usesModel && (
+                    <span className="badge badge-gris !text-[0.65rem]" title="Cette étape appelle un modèle">
+                      modèle
+                    </span>
+                  )}
+                  {step.durationMs !== null && step.durationMs > 0 && (
+                    <span className="tabular text-xs text-muted">
+                      {formatDuration(step.durationMs)}
+                    </span>
+                  )}
+                  {step.costCents > 0 && (
+                    <span className="tabular text-xs text-muted">
+                      {(step.costCents / 100).toFixed(3)} $
+                    </span>
+                  )}
+                </div>
 
-            <p className="w-full text-sm text-secondary">
-              {step.error ?? step.note ?? step.detail}
-            </p>
-          </li>
-        ))}
+                {showExplain && explain && (
+                  <p className="mt-2 border-l-[3px] border-ink pl-2 text-xs text-secondary">
+                    {explain}
+                  </p>
+                )}
+              </div>
+            </li>
+          )
+        })}
       </ol>
 
       {terminal && (
@@ -168,20 +195,20 @@ export function RunProgress({ initial }: { initial: RunView }) {
           {view.run.status === 'succeeded' && (
             <Link
               href={`/review/${view.run.id}`}
-              className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong"
+              className="bouton bouton-primaire"
             >
               Revoir les propositions
             </Link>
           )}
           <Link
             href={`/chapitres/${view.run.chapterId}`}
-            className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
+            className="bouton"
           >
             Voir les pages du chapitre
           </Link>
           <Link
             href="/import"
-            className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
+            className="bouton"
           >
             Importer le suivant
           </Link>
@@ -209,6 +236,29 @@ function providerSentence(provider: string): string {
   }
 }
 
+/**
+ * A state, as a colour you can read without reading.
+ *
+ * Replaces a monospace glyph in the same grey as everything else: the point of
+ * a status is to be seen before it is parsed.
+ */
+function toneFor(status: string): { bg: string; fg: string } {
+  switch (status) {
+    case 'succeeded':
+      return { bg: 'var(--epi-validated)', fg: '#fff' }
+    case 'running':
+      return { bg: 'var(--accent)', fg: 'var(--ink)' }
+    case 'failed':
+      return { bg: 'var(--coral)', fg: '#fff' }
+    case 'cached':
+      return { bg: 'var(--sea)', fg: '#fff' }
+    case 'skipped':
+      return { bg: 'var(--surface-sunken)', fg: 'var(--text-secondary)' }
+    default:
+      return { bg: 'var(--surface-sunken)', fg: 'var(--text-muted)' }
+  }
+}
+
 function statusSentence(status: string): string {
   switch (status) {
     case 'pending':
@@ -231,38 +281,6 @@ function statusSentence(status: string): string {
 /* Status is carried by a glyph as well as a colour: colour alone would exclude
    anyone who cannot distinguish these hues, and the whole list would read as
    uniform grey. */
-function glyphFor(status: string): string {
-  switch (status) {
-    case 'succeeded':
-      return '✓'
-    case 'failed':
-      return '✗'
-    case 'running':
-      return '▸'
-    case 'cached':
-      return '≡'
-    case 'skipped':
-      return '–'
-    default:
-      return '·'
-  }
-}
-
-function colourFor(status: string): string {
-  switch (status) {
-    case 'succeeded':
-      return 'var(--epi-explicit)'
-    case 'failed':
-      return 'var(--epi-contradicted)'
-    case 'running':
-      return 'var(--accent)'
-    case 'cached':
-      return 'var(--epi-inferred)'
-    default:
-      return 'var(--text-muted)'
-  }
-}
-
 function formatDuration(ms: number): string {
   if (ms < 1_000) return `${ms} ms`
   if (ms < 60_000) return `${(ms / 1_000).toFixed(1)} s`

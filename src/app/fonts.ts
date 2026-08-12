@@ -1,44 +1,42 @@
 import localFont from 'next/font/local'
 
 /**
- * Two families, self-hosted, and the reason for each.
+ * Two faces, chosen for volume.
  *
- * Self-hosted rather than fetched at build time: `next/font/google` downloads
- * during `next build`, which makes an offline or network-restricted build fail
- * for a reason that has nothing to do with the code. The files are in the repo,
- * Latin subset only, 190 KB for the pair.
+ * The first attempt at this interface used a 17th-century book type and a
+ * humanist sans: defensible, and completely wrong for the brief. This is a tool
+ * for reading manga, and the register it needs is loud — big, heavy, high
+ * contrast, closer to a chapter title page than to a monograph.
  *
- * **IM Fell English** for titles and the wordmark. It is a digitisation of a
- * 17th-century Oxford type — uneven, inked, set by hand. That unevenness is the
- * whole point: it belongs to logbooks and printed charts, which is what this
- * application is, and no interface generated from the statistical middle of the
- * web has ever reached for it.
+ * **Anton** for anything that shouts: page titles, chapter numbers, step
+ * states, counts. One weight, extremely heavy, condensed enough that a large
+ * size still fits. It is a poster face, and every number in this application is
+ * better as a poster than as a paragraph.
  *
- * **Alegreya Sans** for everything else. A humanist sans with calligraphic
- * roots, warm enough to sit under the display face without arguing with it, and
- * designed for long reading rather than for dashboards. It is doing the job
- * Inter would do, with a voice.
+ * **Nunito** for everything else, at 400/600/800/900. Rounded terminals keep it
+ * friendly next to Anton's slab of ink, it stays legible at 13px in a dense
+ * table, and its heavy weights are heavy enough to carry a badge.
+ *
+ * Self-hosted, Latin subset, 170 KB for the pair: `next/font/google` downloads
+ * during `next build`, which makes an offline build fail for a reason that has
+ * nothing to do with the code.
  */
 
 export const display = localFont({
-  src: [
-    { path: './fonts/IMFellEnglish-400-latin.woff2', weight: '400', style: 'normal' },
-    { path: './fonts/IMFellEnglish-400-italic-latin.woff2', weight: '400', style: 'italic' },
-  ],
+  src: [{ path: './fonts/Anton-400-latin.woff2', weight: '400', style: 'normal' }],
   variable: '--font-display-loaded',
   display: 'swap',
-  // Georgia is the closest thing every machine already has: same warmth, same
-  // old-style figures. The swap is then a change of texture, not of layout.
-  fallback: ['Georgia', 'Times New Roman', 'serif'],
+  fallback: ['Impact', 'Haettenschweiler', 'Arial Narrow Bold', 'sans-serif'],
 })
 
 export const sans = localFont({
   src: [
-    { path: './fonts/AlegreyaSans-400-latin.woff2', weight: '400', style: 'normal' },
-    { path: './fonts/AlegreyaSans-500-latin.woff2', weight: '500', style: 'normal' },
-    { path: './fonts/AlegreyaSans-700-latin.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/Nunito-400-latin.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/Nunito-600-latin.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/Nunito-800-latin.woff2', weight: '800', style: 'normal' },
+    { path: './fonts/Nunito-900-latin.woff2', weight: '900', style: 'normal' },
   ],
   variable: '--font-sans-loaded',
   display: 'swap',
-  fallback: ['Optima', 'Candara', 'Segoe UI', 'system-ui', 'sans-serif'],
+  fallback: ['Trebuchet MS', 'Segoe UI', 'system-ui', 'sans-serif'],
 })
