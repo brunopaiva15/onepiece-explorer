@@ -37,46 +37,54 @@
 :root {
   color-scheme: light;
 
-  --surface-base: #fdf3dd;
-  --surface-raised: #fffaf0;
-  --surface-sunken: #f2e4c4;
-  --surface-overlay: #ffffff;
+  /* Parchment, straw and deep ocean — the palette of a wanted poster. */
+  --surface-base: #FFF1CC;
+  --surface-raised: #FFF8E7;
+  --surface-sunken: #F2D49B;
+  --surface-overlay: #FFFFFF;
 
-  --text-primary: #14181f;
-  --text-secondary: #414a58;
-  --text-muted: #6c7684;
-  --text-inverted: #fffaf0;
+  --text-primary: #111111;
+  --text-secondary: #3d3a33;
+  --text-muted: #6b6459;
+  --text-inverted: #FFF8E7;
 
-  /* The ink every outline is drawn with. Not pure black: pure black on cream
-     buzzes, and this border is on every element on the page. */
-  --ink: #14181f;
+  /* The ink every outline is drawn with. */
+  --ink: #111111;
 
-  /* Straw — the product's own colour. Highlights, active states, the mark. */
-  --accent: #ffc93c;
-  --accent-strong: #f0a71b;
-  --accent-soft: #fff0c2;
+  /* Straw hat — the product's own colour. Highlights, active states, the mark. */
+  --accent: #F5C542;
+  --accent-strong: #D99A16;
+  --accent-soft: #FFD966;
 
-  /* Sea — chrome, headers, structure. */
-  --sea: #1b6ca8;
-  --sea-deep: #0e4b78;
-  --sea-soft: #cfe4f5;
-  --sea-ink: #ffffff;
+  /*
+   * Sea, in two values doing two different jobs — and the split is not
+   * cosmetic. #0099D8 is the identity blue but reaches only 3.2:1 against
+   * white, which is below the threshold for anything smaller than large text.
+   * So it fills chips and marks, where it sits under black at 5.9:1; banners
+   * and the rail take the deep ocean at 11.1:1, where white can sit on it all
+   * day without straining.
+   */
+  --sea: #0099D8;
+  --sea-deep: #003F63;
+  --sea-soft: #7DD3FC;
+  --sea-ink: #FFFFFF;
 
-  /* Coral — destructive, contradictions, refusals. */
-  --coral: #e4572e;
+  /* Luffy red for destructive actions; lava for events that went wrong. */
+  --coral: #E32636;
+  --lava: #F04424;
 
-  --epi-explicit: #12796b;
-  --epi-inferred: #6a4c93;
-  --epi-hypothetical: #d19a00;
-  --epi-contradicted: #d1441c;
-  --epi-refuted: #75808f;
-  --epi-validated: #17864f;
+  --epi-explicit: #00AFAF;
+  --epi-inferred: #7C3AED;
+  --epi-hypothetical: #D99A16;
+  --epi-contradicted: #E32636;
+  --epi-refuted: #6b6459;
+  --epi-validated: #4F7D3A;
 
   --border: var(--ink);
   --border-strong: var(--ink);
-  --focus-ring: #1b6ca8;
+  --focus-ring: #0099D8;
 
-  --halftone: rgba(20, 24, 31, 0.09);
+  --halftone: rgba(92, 58, 33, 0.10);
   --shadow-hard: 4px 4px 0 var(--ink);
   --shadow-hard-sm: 3px 3px 0 var(--ink);
 }
@@ -85,41 +93,39 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --surface-base: #12161d;
-    --surface-raised: #1b212b;
-    --surface-sunken: #0b0e13;
-    --surface-overlay: #232b37;
+    --surface-base: #171717;
+    --surface-raised: #242424;
+    --surface-sunken: #111111;
+    --surface-overlay: #2e2e2e;
 
-    --text-primary: #f5efe2;
-    --text-secondary: #b9c2ce;
-    --text-muted: #8b95a3;
-    --text-inverted: #12161d;
+    --text-primary: #FFF8E7;
+    --text-secondary: #c9c2b4;
+    --text-muted: #948c7e;
+    --text-inverted: #111111;
 
-    /* In the dark the outline is what the paper was: the light edge that
-       separates one plane from the next. */
     --ink: #000000;
 
-    --accent: #ffc93c;
-    --accent-strong: #ffd96b;
+    --accent: #F5C542;
+    --accent-strong: #FFD966;
     --accent-soft: #3a2f10;
 
-    --sea: #2f8fd0;
-    --sea-deep: #14567f;
+    --sea: #0099D8;
+    --sea-deep: #003F63;
     --sea-soft: #16303d;
-    --sea-ink: #ffffff;
+    --sea-ink: #FFFFFF;
 
-    --coral: #f0714a;
+    --coral: #E32636;
+    --lava: #F04424;
 
-    --epi-explicit: #3fbca9;
-    --epi-inferred: #b39ae0;
-    --epi-hypothetical: #ffc93c;
-    --epi-contradicted: #ff8a5f;
-    --epi-refuted: #8b95a3;
-    --epi-validated: #4ecb8b;
-
+    --epi-explicit: #00AFAF;
+    --epi-inferred: #9a6df5;
+    --epi-hypothetical: #F5C542;
+    --epi-contradicted: #ff5c4a;
+    --epi-refuted: #948c7e;
+    --epi-validated: #6fa855;
     --border: #000000;
     --border-strong: #000000;
-    --focus-ring: #ffc93c;
+    --focus-ring: #F5C542;
 
     --halftone: rgba(255, 255, 255, 0.05);
     --shadow-hard: 4px 4px 0 #000000;
@@ -130,36 +136,36 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --surface-base: #12161d;
-  --surface-raised: #1b212b;
-  --surface-sunken: #0b0e13;
-  --surface-overlay: #232b37;
+  --surface-base: #171717;
+  --surface-raised: #242424;
+  --surface-sunken: #111111;
+  --surface-overlay: #2e2e2e;
 
-  --text-primary: #f5efe2;
-  --text-secondary: #b9c2ce;
-  --text-muted: #8b95a3;
-  --text-inverted: #12161d;
+  --text-primary: #FFF8E7;
+  --text-secondary: #c9c2b4;
+  --text-muted: #948c7e;
+  --text-inverted: #111111;
 
   --ink: #000000;
 
-  --accent: #ffc93c;
-  --accent-strong: #ffd96b;
+  --accent: #F5C542;
+  --accent-strong: #FFD966;
   --accent-soft: #3a2f10;
 
-  --sea: #2f8fd0;
-  --sea-deep: #14567f;
+  --sea: #0099D8;
+  --sea-deep: #003F63;
   --sea-soft: #16303d;
-  --sea-ink: #ffffff;
+  --sea-ink: #FFFFFF;
 
-  --coral: #f0714a;
+  --coral: #E32636;
+  --lava: #F04424;
 
-  --epi-explicit: #3fbca9;
-  --epi-inferred: #b39ae0;
-  --epi-hypothetical: #ffc93c;
-  --epi-contradicted: #ff8a5f;
-  --epi-refuted: #8b95a3;
-  --epi-validated: #4ecb8b;
-
+  --epi-explicit: #00AFAF;
+  --epi-inferred: #9a6df5;
+  --epi-hypothetical: #F5C542;
+  --epi-contradicted: #ff5c4a;
+  --epi-refuted: #948c7e;
+  --epi-validated: #6fa855;
   --border: #000000;
   --border-strong: #000000;
   --focus-ring: #ffc93c;
@@ -167,6 +173,33 @@
   --halftone: rgba(255, 255, 255, 0.05);
   --shadow-hard: 4px 4px 0 #000000;
   --shadow-hard-sm: 3px 3px 0 #000000;
+}
+
+/* --------------------------------------------------------------------------
+   Node types, by colour.
+
+   Nine of the fourteen ontology keys had an obvious colour; the rest were
+   assigned by family rather than left grey, because a type with no colour
+   reads as "other" and there is no such node type. Blues carry people, places
+   and routes; reds carry conflict; purple carries lore and powers; gold
+   carries objects; parchment carries the documentary nodes, which are not part
+   of the story and should not compete with it.
+   -------------------------------------------------------------------------- */
+:root {
+  --type-character: #0099D8;
+  --type-group: #E32636;
+  --type-place: #00AFAF;
+  --type-object: #D99A16;
+  --type-power: #7C3AED;
+  --type-species: #4F7D3A;
+  --type-event: #F04424;
+  --type-battle: #B91C2B;
+  --type-voyage: #277DA1;
+  --type-concept: #243B53;
+  --type-mystery: #704C8C;
+  --type-chapter: #8B5A2B;
+  --type-page: #8B5A2B;
+  --type-panel: #8B5A2B;
 }
 
 @theme inline {
@@ -188,6 +221,7 @@
   --color-sea-soft: var(--sea-soft);
   --color-sea-ink: var(--sea-ink);
   --color-coral: var(--coral);
+  --color-lava: var(--lava);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-epi-explicit: var(--epi-explicit);

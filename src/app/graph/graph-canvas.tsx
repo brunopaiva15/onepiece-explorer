@@ -39,18 +39,38 @@ interface Props {
   onSelect?: (nodeId: string) => void
 }
 
-const TYPE_COLOURS: Record<string, string> = {
-  character: '#a8622a',
-  group: '#2f6f6b',
-  place: '#b08430',
-  object: '#7a5ea8',
-  power: '#b4552d',
-  species: '#4a5a68',
-  event: '#2d6a4f',
-  battle: '#8a4d1e',
-  voyage: '#5aa9a3',
-  concept: '#74838f',
-  mystery: '#d08c4a',
+/**
+ * A type's colour, resolved from the stylesheet at draw time.
+ *
+ * WebGL needs a literal, so this map used to be hard-coded here — and it was
+ * still carrying the palette from two redesigns ago while the badges and the
+ * selection panel had moved on. Reading the custom property means one
+ * definition for every surface that colours a type, and it follows the theme
+ * without a second table to keep in step.
+ */
+function typeColours(): Record<string, string> {
+  const style = getComputedStyle(document.documentElement)
+  const read = (key: string): string =>
+    style.getPropertyValue(`--type-${key}`).trim() || '#74838f'
+
+  return Object.fromEntries(
+    [
+      'character',
+      'group',
+      'place',
+      'object',
+      'power',
+      'species',
+      'event',
+      'battle',
+      'voyage',
+      'concept',
+      'mystery',
+      'chapter',
+      'page',
+      'panel',
+    ].map((key) => [key, read(key)]),
+  )
 }
 
 export function GraphCanvas({ projection, portraits, onSelect }: Props) {
@@ -95,13 +115,15 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
 
         const graph = new Graph({ multi: false, type: 'undirected' })
 
+        const colours = typeColours()
+
         for (const node of projection.nodes) {
           graph.addNode(node.id, {
             label: node.label,
             // Degree-based sizing: the reader's eye should land on the
             // characters the story keeps returning to.
             size: 4 + Math.min(14, Math.sqrt(node.degree) * 2.5),
-            color: TYPE_COLOURS[node.nodeType] ?? '#74838f',
+            color: colours[node.nodeType] ?? '#74838f',
             nodeType: node.nodeType,
             // Seeded deterministically from the id so the pre-layout positions
             // are the same on every render. Math.random() here would make the

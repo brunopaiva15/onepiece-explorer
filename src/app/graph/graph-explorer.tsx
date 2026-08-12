@@ -33,14 +33,16 @@ interface Props {
   active: string[]
 }
 
-const TYPE_COLOURS: Record<string, string> = {
-  character: 'var(--coral)',
-  group: 'var(--sea)',
-  place: 'var(--epi-explicit)',
-  object: 'var(--accent-strong)',
-  power: 'var(--epi-inferred)',
-  event: 'var(--epi-hypothetical)',
+/**
+ * One source for a type's colour: the stylesheet.
+ *
+ * A second map here would drift from the badges and the table view, and the
+ * whole value of colouring a type is that it means the same thing everywhere.
+ */
+function typeColour(key: string): string {
+  return `var(--type-${key}, var(--surface-sunken))`
 }
+
 
 export function GraphExplorer({
   projection,
@@ -113,7 +115,7 @@ export function GraphExplorer({
                 onClick={() => toggleType(type.key)}
                 aria-pressed={active.includes(type.key)}
                 className={`badge ${on ? '' : 'opacity-40'}`}
-                style={on ? { background: TYPE_COLOURS[type.key] ?? 'var(--surface-sunken)', color: '#fff' } : undefined}
+                style={on ? { background: typeColour(type.key), color: '#fff' } : undefined}
               >
                 {type.labelFr}
                 <span className="tabular opacity-80">{count}</span>
@@ -185,7 +187,7 @@ export function GraphExplorer({
                 <div className="min-w-0">
                   <span
                     className="badge"
-                    style={{ background: TYPE_COLOURS[selected.nodeType] ?? 'var(--surface-sunken)', color: '#fff' }}
+                    style={{ background: typeColour(selected.nodeType), color: '#fff' }}
                   >
                     {selected.nodeType}
                   </span>
