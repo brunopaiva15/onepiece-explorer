@@ -70,10 +70,21 @@ export async function listChapters(
         readingDirection: chapters.readingDirection,
         updatedAt: chapters.updatedAt,
         hasTextLayer: sql<boolean>`coalesce(bool_or(${documents.hasTextLayer}), false)`,
-        // Counted distinctly: the join to documents multiplies rows, and a
-        // passage count inflated by the number of source files would be wrong
-        // in the one place the user checks whether their paste landed.
-        passageCount: sql<number>`count(distinct ${textBlocks.id})::int`,
+        /*
+         * Passages, and only for a chapter that has them.
+         *
+         * Distinct, because the join to documents multiplies rows and a count
+         * inflated by the number of source files would be wrong in the one
+         * place you check whether a paste landed. And zero for a file-imported
+         * chapter, because its text blocks are OCR'd bubbles — counting those
+         * as passages would make the library's total the sum of its pages *and*
+         * every speech balloon on them.
+         */
+        passageCount: sql<number>`
+          case when ${chapters.sourceKind} = 'summary'
+            then count(distinct ${textBlocks.id})::int
+            else 0
+          end`,
       })
       .from(chapters)
       .leftJoin(documents, eq(documents.chapterId, chapters.id))
