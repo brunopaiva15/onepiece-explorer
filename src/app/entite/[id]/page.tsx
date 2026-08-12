@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
-import { Portrait } from '@/app/components/portrait.tsx'
 
 export const metadata: Metadata = { title: 'Fiche' }
 export const dynamic = 'force-dynamic'
@@ -34,36 +33,94 @@ export default async function EntityPage({
 
   return (
     <>
+      <main id="contenu" className="mx-auto max-w-5xl px-4 py-4">
+        {/*
+         * A cover, not a paragraph.
+         *
+         * We have had portraits since the images phase and this page still
+         * opened with a breadcrumb, a 12px node type, a title, and four
+         * sentences of prose covering the naming model, the first appearance
+         * and the merge count — a wall of exposition where a reader wants a
+         * face and a name. The facts are all still here; they are now
+         * *displayed* rather than narrated: the type is a badge, the first
+         * appearance is a number, the merge count is a number.
+         */}
+        <header
+          className="panneau overflow-hidden"
+          style={{ boxShadow: 'var(--shadow-hard)' }}
+        >
+          <div className="flex flex-col gap-4 bg-[var(--sea-deep)] p-4 text-white sm:flex-row sm:items-end">
+            {portrait ? (
+              <div className="shrink-0 self-start border-[3px] border-ink bg-surface-raised">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={portrait.url}
+                  alt={`Illustration de ${sheet.displayLabel}`}
+                  loading="eager"
+                  className="h-44 w-36 object-cover"
+                />
+              </div>
+            ) : (
+              <div className="flex h-44 w-36 shrink-0 items-center justify-center self-start border-[3px] border-ink bg-[var(--sea)] text-center">
+                <span className="chiffre text-5xl opacity-60">
+                  {sheet.displayLabel.slice(0, 1).toUpperCase()}
+                </span>
+              </div>
+            )}
 
-      <main id="contenu" className="mx-auto max-w-4xl px-6 py-8">
-        <nav className="text-sm">
-          <Link
-            href={`/graph?ch=${session.boundaryChapter}`}
-            className="text-muted hover:text-primary"
-          >
-            Graphe
-          </Link>
-        </nav>
+            <div className="min-w-0 flex-1">
+              <span className="badge badge-or">{sheet.nodeType}</span>
+              <h1 className="mt-2 break-words text-white">{sheet.displayLabel}</h1>
 
-        <header className="mt-4 flex flex-wrap items-start gap-6">
-          <Portrait image={portrait} label={sheet.displayLabel} />
-
-          <div className="min-w-64 flex-1">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">
-            {sheet.nodeType}
-          </p>
-          <h1 className="mt-1 text-4xl font-semibold text-primary">
-            {sheet.displayLabel}
-          </h1>
-          <p className="mt-2 text-sm text-secondary">
-            {sheet.displayKind === 'placeholder'
-              ? "Aucun nom n'est donné à ce stade : cette désignation vient de l'image."
-              : `Désignation : ${labelKindLabel(sheet.displayKind)}.`}{' '}
-            Première apparition au chapitre {sheet.firstSeenChapter}.
-            {sheet.memberIds.length > 1 &&
-              ` ${sheet.memberIds.length} apparitions distinctes ont été identifiées comme une seule personne.`}
-          </p>
+              <div className="mt-3 flex flex-wrap gap-4">
+                <span>
+                  <span className="cartouche block !text-white/70">1re apparition</span>
+                  <span className="chiffre text-2xl">ch. {sheet.firstSeenChapter}</span>
+                </span>
+                <span>
+                  <span className="cartouche block !text-white/70">Faits</span>
+                  <span className="chiffre text-2xl">{sheet.facts.length}</span>
+                </span>
+                {sheet.memberIds.length > 1 && (
+                  <span title="Apparitions distinctes identifiées comme une seule personne">
+                    <span className="cartouche block !text-white/70">Fusionnées</span>
+                    <span className="chiffre text-2xl">{sheet.memberIds.length}</span>
+                  </span>
+                )}
+                {sheet.labels.length > 1 && (
+                  <span>
+                    <span className="cartouche block !text-white/70">Noms connus</span>
+                    <span className="chiffre text-2xl">{sheet.labels.length}</span>
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
+
+          {sheet.displayKind === 'placeholder' && (
+            <p className="border-t-[3px] border-ink bg-[var(--accent)] px-4 py-1.5 text-sm text-ink">
+              Aucun nom n&apos;est donné à ce stade : cette désignation vient de
+              l&apos;image.
+            </p>
+          )}
+
+          {portrait && (
+            /* The caption is not optional: a name match is a guess, and a face
+               shown without saying so reads as something the pipeline
+               established from your pages. It did not. */
+            <p className="border-t-[3px] border-ink px-4 py-1.5 text-xs text-muted">
+              Illustration{' '}
+              <a
+                href={portrait.sourceUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline decoration-dotted hover:text-secondary"
+              >
+                {portrait.attribution}
+              </a>
+              , rapprochée par le nom — pas une preuve tirée de vos pages.
+            </p>
+          )}
         </header>
 
         {sheet.labels.length > 1 && (

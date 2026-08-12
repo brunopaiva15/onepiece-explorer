@@ -38,6 +38,7 @@ export function ImportForm({
   )
   const [selected, setSelected] = useState<File[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
   const numberId = useId()
   const titleId = useId()
   const volumeId = useId()
@@ -120,48 +121,107 @@ export function ImportForm({
           </div>
         </fieldset>
 
+        {/*
+         * A drop zone, not a file input.
+         *
+         * This was `<input type="file">` with a dashed border painted around
+         * it: no drop target, no preview, and the selection reported as one
+         * line of grey text. Dragging a chapter onto the page is how anyone
+         * expects to give a file to a web application, and seeing the files
+         * land is how they check they grabbed the right ones before spending
+         * money on them.
+         */}
         <div>
-          <label htmlFor={fileId} className="text-sm font-medium text-primary">
-            Fichier du chapitre
+          <label htmlFor={fileId} className="font-display text-lg uppercase text-primary">
+            Le fichier
           </label>
-          <p className="mt-1 text-sm text-muted">
-            PDF, archive CBZ/ZIP, ou les images de pages. Un PDF avec couche
-            texte évite l&apos;OCR : l&apos;extraction est alors exacte et
-            gratuite.
-          </p>
-          <input
-            ref={inputRef}
-            id={fileId}
-            name="file"
-            type="file"
-            multiple
-            required
-            accept={ACCEPT}
-            onChange={(event) => setSelected(Array.from(event.target.files ?? []))}
-            className="mt-3 block w-full cursor-pointer rounded-sm border border-dashed border-line-strong bg-surface-raised px-4 py-6 text-sm text-secondary file:mr-4 file:cursor-pointer file:rounded-sm file:border-0 file:bg-accent file:px-4 file:py-2 file:text-sm file:font-medium file:text-inverted"
-          />
+
+          <div
+            onDragOver={(event) => {
+              event.preventDefault()
+              setDragging(true)
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault()
+              setDragging(false)
+              const dropped = Array.from(event.dataTransfer.files)
+              if (dropped.length === 0) return
+              // The input stays the source of truth: the form posts from it.
+              const transfer = new DataTransfer()
+              for (const file of dropped) transfer.items.add(file)
+              if (inputRef.current) inputRef.current.files = transfer.files
+              setSelected(dropped)
+            }}
+            className={`mt-2 border-[3px] border-dashed p-6 text-center transition-colors ${
+              dragging ? 'border-ink bg-[var(--accent-soft)]' : 'border-ink/40 bg-surface-raised'
+            }`}
+          >
+            <p className="font-display text-xl uppercase text-primary">
+              Déposez le chapitre ici
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              PDF, archive CBZ/ZIP, ou les images de pages
+            </p>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="bouton bouton-primaire mt-3"
+            >
+              Choisir un fichier
+            </button>
+            <input
+              ref={inputRef}
+              id={fileId}
+              name="file"
+              type="file"
+              multiple
+              required
+              accept={ACCEPT}
+              onChange={(event) => setSelected(Array.from(event.target.files ?? []))}
+              className="sr-only"
+            />
+            <p className="mt-3 text-xs text-muted">
+              Un PDF avec couche texte évite l&apos;OCR : l&apos;extraction est
+              alors exacte et gratuite.
+            </p>
+          </div>
 
           {selected.length > 0 && (
-            <p className="mt-2 text-sm text-secondary">
-              {selected.length === 1
-                ? selected[0]!.name
-                : `${selected.length} fichiers`}{' '}
-              — {totalMb.toFixed(1)} Mo
-            </p>
+            <div className="mt-3 border-[3px] border-ink bg-surface-raised">
+              <p className="flex items-baseline gap-2 border-b-[3px] border-ink bg-[var(--sea-deep)] px-3 py-1.5 text-white">
+                <span className="chiffre text-2xl leading-none">{selected.length}</span>
+                <span className="font-display text-sm uppercase">
+                  fichier{selected.length > 1 ? 's' : ''}
+                </span>
+                <span className="tabular ml-auto text-sm">{totalMb.toFixed(1)} Mo</span>
+              </p>
+              <ul className="max-h-40 overflow-y-auto px-3 py-2 text-sm">
+                {selected.slice(0, 40).map((file, index) => (
+                  <li key={`${file.name}-${index}`} className="flex gap-2 text-secondary">
+                    <span className="tabular text-muted">{index + 1}</span>
+                    <span className="truncate">{file.name}</span>
+                  </li>
+                ))}
+                {selected.length > 40 && (
+                  <li className="text-muted">… et {selected.length - 40} autre(s)</li>
+                )}
+              </ul>
+            </div>
           )}
 
           {tooBig && (
-            <p className="mt-2 text-sm text-[var(--epi-contradicted)]">
+            <p className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
               {totalMb.toFixed(1)} Mo, au-delà des {maxUploadMb} Mo que cette
               requête peut transporter — l&apos;import échouerait sans message
               exploitable.
               {limitIsHostImposed
-                ? " Cette limite vient de l'hébergeur, pas de la configuration : elle n'est pas réglable. Importez depuis une machine qui fait tourner l'application, ou faites-moi passer l'envoi directement au stockage."
+                ? " Cette limite vient de l'hébergeur, pas de la configuration : elle n'est pas réglable. Importez depuis une machine qui fait tourner l'application."
                 : ' Ajustez MAX_UPLOAD_BYTES si votre machine peut la porter.'}
             </p>
           )}
           {tooMany && (
-            <p className="mt-2 text-sm text-[var(--epi-contradicted)]">
+            <p className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
               {selected.length} fichiers, au-delà de la limite de {maxPages} pages.
             </p>
           )}
@@ -169,7 +229,7 @@ export function ImportForm({
 
         <button
           type="submit"
-          className="rounded-sm bg-accent px-5 py-2.5 text-sm font-medium text-inverted transition-colors hover:bg-accent-strong disabled:opacity-50"
+          className="bouton bouton-primaire !text-lg"
         >
           {pending ? 'Import en cours…' : 'Importer'}
         </button>

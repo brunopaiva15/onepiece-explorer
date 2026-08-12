@@ -28,44 +28,33 @@ export default async function ImportPage() {
   const direction = existing.at(-1)?.readingDirection ?? 'rtl'
 
   return (
-    <main id="contenu" className="mx-auto max-w-3xl px-6 py-16">
-      <nav className="text-sm">
-        <Link href="/" className="text-muted hover:text-primary">
-          Journal d&apos;exploration
-        </Link>
-      </nav>
-
-      <h1 className="mt-4 text-4xl font-semibold text-primary">
-        Importer un chapitre
-      </h1>
-      <p className="mt-4 text-secondary">
-        Un chapitre à la fois, dans votre ordre de lecture. Le numéro fixe la
-        date de révélation de tout ce que ce chapitre apprend : c&apos;est lui
-        qui décide, plus tard, de ce qui reste caché derrière le curseur.
-      </p>
-
-      {transportLimitIsHostImposed() && (
+    <main id="contenu" className="mx-auto max-w-3xl px-4 py-6">
+      {/*
+       * The suggested number, up front and enormous.
+       *
+       * It is the one field that cannot be corrected later without
+       * consequences — it dates everything the chapter reveals, and therefore
+       * decides what stays hidden behind the cursor forever after. It used to
+       * be the first input of a form, under a paragraph explaining why it
+       * matters. Showing the value the application already worked out, at the
+       * size of a decision, does that job without asking anyone to read.
+       */}
+      <div className="flex items-center gap-4">
         <div
-          role="note"
-          className="mt-6 rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-4 text-sm"
+          className="flex h-24 w-24 shrink-0 flex-col items-center justify-center border-[4px] border-ink bg-[var(--accent)] text-ink"
+          style={{ boxShadow: 'var(--shadow-hard)' }}
         >
-          <p className="text-primary">
-            <strong className="font-medium">
-              Cet hébergeur ne peut pas recevoir un chapitre.
-            </strong>{' '}
-            Le corps d&apos;une requête y est plafonné à 4,5 Mo par la
-            plate-forme — pas par un réglage — et un chapitre fait dix à cent
-            fois cela.
-          </p>
-          <p className="mt-2 text-secondary">
-            Le reste du site fonctionne : lire, chercher, explorer le graphe. Pour
-            importer, deux voies — lancer l&apos;application sur une machine à
-            vous, qui écrira dans la même base ; ou faire passer l&apos;envoi
-            directement du navigateur au stockage, sans traverser de fonction.
-            La seconde est la vraie correction, et elle reste à écrire.
+          <span className="cartouche !text-ink/70">Chapitre</span>
+          <span className="chiffre text-4xl">{suggested}</span>
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-primary">Importer</h1>
+          <p className="mt-1 text-sm text-secondary">
+            Le numéro date tout ce que ce chapitre révèle. Modifiable
+            ci-dessous&nbsp;; {existing.length === 0 ? 'commencez par celui que vous avez lu en premier.' : `le dernier importé est le ${highest}.`}
           </p>
         </div>
-      )}
+      </div>
 
       <ImportForm
         suggestedNumber={suggested}
