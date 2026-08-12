@@ -49,7 +49,9 @@ export default async function ChaptersPage() {
     total: chapters.length,
     aRelire: chapters.filter((c) => c.status === 'review').length,
     publies: chapters.filter((c) => c.status === 'published').length,
-    pages: chapters.reduce((sum, c) => sum + c.pageCount, 0),
+    // Pages and passages counted together: they are the same thing to a
+    // reader of this figure — how much source the library holds.
+    pages: chapters.reduce((sum, c) => sum + c.pageCount + c.passageCount, 0),
   }
 
   return (
@@ -123,13 +125,18 @@ export default async function ChaptersPage() {
                     </div>
 
                     <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
-                      <span className="tabular">{chapter.pageCount} pages</span>
+                      <span className="tabular">
+                        {chapter.sourceKind === 'summary'
+                          ? `${chapter.passageCount} passages`
+                          : `${chapter.pageCount} pages`}
+                      </span>
                       {chapter.volume !== null && <span>tome {chapter.volume}</span>}
-                      {/* Which extraction path this chapter takes, and why it
-                          matters: a text layer means no OCR, no model call, and
-                          an excerpt that anchors to a character-exact source. */}
-                      <span title={chapter.hasTextLayer ? 'Couche texte : extraction exacte, sans OCR' : 'Pas de couche texte : OCR requis'}>
-                        {chapter.hasTextLayer ? 'texte exact' : 'OCR'}
+                      {/* Where this chapter's citable text comes from. A
+                          written chapter anchors against exactly the characters
+                          you typed; a file-imported one against OCR, which is an
+                          approximation and says so. */}
+                      <span title={chapter.sourceKind === 'summary' ? 'Chapitre écrit : les extraits citent votre texte, au caractère près' : chapter.hasTextLayer ? 'Couche texte : extraction exacte, sans OCR' : 'Pas de couche texte : OCR requis'}>
+                        {chapter.sourceKind === 'summary' ? 'texte écrit' : chapter.hasTextLayer ? 'texte exact' : 'OCR'}
                       </span>
                     </p>
                   </div>

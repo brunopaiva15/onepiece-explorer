@@ -1,7 +1,13 @@
 import 'server-only'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
-import { chapters, documents, pages } from '@/db/schema/documents.ts'
+import {
+  chapters,
+  documents,
+  pages,
+  textBlocks,
+  type ChapterSourceKind,
+} from '@/db/schema/documents.ts'
 import { storage } from '../storage/index.ts'
 
 /**
@@ -27,7 +33,11 @@ export interface ChapterSummary {
   title: string | null
   volume: number | null
   status: ChapterStatus
+  /** Drawn pages, or a text you wrote. */
+  sourceKind: ChapterSourceKind
   pageCount: number
+  /** Citable units of a written chapter. Zero for one imported from a file. */
+  passageCount: number
   readingDirection: 'rtl' | 'ltr'
   hasTextLayer: boolean
   updatedAt: Date
@@ -55,13 +65,19 @@ export async function listChapters(
         title: chapters.title,
         volume: chapters.volume,
         status: chapters.status,
+        sourceKind: chapters.sourceKind,
         pageCount: chapters.pageCount,
         readingDirection: chapters.readingDirection,
         updatedAt: chapters.updatedAt,
         hasTextLayer: sql<boolean>`coalesce(bool_or(${documents.hasTextLayer}), false)`,
+        // Counted distinctly: the join to documents multiplies rows, and a
+        // passage count inflated by the number of source files would be wrong
+        // in the one place the user checks whether their paste landed.
+        passageCount: sql<number>`count(distinct ${textBlocks.id})::int`,
       })
       .from(chapters)
       .leftJoin(documents, eq(documents.chapterId, chapters.id))
+      .leftJoin(textBlocks, eq(textBlocks.chapterId, chapters.id))
       .where(and(eq(chapters.workId, workId), eq(chapters.userId, userId)))
       .groupBy(chapters.id)
       .orderBy(asc(chapters.number))
@@ -76,6 +92,9 @@ export interface ChapterDetail {
   title: string | null
   readingDirection: 'rtl' | 'ltr'
   status: ChapterStatus
+  sourceKind: ChapterSourceKind
+  /** The language the source is written in — the language its excerpts quote. */
+  language: string
 }
 
 /** Metadata for one chapter. Ownership-scoped, like the list. */
@@ -91,6 +110,8 @@ export async function getChapter(
         title: chapters.title,
         readingDirection: chapters.readingDirection,
         status: chapters.status,
+        sourceKind: chapters.sourceKind,
+        language: chapters.language,
       })
       .from(chapters)
       .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))

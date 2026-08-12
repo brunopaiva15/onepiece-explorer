@@ -177,7 +177,7 @@ export default async function HomePage() {
           {[
             ['Chapitres', chapters.length],
             ['Publiés', p.publies.length],
-            ['Pages', chapters.reduce((s, c) => s + c.pageCount, 0)],
+            ['Passages', chapters.reduce((s, c) => s + c.passageCount + c.pageCount, 0)],
             ['Dernier', chapters.length > 0 ? Math.max(...chapters.map((c) => c.number)) : 0],
           ].map(([label, value]) => (
             <div
@@ -218,7 +218,11 @@ export default async function HomePage() {
                   </p>
                   <div className="mt-1 flex items-center gap-2">
                     <StatusBadge status={chapter.status} />
-                    <span className="tabular text-xs text-muted">{chapter.pageCount} p.</span>
+                    <span className="tabular text-xs text-muted">
+                      {chapter.sourceKind === 'summary'
+                        ? `${chapter.passageCount} passages`
+                        : `${chapter.pageCount} p.`}
+                    </span>
                   </div>
                 </div>
               </li>

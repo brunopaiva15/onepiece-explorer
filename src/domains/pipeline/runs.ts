@@ -6,7 +6,7 @@ import { chapters } from '@/db/schema/documents.ts'
 import { ingestionRuns, ingestionSteps, runCheckpoints } from '@/db/schema/ingestion.ts'
 import type { ProviderChoice } from '@/domains/ai/index.ts'
 import { PIPELINE_VERSION } from '../ingestion/import.ts'
-import { STEPS, stepDefinition, type StepKey } from './registry.ts'
+import { stepsFor, stepDefinition, type StepKey } from './registry.ts'
 
 /**
  * Runs and steps: the record of what the pipeline did.
@@ -79,7 +79,7 @@ export async function createRun(
 ): Promise<string> {
   return withIngest(async (db) => {
     const [chapter] = await db
-      .select({ id: chapters.id })
+      .select({ id: chapters.id, sourceKind: chapters.sourceKind })
       .from(chapters)
       .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))
       .limit(1)
@@ -101,7 +101,7 @@ export async function createRun(
     if (!run) throw new Error('Création du run échouée.')
 
     await db.insert(ingestionSteps).values(
-      STEPS.map((step) => ({
+      stepsFor(chapter.sourceKind).map((step) => ({
         runId: run.id,
         userId,
         stepKey: step.key,
@@ -338,6 +338,7 @@ export async function getRun(userId: string, runId: string): Promise<RunView | n
         id: ingestionRuns.id,
         chapterId: ingestionRuns.chapterId,
         chapterNumber: chapters.number,
+        sourceKind: chapters.sourceKind,
         status: ingestionRuns.status,
         pipelineVersion: ingestionRuns.pipelineVersion,
         provider: ingestionRuns.provider,
@@ -373,7 +374,7 @@ export async function getRun(userId: string, runId: string): Promise<RunView | n
     const latest = new Map<string, (typeof rows)[number]>()
     for (const row of rows) latest.set(row.stepKey, row)
 
-    const steps: StepSummary[] = STEPS.map((definition) => {
+    const steps: StepSummary[] = stepsFor(run.sourceKind).map((definition) => {
       const row = latest.get(definition.key)
       return {
         key: definition.key,

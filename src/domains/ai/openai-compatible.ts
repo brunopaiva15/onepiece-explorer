@@ -195,18 +195,24 @@ export class OpenAICompatibleProvider implements ModelProvider {
           ].join('\n')
 
     const blocks = request.textBlocks
-      .map((b) => `[${b.ref}${b.panelRef ? ` dans ${b.panelRef}` : ' hors case'}] ${b.text}`)
-      .join('\n')
+      .map((b) =>
+        request.source === 'summary'
+          ? `[${b.ref}] ${b.text}`
+          : `[${b.ref}${b.panelRef ? ` dans ${b.panelRef}` : ' hors case'}] ${b.text}`,
+      )
+      .join('\n\n')
 
     return this.structured({
-      system: extractionSystem(request.ontology),
+      system: extractionSystem(request.ontology, request.source),
       schema: extractionSchema,
       name: 'extraction',
-      maxTokens: 32_000,
+      maxTokens: 16_000,
       content: [
         { type: 'text', text: known },
         { type: 'text', text: refList(request.allowedRefs) },
-        { type: 'text', text: describeForPrompt(request.descriptions) },
+        ...(request.descriptions.length > 0
+          ? [{ type: 'text' as const, text: describeForPrompt(request.descriptions) }]
+          : []),
         {
           type: 'text',
           text: untrusted(`chapitre-${request.chapterNumber}`, blocks),
@@ -224,7 +230,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       .join('\n')
 
     return this.structured({
-      system: resolutionSystem(),
+      system: resolutionSystem(request.source),
       schema: resolutionSchema,
       name: 'resolution',
       maxTokens: 4_000,

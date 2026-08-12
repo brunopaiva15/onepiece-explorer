@@ -36,7 +36,7 @@ const TRIGRAM_FLOOR = 0.25
 const MAX_CANDIDATES = 8
 
 export async function runResolve(context: StepContext): Promise<StepResult> {
-  const { userId, chapterId, chapterNumber, runId } = context
+  const { userId, chapterId, chapterNumber, runId, sourceKind } = context
 
   const pending = await withIngest(async (db) => {
     const [chapter] = await db
@@ -131,6 +131,7 @@ export async function runResolve(context: StepContext): Promise<StepResult> {
       const existingById = new Map(blocked.map((e) => [e.id, e]))
       const result = await provider.resolve({
         chapterNumber,
+        source: sourceKind,
         candidate: {
           label: candidate.label,
           nodeType: candidate.node_type,

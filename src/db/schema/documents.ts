@@ -29,6 +29,14 @@ export interface BBox {
   h: number
 }
 
+/**
+ * What a chapter was made from.
+ *
+ * `summary` — a text you wrote, whose paragraphs are the citable source.
+ * `pages` — a file you imported, whose panels and OCR were the source.
+ */
+export type ChapterSourceKind = 'pages' | 'summary'
+
 export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey(),
   displayName: text('display_name'),
@@ -81,7 +89,16 @@ export const chapters = pgTable(
       .default('rtl'),
     notes: text('notes'),
     status: chapterStatusEnum('status').notNull().default('draft'),
-    /** Content fingerprint over ordered page hashes — makes re-import idempotent. */
+    /**
+     * Where this chapter's citable text comes from.
+     *
+     * `summary` is the path in use: you write a detailed account of the chapter
+     * and its paragraphs become the source every fact must quote. `pages` is
+     * the older file-import path, kept so that chapters imported that way keep
+     * describing themselves correctly. See migration 0015.
+     */
+    sourceKind: text('source_kind').$type<ChapterSourceKind>().notNull().default('pages'),
+    /** Content fingerprint over the source — makes re-import idempotent. */
     sourceFingerprint: text('source_fingerprint'),
     pageCount: integer('page_count').notNull().default(0),
     publishedAt: timestamp('published_at', { withTimezone: true }),
@@ -197,9 +214,10 @@ export const textBlocks = pgTable(
   'text_blocks',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    pageId: uuid('page_id')
-      .notNull()
-      .references(() => pages.id, { onDelete: 'cascade' }),
+    /**
+     * Null for a passage of a written summary: prose has no page. See 0015.
+     */
+    pageId: uuid('page_id').references(() => pages.id, { onDelete: 'cascade' }),
     panelId: uuid('panel_id').references(() => panels.id, {
       onDelete: 'set null',
     }),
@@ -208,7 +226,8 @@ export const textBlocks = pgTable(
       .references(() => chapters.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
     chapterNumber: integer('chapter_number').notNull(),
-    bbox: jsonb('bbox').$type<BBox>().notNull(),
+    /** Null for a passage of a written summary: prose has no geometry. */
+    bbox: jsonb('bbox').$type<BBox>(),
     text: text('text').notNull(),
     /** What evidence anchoring matches against. See normalizeText(). */
     normalizedText: text('normalized_text').notNull(),
@@ -225,5 +244,6 @@ export const textBlocks = pgTable(
     index('text_blocks_page_idx').on(t.pageId, t.readingOrder),
     index('text_blocks_panel_idx').on(t.panelId),
     index('text_blocks_chapter_idx').on(t.chapterId),
+    index('text_blocks_chapter_order_idx').on(t.chapterId, t.readingOrder),
   ],
 )

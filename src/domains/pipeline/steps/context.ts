@@ -1,3 +1,4 @@
+import type { ChapterSourceKind } from '@/db/schema/documents.ts'
 import type { ModelProvider } from '@/domains/ai/provider.ts'
 
 /**
@@ -13,6 +14,8 @@ export interface StepContext {
   chapterId: string
   chapterNumber: number
   runId: string
+  /** Drawn pages, or a text you wrote. Decides how a step addresses the model. */
+  sourceKind: ChapterSourceKind
   /**
    * The model for this run, chosen when it was launched.
    *

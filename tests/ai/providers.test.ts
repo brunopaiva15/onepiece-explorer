@@ -40,6 +40,7 @@ async function scratch(): Promise<string> {
 describe('the synthetic provider only rearranges what it was given', () => {
   const request: ExtractRequest = {
     chapterNumber: 3,
+    source: 'summary',
     ontology: 'character, place',
     knownEntities: [],
     descriptions: [],
@@ -135,6 +136,7 @@ describe('the synthetic provider only rearranges what it was given', () => {
     // and destroy the revelation history the product exists to preserve.
     const result = await new SyntheticProvider().resolve({
       chapterNumber: 3,
+      source: 'summary',
       candidate: { label: 'Aldren', nodeType: 'character', description: 'un homme au sabre' },
       existing: [
         {

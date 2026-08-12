@@ -387,6 +387,7 @@ describe('resuming a step that failed halfway', () => {
       chapterId,
       chapterNumber: 1,
       runId,
+      sourceKind: 'pages',
       provider: modelProvider(),
     })
 

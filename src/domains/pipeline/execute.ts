@@ -4,7 +4,7 @@ import { withIngest } from '@/db/boundary.ts'
 import { chapters, documents, pages } from '@/db/schema/documents.ts'
 import { ingestionRuns } from '@/db/schema/ingestion.ts'
 import { isProviderChoice, modelProvider, type ProviderChoice } from '@/domains/ai/index.ts'
-import { RUNNABLE_STEPS, STEPS, type StepKey } from './registry.ts'
+import { runnableSteps, stepsFor, type StepKey } from './registry.ts'
 import {
   inputHash,
   markRunFinished,
@@ -73,15 +73,16 @@ export async function executeRun(
   let totalCostCents = 0
 
   try {
-    const chapterNumber = await withIngest(async (db) => {
+    const chapter = await withIngest(async (db) => {
       const [row] = await db
-        .select({ number: chapters.number })
+        .select({ number: chapters.number, sourceKind: chapters.sourceKind })
         .from(chapters)
         .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))
         .limit(1)
       if (!row) throw new Error(`Chapitre introuvable : ${chapterId}`)
-      return row.number
+      return row
     })
+    const chapterNumber = chapter.number
 
     /*
      * The model this run was launched with, not the one configured right now.
@@ -96,10 +97,11 @@ export async function executeRun(
       chapterId,
       chapterNumber,
       runId,
+      sourceKind: chapter.sourceKind,
       provider: modelProvider(await runProviderChoice(runId)),
     }
 
-    for (const step of RUNNABLE_STEPS) {
+    for (const step of runnableSteps(chapter.sourceKind)) {
       const hash = await hashInputsFor(step.key, userId, chapterId)
 
       /*
@@ -151,7 +153,7 @@ export async function executeRun(
       }
     }
 
-    for (const step of STEPS.filter((s) => !s.implemented)) {
+    for (const step of stepsFor(chapter.sourceKind).filter((s) => !s.implemented)) {
       await recordStep(runId, userId, step.key, null, {
         status: 'skipped',
         durationMs: 0,

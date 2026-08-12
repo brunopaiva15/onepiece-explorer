@@ -29,6 +29,8 @@
  * with the narrative delta.
  */
 
+import type { ChapterSourceKind } from '@/db/schema/documents.ts'
+
 export type StepKey =
   | 'panel_detect'
   | 'text_detect'
@@ -49,7 +51,20 @@ export interface StepDefinition {
   /** Does it call a model? Drives the cost estimate and the no-key banner. */
   usesModel: boolean
   implemented: boolean
+  /**
+   * Which kinds of source this step can read.
+   *
+   * A chapter written as text has no pages, so panel detection and
+   * transcription have nothing to operate on. They are filtered out rather than
+   * recorded as skipped: a permanent row saying "découpage en cases — ignoré"
+   * on every chapter of a product that no longer reads images is noise
+   * pretending to be information.
+   */
+  appliesTo: readonly ChapterSourceKind[]
 }
+
+const PAGES_ONLY = ['pages'] as const
+const BOTH = ['pages', 'summary'] as const
 
 export const STEPS: readonly StepDefinition[] = [
   {
@@ -59,6 +74,7 @@ export const STEPS: readonly StepDefinition[] = [
       'Profils de projection sur les gouttières, puis découpe récursive et tri en ordre de lecture. Déterministe, sans modèle.',
     usesModel: false,
     implemented: true,
+    appliesTo: PAGES_ONLY,
   },
   {
     key: 'text_detect',
@@ -67,6 +83,7 @@ export const STEPS: readonly StepDefinition[] = [
       'Rattache chaque bloc de texte à la case qui le contient. Gratuit quand le PDF portait déjà sa couche texte.',
     usesModel: false,
     implemented: true,
+    appliesTo: PAGES_ONLY,
   },
   {
     key: 'ocr',
@@ -75,6 +92,7 @@ export const STEPS: readonly StepDefinition[] = [
       'Ignorée si la source portait une couche texte : celle-ci est exacte et gratuite. Sinon tesseract, puis un modèle si la confiance est basse.',
     usesModel: true,
     implemented: true,
+    appliesTo: PAGES_ONLY,
   },
   {
     key: 'panel_describe',
@@ -82,14 +100,16 @@ export const STEPS: readonly StepDefinition[] = [
     detail: 'Description factuelle de ce qui est dessiné, case par case.',
     usesModel: true,
     implemented: true,
+    appliesTo: PAGES_ONLY,
   },
   {
     key: 'extract_candidates',
     label: 'Extraction des candidats',
     detail:
-      'Entités, événements et relations, chacun obligatoirement ancré à une case ou à un bloc de texte réel.',
+      'Entités, événements et relations, chacun obligatoirement ancré à un passage réel du texte source.',
     usesModel: true,
     implemented: true,
+    appliesTo: BOTH,
   },
   {
     key: 'resolve_entities',
@@ -98,6 +118,7 @@ export const STEPS: readonly StepDefinition[] = [
       'Blocage par trigramme puis score multi-signaux. Propose des candidats justifiés ; ne fusionne jamais seul.',
     usesModel: true,
     implemented: true,
+    appliesTo: BOTH,
   },
   {
     key: 'detect_conflicts',
@@ -105,6 +126,7 @@ export const STEPS: readonly StepDefinition[] = [
     detail: 'Confronte chaque proposition aux assertions déjà acceptées.',
     usesModel: false,
     implemented: true,
+    appliesTo: BOTH,
   },
   {
     key: 'summarize_chapter',
@@ -115,6 +137,10 @@ export const STEPS: readonly StepDefinition[] = [
       'après publication, avec le delta narratif.',
     usesModel: true,
     implemented: false,
+    // Pointless on a chapter you wrote yourself: the source *is* a summary, and
+    // asking a model to summarise your summary before anything is validated
+    // would produce a worse text with no citations.
+    appliesTo: PAGES_ONLY,
   },
   {
     key: 'embed',
@@ -125,6 +151,7 @@ export const STEPS: readonly StepDefinition[] = [
       + 'fonctionne sans elle.',
     usesModel: true,
     implemented: true,
+    appliesTo: BOTH,
   },
 ] as const
 
@@ -132,7 +159,22 @@ export function stepDefinition(key: string): StepDefinition | undefined {
   return STEPS.find((step) => step.key === key)
 }
 
-/** Steps that can actually run today, in order. */
-export const RUNNABLE_STEPS: readonly StepDefinition[] = STEPS.filter(
-  (step) => step.implemented,
-)
+/**
+ * The pipeline for one kind of source, in order.
+ *
+ * Every list shown or written about a run goes through this — the pending rows
+ * created at launch, the progress view, the cost estimate — so that all three
+ * agree about what is supposed to happen. Three lists derived independently
+ * from the same registry is how a run comes to display a step it never
+ * intended to execute.
+ */
+export function stepsFor(sourceKind: ChapterSourceKind): readonly StepDefinition[] {
+  return STEPS.filter((step) => step.appliesTo.includes(sourceKind))
+}
+
+/** Steps that can actually run today, for this kind of source, in order. */
+export function runnableSteps(
+  sourceKind: ChapterSourceKind,
+): readonly StepDefinition[] {
+  return stepsFor(sourceKind).filter((step) => step.implemented)
+}

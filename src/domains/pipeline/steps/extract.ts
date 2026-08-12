@@ -66,6 +66,17 @@ interface PromptBlock {
  */
 const SLICE_PANELS = 20
 
+/**
+ * How many passages of a written summary go into one extraction call.
+ *
+ * A passage is at most six hundred characters, so fifteen is around nine
+ * thousand — a detailed chapter summary in one or two calls, where the page
+ * path needed six or more. The unit is different from the panel one and the
+ * number cannot be shared: prose carries far more claims per character than a
+ * drawing does, so the same input length produces a much longer answer.
+ */
+const SLICE_PASSAGES = 15
+
 /** How many times a failing slice may be halved before it is given up on. */
 const MAX_SPLIT_DEPTH = 2
 
@@ -74,8 +85,27 @@ interface Slice {
   blocks: PromptBlock[]
 }
 
-/** Halve a slice, each half keeping the blocks of the panels it holds. */
+/** Can this slice be made smaller, or is it already one unit of source? */
+function isDivisible(slice: Slice): boolean {
+  return slice.descriptions.length > 1 || (slice.descriptions.length === 0 && slice.blocks.length > 1)
+}
+
+/**
+ * Halve a slice.
+ *
+ * Two shapes, because a slice has two possible units. With panels, the panels
+ * are halved and each half keeps the text that belongs to it — splitting the
+ * text independently would hand the model a bubble whose panel it cannot see.
+ * Without panels there is only prose, so the passages are halved directly.
+ */
 export function splitSlice(slice: Slice): Slice[] {
+  if (slice.descriptions.length === 0) {
+    const middle = Math.ceil(slice.blocks.length / 2)
+    return [slice.blocks.slice(0, middle), slice.blocks.slice(middle)]
+      .filter((half) => half.length > 0)
+      .map((half) => ({ descriptions: [], blocks: half }))
+  }
+
   const middle = Math.ceil(slice.descriptions.length / 2)
   const halves = [slice.descriptions.slice(0, middle), slice.descriptions.slice(middle)]
 
@@ -115,6 +145,13 @@ function sliceKey(slice: Slice): string {
   return createHash('sha256').update(refs.join('|')).digest('hex').slice(0, 32)
 }
 
+/** A slice's size, in whatever unit it is made of. */
+function sizeOf(slice: Slice): string {
+  return slice.descriptions.length > 0
+    ? `${slice.descriptions.length} cases`
+    : `${slice.blocks.length} passages`
+}
+
 /**
  * Was this a connection that died, or an answer that did not fit?
  *
@@ -138,7 +175,23 @@ function looksLikeNetwork(message: string): boolean {
 }
 
 export function sliceChapter(descriptions: PanelDescription[], blocks: PromptBlock[]): Slice[] {
-  if (descriptions.length === 0) return [{ descriptions: [], blocks }]
+  /*
+   * No panels means a chapter you wrote: slice the prose itself.
+   *
+   * This used to return everything in one slice, which was right when "no
+   * panels" only ever meant a page whose detection had failed. It is wrong now
+   * that a chapter can legitimately be nothing but text — a long summary would
+   * go out as a single call and run into the same output ceiling that slicing
+   * exists to stay under.
+   */
+  if (descriptions.length === 0) {
+    if (blocks.length === 0) return [{ descriptions: [], blocks: [] }]
+    const slices: Slice[] = []
+    for (let start = 0; start < blocks.length; start += SLICE_PASSAGES) {
+      slices.push({ descriptions: [], blocks: blocks.slice(start, start + SLICE_PASSAGES) })
+    }
+    return slices
+  }
 
   const orphans = blocks.filter((block) => block.panelRef === null)
   const slices: Slice[] = []
@@ -292,8 +345,10 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   if (promptBlocks.length === 0 && descriptions.length === 0) {
     return {
       note:
-        "Rien à extraire : ni texte transcrit ni description de case. " +
-        "Vérifiez les étapes précédentes avant de relancer.",
+        context.sourceKind === 'summary'
+          ? 'Rien à extraire : ce chapitre ne contient aucun passage. Réimportez son résumé.'
+          : 'Rien à extraire : ni texte transcrit ni description de case. ' +
+            'Vérifiez les étapes précédentes avant de relancer.',
       status: 'skipped',
     }
   }
@@ -395,7 +450,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     done++
     if (slices.length > 1) {
       console.log(
-        `[extract] tranche ${done} (${slice.descriptions.length} cases` +
+        `[extract] tranche ${done} (${sizeOf(slice)}` +
           `${depth > 0 ? `, redécoupée ×${depth}` : ''})`,
       )
     }
@@ -409,6 +464,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     try {
       result = await provider.extract({
         chapterNumber,
+        source: context.sourceKind,
         ontology: renderOntology(world.preds),
         knownEntities,
         descriptions: slice.descriptions,
@@ -429,7 +485,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         continue
       }
 
-      if (depth < MAX_SPLIT_DEPTH && slice.descriptions.length > 1) {
+      if (depth < MAX_SPLIT_DEPTH && isDivisible(slice)) {
         const halves = splitSlice(slice)
         pending.unshift(...halves.map((half) => ({ slice: half, depth: depth + 1, retried: false })))
         console.warn(`[extract] tranche en échec, redécoupée en ${halves.length} : ${message}`)
@@ -438,7 +494,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
 
       failedSlices++
       lastFailure = message
-      console.error(`[extract] tranche abandonnée (${slice.descriptions.length} cases) : ${message}`)
+      console.error(`[extract] tranche abandonnée (${sizeOf(slice)}) : ${message}`)
       continue
     }
 

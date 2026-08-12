@@ -3,12 +3,13 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { getChapter, getChapterPages } from '@/domains/chapters/queries.ts'
+import { chapterPassages } from '@/domains/ingestion/summary.ts'
 import { latestRunForChapter } from '@/domains/pipeline/runs.ts'
 import { PageGrid } from './page-grid.tsx'
 import { providerOptions } from '@/domains/ai/index.ts'
 import { StartRun } from './start-run.tsx'
 
-export const metadata: Metadata = { title: 'Pages du chapitre' }
+export const metadata: Metadata = { title: 'Source du chapitre' }
 
 /**
  * Signed asset URLs live about a minute, so this page must never be cached.
@@ -28,13 +29,26 @@ export default async function ChapterPage({
   const chapter = await getChapter(session.userId, id)
   if (!chapter) notFound()
 
-  const [pages, lastRunId] = await Promise.all([
-    getChapterPages(session.userId, chapter.id, chapter.number),
+  const written = chapter.sourceKind === 'summary'
+
+  /*
+   * One branch, two sources.
+   *
+   * A written chapter has passages and no pages; a file-imported one has pages.
+   * Fetching only what applies keeps a written chapter from paying for a round
+   * of signed URLs that would sign nothing.
+   */
+  const [pages, passages, lastRunId] = await Promise.all([
+    written ? Promise.resolve([]) : getChapterPages(session.userId, chapter.id, chapter.number),
+    written ? chapterPassages(session.userId, chapter.id) : Promise.resolve([]),
     latestRunForChapter(session.userId, chapter.id),
   ])
 
+  const units = written ? passages.length : pages.length
+  const characters = passages.reduce((sum, passage) => sum + passage.text.length, 0)
+
   return (
-    <main id="contenu" className="mx-auto max-w-6xl px-6 py-12">
+    <main id="contenu" className="mx-auto max-w-4xl px-4 py-6">
       <nav className="flex flex-wrap items-center gap-2 text-sm">
         <Link href="/" className="text-muted hover:text-primary">
           Journal
@@ -45,50 +59,105 @@ export default async function ChapterPage({
         </Link>
       </nav>
 
-      <header className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2">
-        <h1 className="text-4xl font-semibold text-primary">
-          Chapitre {chapter.number}
-        </h1>
-        {chapter.title && (
-          <p className="text-xl text-secondary">{chapter.title}</p>
-        )}
-        <span className="ml-auto rounded-sm border border-line px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-muted">
-          {statusLabel(chapter.status)}
+      {/*
+       * The chapter as a masthead: number, title, and the figures that say
+       * whether the source is usable. Those figures replace the paragraph that
+       * used to describe signed links — a note about storage on a page whose
+       * subject is text.
+       */}
+      <header className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-2">
+        <span className="flex items-baseline gap-2">
+          <span className="cartouche">Chapitre</span>
+          <span className="chiffre text-4xl leading-none">{chapter.number}</span>
         </span>
+        {chapter.title && <p className="text-xl text-secondary">{chapter.title}</p>}
+
+        <span className="flex items-baseline gap-1.5">
+          <span className="chiffre text-2xl">{units}</span>
+          <span className="cartouche">{written ? 'passages' : 'pages'}</span>
+        </span>
+        {written && (
+          <span className="flex items-baseline gap-1.5">
+            <span className="chiffre text-2xl">{characters}</span>
+            <span className="cartouche">caractères</span>
+          </span>
+        )}
+        {written && chapter.language !== 'fr' && (
+          <span className="badge badge-gris" title="Langue de la source : celle des extraits cités">
+            source {chapter.language}
+          </span>
+        )}
+
+        <span className="badge ml-auto">{statusLabel(chapter.status)}</span>
       </header>
 
-      <div className="mt-6 flex flex-wrap items-start gap-3">
-        {pages.length > 0 && (
-          <StartRun chapterId={chapter.id} options={providerOptions()} />
-        )}
+      <div className="mt-5 flex flex-wrap items-start gap-3">
+        {units > 0 && <StartRun chapterId={chapter.id} options={providerOptions()} />}
         {lastRunId && (
-          <Link
-            href={`/runs/${lastRunId}`}
-            className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
-          >
+          <Link href={`/runs/${lastRunId}`} className="bouton !py-1.5 !text-sm">
             Dernier traitement
+          </Link>
+        )}
+        {written && (
+          <Link href="/import" className="bouton !py-1.5 !text-sm">
+            Corriger le texte
           </Link>
         )}
       </div>
 
-      {pages.length === 0 ? (
-        <p className="mt-10 rounded-sm border border-line bg-surface-raised p-6 text-secondary">
-          Aucune page enregistrée pour ce chapitre. Relancez l&apos;import.
+      {units === 0 ? (
+        <p className="mt-8 border-[3px] border-ink bg-[var(--accent)] px-4 py-3 text-ink">
+          {written
+            ? "Ce chapitre n'a aucun passage. Réimportez son texte."
+            : "Aucune page enregistrée pour ce chapitre. Relancez l'import."}
         </p>
-      ) : (
-        <PageGrid
-          chapterId={chapter.id}
-          chapterNumber={chapter.number}
-          readingDirection={chapter.readingDirection}
-          pages={pages}
-        />
-      )}
+      ) : written ? (
+        <>
+          {/*
+           * The passages, numbered and shown whole.
+           *
+           * This is the entire evidence base of the chapter: every fact the
+           * review queue will offer you cites one of these by number, and
+           * checking a citation means reading the passage it points at. Hiding
+           * them behind a toggle would hide the only thing on this page that
+           * can be checked.
+           */}
+          <ol className="mt-8 space-y-2.5">
+            {passages.map((passage) => (
+              <li
+                key={passage.id}
+                className="flex gap-3 border-[3px] border-ink bg-surface-raised px-3 py-2.5"
+              >
+                <span className="chiffre shrink-0 text-xl leading-tight text-muted">
+                  {passage.order + 1}
+                </span>
+                <p className="min-w-0 whitespace-pre-wrap text-primary">{passage.text}</p>
+              </li>
+            ))}
+          </ol>
 
-      <p className="mt-14 border-t border-line pt-6 text-sm text-muted">
-        Les aperçus sont servis par des liens signés valables une minute. Aucune
-        page n&apos;a d&apos;adresse permanente : un lien copié cesse de
-        fonctionner.
-      </p>
+          <p className="mt-10 border-t border-line pt-6 text-sm text-muted">
+            Chaque proposition devra citer mot pour mot un de ces passages. Un
+            extrait qui n&apos;y apparaît pas est mis en quarantaine et
+            n&apos;atteint jamais la revue — c&apos;est ce qui empêche le modèle
+            d&apos;ajouter ce qu&apos;il sait de One&nbsp;Piece par ailleurs.
+          </p>
+        </>
+      ) : (
+        <>
+          <PageGrid
+            chapterId={chapter.id}
+            chapterNumber={chapter.number}
+            readingDirection={chapter.readingDirection}
+            pages={pages}
+          />
+          <p className="mt-10 border-t border-line pt-6 text-sm text-muted">
+            Les aperçus sont servis par des liens signés valables une minute.
+            Aucune page n&apos;a d&apos;adresse permanente&nbsp;: un lien copié
+            cesse de fonctionner.
+          </p>
+        </>
+      )}
     </main>
   )
 }
@@ -96,6 +165,7 @@ export default async function ChapterPage({
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
     draft: 'brouillon',
+    uploaded: 'importé',
     processing: 'en traitement',
     review: 'à revoir',
     published: 'publié',

@@ -14,6 +14,7 @@
  * calls pass no tools at all, and no URL found in a document is ever followed.
  */
 
+import type { SourceKind } from './prompts.ts'
 import type {
   Answer,
   Extraction,
@@ -22,6 +23,8 @@ import type {
   Summary,
   Transcription,
 } from './schemas.ts'
+
+export type { SourceKind }
 
 /** Where a request sits on the cost/quality ladder. */
 export type ModelTier = 'classify' | 'describe' | 'extract' | 'escalate'
@@ -69,6 +72,15 @@ export interface DescribeRequest {
 
 export interface ExtractRequest {
   chapterNumber: number
+  /**
+   * What the model is reading: drawn pages, or a text you wrote.
+   *
+   * Changes the wording of the system prompt, and nothing else. A model told to
+   * consult "les pages fournies" while holding paragraphs of prose is a model
+   * invited to picture the pages — which is exactly the door this project keeps
+   * shut.
+   */
+  source: SourceKind
   /** The ontology, as the stable cacheable prefix. */
   ontology: string
   /** Entities already validated and visible at this chapter. */
@@ -82,6 +94,7 @@ export interface ExtractRequest {
 
 export interface ResolveRequest {
   chapterNumber: number
+  source: SourceKind
   /** The newly seen figure, described visually. */
   candidate: { label: string; nodeType: string; description: string }
   /** Existing entities that trigram blocking flagged as worth comparing. */

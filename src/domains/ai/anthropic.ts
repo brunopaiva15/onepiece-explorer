@@ -179,7 +179,7 @@ export class AnthropicProvider implements ModelProvider {
      * part of the request. What changes per call — the descriptions and the text
      * blocks — goes after the cache breakpoint.
      */
-    const system = cacheable(extractionSystem(request.ontology))
+    const system = cacheable(extractionSystem(request.ontology, request.source))
     await this.warm(modelFor('extract'), system)
 
     const known =
@@ -192,9 +192,18 @@ export class AnthropicProvider implements ModelProvider {
             ),
           ].join('\n')
 
+    /*
+     * A passage is labelled by its ref alone; a bubble says which panel it sits
+     * in. Telling a model reading prose that a paragraph is "hors case" would
+     * be describing a page layout that does not exist.
+     */
     const blocks = request.textBlocks
-      .map((b) => `[${b.ref}${b.panelRef ? ` dans ${b.panelRef}` : ' hors case'}] ${b.text}`)
-      .join('\n')
+      .map((b) =>
+        request.source === 'summary'
+          ? `[${b.ref}] ${b.text}`
+          : `[${b.ref}${b.panelRef ? ` dans ${b.panelRef}` : ' hors case'}] ${b.text}`,
+      )
+      .join('\n\n')
 
     return this.structured({
       tier: 'extract',
@@ -202,15 +211,19 @@ export class AnthropicProvider implements ModelProvider {
       schema: extractionSchema,
       // Headroom above what a sliced call needs, not a substitute for slicing:
       // a ceiling can always be met by a chapter denser than the last one, and
-      // the step bounds its input for that reason.
-      maxTokens: 32_000,
+      // the step bounds its input for that reason. It was 32 000, which bought
+      // no safety the halve-and-retry path does not already provide and made
+      // every call announce a longer expected duration than it needed.
+      maxTokens: 16_000,
       content: [
         { type: 'text', text: known, cache_control: { type: 'ephemeral', ttl: CACHE_TTL } },
         { type: 'text', text: refList(request.allowedRefs) },
-        {
-          type: 'text',
-          text: describePanelsForPrompt(request.descriptions),
-        },
+        // Omitted rather than sent empty when there are no panels: the API
+        // rejects an empty text block, and "Cases :" followed by nothing is
+        // an invitation to describe cases that were never supplied.
+        ...(request.descriptions.length > 0
+          ? [{ type: 'text' as const, text: describePanelsForPrompt(request.descriptions) }]
+          : []),
         {
           type: 'text',
           text: untrusted(`chapitre-${request.chapterNumber}`, blocks),
@@ -224,7 +237,7 @@ export class AnthropicProvider implements ModelProvider {
     // default rather than on low confidence.
     return this.structured({
       tier: 'escalate',
-      system: cacheable(resolutionSystem()),
+      system: cacheable(resolutionSystem(request.source)),
       schema: resolutionSchema,
       maxTokens: 6_000,
       content: [
@@ -521,7 +534,7 @@ function describeForEstimate(request: unknown): {
   if (r.question) parts.push(r.question)
 
   return {
-    system: extractionSystem(r.ontology ?? ''),
+    system: extractionSystem(r.ontology ?? '', r.source ?? 'summary'),
     text: parts.join('\n\n') || 'estimation',
     images,
     // Output is bounded by the schemas' array limits; this is the observed

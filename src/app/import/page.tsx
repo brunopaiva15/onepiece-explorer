@@ -2,12 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
-import {
-  ingestionLimits,
-  transportLimitIsHostImposed,
-  uploadTransportLimitBytes,
-} from '@/domains/ingestion/limits.ts'
-import { ImportForm } from './import-form.tsx'
+import { SummaryForm } from './summary-form.tsx'
 
 export const metadata: Metadata = { title: 'Importer un chapitre' }
 /**
@@ -21,11 +16,9 @@ export const dynamic = 'force-dynamic'
 export default async function ImportPage() {
   const session = await getReaderSession()
   const existing = await listChapters(session.userId, session.workId)
-  const limits = ingestionLimits()
 
   const highest = existing.reduce((max, c) => Math.max(max, c.number), 0)
   const suggested = existing.length === 0 ? 1 : highest + 1
-  const direction = existing.at(-1)?.readingDirection ?? 'rtl'
 
   return (
     <main id="contenu" className="mx-auto max-w-3xl px-4 py-6">
@@ -56,21 +49,7 @@ export default async function ImportPage() {
         </div>
       </div>
 
-      <ImportForm
-        suggestedNumber={suggested}
-        defaultDirection={direction}
-        /*
-         * The transport limit, not the ingestion one.
-         *
-         * What the pipeline will accept is irrelevant if the bytes cannot reach
-         * it. Showing the larger number let the form accept a file the request
-         * could not carry, and the Server Action then failed without a message
-         * Next passes on — which is how an import produced a bare error page.
-         */
-        maxUploadMb={Math.round(uploadTransportLimitBytes() / 1_048_576)}
-        limitIsHostImposed={transportLimitIsHostImposed()}
-        maxPages={limits.maxPages}
-      />
+      <SummaryForm suggestedNumber={suggested} />
 
       {existing.length > 0 && (
         <section className="mt-14 border-t border-line pt-8">
@@ -90,8 +69,9 @@ export default async function ImportPage() {
                   {chapter.title ?? <span className="text-muted">sans titre</span>}
                 </span>
                 <span className="ml-auto shrink-0 text-sm text-muted">
-                  {chapter.pageCount} p.
-                  {chapter.hasTextLayer && ' · texte'}
+                  {chapter.sourceKind === 'summary'
+                    ? `${chapter.passageCount} passages`
+                    : `${chapter.pageCount} p.`}
                 </span>
               </li>
             ))}
@@ -100,10 +80,11 @@ export default async function ImportPage() {
       )}
 
       <p className="mt-14 border-t border-line pt-6 text-sm text-muted">
-        Outil privé, pour des fichiers que vous possédez déjà. Rien n&apos;est
-        téléchargé depuis Internet, rien n&apos;est récupéré automatiquement,
-        rien n&apos;est partagé : les pages restent dans un stockage privé,
-        servies par des liens signés de courte durée, et supprimables.
+        Outil privé. Le texte que vous écrivez est la seule source&nbsp;: rien
+        n&apos;est récupéré sur Internet, aucune page de manga n&apos;est
+        stockée, rien n&apos;est partagé. Ce que le chapitre ne dit pas
+        n&apos;entrera pas dans le graphe, même si le modèle le sait par
+        ailleurs.
       </p>
     </main>
   )

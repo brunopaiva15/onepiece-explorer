@@ -443,9 +443,19 @@ function ProposalCard({
 function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
   return (
     <div>
+      {/*
+       * A citation names where it came from, in the vocabulary of the source.
+       *
+       * `b3` is what the model was given and what the anchoring check verified,
+       * but a reviewer deciding whether a fact is true needs "passage 3" — the
+       * number they can count down to in the chapter they wrote. A page-less
+       * block is a passage of a written chapter; there is no other way to
+       * produce one.
+       */}
       <p className="font-mono text-xs text-muted">
-        {evidence.ref}
-        {evidence.pageIndex !== null && ` · page ${evidence.pageIndex + 1}`}
+        {evidence.pageIndex !== null
+          ? `${evidence.ref} · page ${evidence.pageIndex + 1}`
+          : `passage ${evidence.ref.replace(/^b/, '')}`}
         {' · '}
         {evidence.kind === 'text' ? 'texte' : 'visuel'}
       </p>
@@ -469,7 +479,8 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
 
       {evidence.blockText && evidence.blockText !== evidence.excerpt && (
         <p className="mt-1 text-xs text-muted">
-          Bloc complet : {evidence.blockText}
+          {evidence.pageIndex === null ? 'Passage complet' : 'Bloc complet'} :{' '}
+          {evidence.blockText}
         </p>
       )}
 

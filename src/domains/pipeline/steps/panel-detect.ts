@@ -144,7 +144,11 @@ async function assignTextBlocks(
   const idByIndex = new Map(inserted.map((panel) => [panel.index, panel.id]))
 
   for (const block of blocks) {
-    const panelIndex = assignToPanel(block.bbox, detected)
+    // A block with no bounding box belongs to no panel, and cannot be made to:
+    // that is a passage of a written summary, which has no geometry to compare.
+    // Such blocks carry no page either, so this loop never sees one — the guard
+    // is here because "never" is a claim about today's callers.
+    const panelIndex = block.bbox === null ? null : assignToPanel(block.bbox, detected)
     await db
       .update(textBlocks)
       .set({ panelId: panelIndex === null ? null : (idByIndex.get(panelIndex) ?? null) })

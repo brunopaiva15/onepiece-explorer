@@ -4,7 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { requireOwner } from '@/domains/auth/session.ts'
 import { importChapter } from '@/domains/ingestion/import.ts'
 import { IngestionRejection } from '@/domains/ingestion/limits.ts'
+import { MAX_SUMMARY_CHARS, type SummaryLanguage } from '@/domains/ingestion/passages.ts'
 import { reorderPages } from '@/domains/ingestion/persist.ts'
+import { importSummary } from '@/domains/ingestion/summary.ts'
 
 /**
  * Import a chapter from the browser.
@@ -107,6 +109,100 @@ export async function importChapterAction(
     // An IngestionRejection already carries a message and a remedy written for
     // the person holding the file. Anything else is a bug, and saying so is
     // more useful than dressing it up as a user error.
+    if (error instanceof IngestionRejection) {
+      return { ok: false, error: { message: error.message, hint: error.hint } }
+    }
+    return {
+      ok: false,
+      error: {
+        message:
+          error instanceof Error ? error.message : "L'import a échoué pour une raison inconnue.",
+        hint: "Ceci n'est pas une erreur attendue. Consultez les journaux du serveur.",
+      },
+    }
+  }
+}
+
+export interface SummaryActionResult {
+  ok: boolean
+  chapterId?: string
+  passageCount?: number
+  characterCount?: number
+  language?: SummaryLanguage
+  replaced?: boolean
+  unchanged?: boolean
+  error?: { message: string; hint?: string }
+}
+
+/**
+ * Import a chapter written out as text.
+ *
+ * The path that replaced file upload. Everything the pipeline needs from a
+ * chapter is prose, and this is prose — so no bytes are validated, no archive
+ * is walked, nothing is stored in a bucket, and the model is never shown an
+ * image. What arrives is a form field, and what leaves is a set of passages any
+ * later claim will have to quote.
+ */
+export async function importSummaryAction(
+  _previous: SummaryActionResult | null,
+  formData: FormData,
+): Promise<SummaryActionResult> {
+  try {
+    const session = await requireOwner()
+
+    const chapterNumber = Number(formData.get('chapterNumber'))
+    if (!Number.isInteger(chapterNumber) || chapterNumber < 0) {
+      return {
+        ok: false,
+        error: {
+          message: 'Numéro de chapitre invalide.',
+          hint: 'Indiquez un entier positif, par exemple 1.',
+        },
+      }
+    }
+
+    const summary = formData.get('summary')
+    if (typeof summary !== 'string' || summary.trim().length === 0) {
+      return {
+        ok: false,
+        error: {
+          message: 'Aucun texte fourni.',
+          hint: 'Collez le résumé détaillé du chapitre dans la zone de texte.',
+        },
+      }
+    }
+
+    const volumeRaw = formData.get('volume')
+    const volume = volumeRaw ? Number(volumeRaw) : undefined
+    const languageRaw = formData.get('language')
+    const language: SummaryLanguage | undefined =
+      languageRaw === 'fr' || languageRaw === 'en' ? languageRaw : undefined
+
+    const result = await importSummary({
+      userId: session.userId,
+      workId: session.workId,
+      chapterNumber,
+      // Sliced server-side too. A client that skips the maxLength attribute is
+      // not a hypothetical when the client is a script someone wrote at 2am.
+      text: summary.slice(0, MAX_SUMMARY_CHARS + 1),
+      ...(text(formData.get('title')) ? { title: text(formData.get('title')) } : {}),
+      ...(Number.isFinite(volume) && volume !== undefined ? { volume } : {}),
+      ...(language ? { language } : {}),
+    })
+
+    revalidatePath('/chapitres')
+    revalidatePath(`/chapitres/${result.chapterId}`)
+
+    return {
+      ok: true,
+      chapterId: result.chapterId,
+      passageCount: result.passageCount,
+      characterCount: result.characterCount,
+      language: result.language,
+      replaced: result.replaced,
+      unchanged: result.unchanged,
+    }
+  } catch (error) {
     if (error instanceof IngestionRejection) {
       return { ok: false, error: { message: error.message, hint: error.hint } }
     }
