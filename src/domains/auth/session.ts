@@ -1,11 +1,18 @@
 import 'server-only'
 import { cache } from 'react'
+import { cookies } from 'next/headers'
 import { eq, and, max } from 'drizzle-orm'
 import { getCurrentUser, requireUser } from './server.ts'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters, profiles, works } from '@/db/schema/index.ts'
 import { resolveBoundary } from '@/db/boundary.ts'
 import { publicLibraryOwnerId } from '@/lib/env.ts'
+import {
+  DEFAULT_LOCALE,
+  LANG_COOKIE,
+  isLocale,
+  type Locale,
+} from '@/lib/i18n/index.ts'
 
 export interface ReaderSession {
   userId: string
@@ -17,6 +24,27 @@ export interface ReaderSession {
   boundaryChapter: number
   /** True when the reader has not deliberately rewound. */
   followingLatest: boolean
+  /** Interface and answer language. From the profile; 'fr' by default. */
+  locale: Locale
+}
+
+/**
+ * The anonymous half of the language preference.
+ *
+ * A visitor has no profile row to remember a choice in, so it lives in a
+ * cookie set by the language toggle. A signed-in reader's cookie mirrors
+ * their profile, which stays the authority — the cookie only speaks when
+ * there is nobody to ask.
+ */
+async function cookieLocale(): Promise<Locale> {
+  try {
+    const jar = await cookies()
+    const value = jar.get(LANG_COOKIE)?.value
+    return isLocale(value) ? value : DEFAULT_LOCALE
+  } catch {
+    // Outside a request (a script, a background job): the default.
+    return DEFAULT_LOCALE
+  }
 }
 
 /**
@@ -111,9 +139,23 @@ export const getReaderSession = cache(async function getReaderSession(
       maxChapter,
       boundaryChapter,
       followingLatest: boundaryChapter >= maxChapter,
+      locale: isLocale(profile?.language) ? profile.language : DEFAULT_LOCALE,
     }
   })
 })
+
+/** Remember the reader's language, and keep the cookie in agreement. */
+export async function persistLanguage(
+  userId: string,
+  locale: Locale,
+): Promise<void> {
+  await withIngest(async (db) => {
+    await db
+      .update(profiles)
+      .set({ language: locale })
+      .where(eq(profiles.id, userId))
+  })
+}
 
 /** Remember where the reader left the slider. */
 export async function persistBoundary(
@@ -199,6 +241,7 @@ export const getViewerSession = cache(async function getViewerSession(
         maxChapter: 0,
         boundaryChapter: 0,
         followingLatest: true,
+        locale: await cookieLocale(),
         isOwner: false,
       }
     }
@@ -235,6 +278,12 @@ export const getViewerSession = cache(async function getViewerSession(
       maxChapter,
       boundaryChapter,
       followingLatest: boundaryChapter >= maxChapter,
+      /*
+       * The visitor's language is their own, never the owner's: the profile
+       * this session borrows the library from keeps its preference private,
+       * exactly like its reading position above.
+       */
+      locale: await cookieLocale(),
       isOwner: false,
     }
   })

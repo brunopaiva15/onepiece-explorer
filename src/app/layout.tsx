@@ -1,16 +1,19 @@
 import type { Metadata, Viewport } from 'next'
 import { display, sans } from './fonts.ts'
 import { AppShell } from './ui/app-shell.tsx'
+import { getDict, getLocale } from '@/lib/i18n/server.ts'
 import './globals.css'
 
-export const metadata: Metadata = {
-  title: {
-    default: 'One Piece Explorer',
-    template: '%s · One Piece Explorer',
-  },
-  description:
-    "Graphe de connaissances temporel et anti-spoiler, construit chapitre après chapitre à partir de vos propres fichiers.",
-  robots: { index: false, follow: false },
+export async function generateMetadata(): Promise<Metadata> {
+  const dict = await getDict()
+  return {
+    title: {
+      default: 'One Piece Explorer',
+      template: '%s · One Piece Explorer',
+    },
+    description: dict.shell.metadataDescription,
+    robots: { index: false, follow: false },
+  }
 }
 
 export const viewport: Viewport = {
@@ -24,18 +27,24 @@ export const viewport: Viewport = {
   ],
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const locale = await getLocale()
+  const dict = await getDict()
   return (
-    <html lang="fr" className={`${display.variable} ${sans.variable}`} suppressHydrationWarning>
+    <html
+      lang={locale}
+      className={`${display.variable} ${sans.variable}`}
+      suppressHydrationWarning
+    >
       {/* suppressHydrationWarning on the body too: password managers and
           colour-picker extensions inject attributes here before React loads,
           and the resulting console error sends people hunting for a bug in
           their own code. */}
       <body suppressHydrationWarning>
         <a href="#contenu" className="skip-link">
-          Aller au contenu principal
+          {dict.shell.skipToContent}
         </a>
         <AppShell>{children}</AppShell>
       </body>

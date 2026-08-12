@@ -2,6 +2,8 @@
 
 import { useId, useOptimistic, useTransition } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 /**
  * The chapter boundary, always visible.
@@ -26,9 +28,16 @@ interface Props {
   maxChapter: number
   /** Chapters actually imported, for the tick marks. */
   chapters: number[]
+  locale: Locale
 }
 
-export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props) {
+export function BoundarySlider({
+  boundaryChapter,
+  maxChapter,
+  chapters,
+  locale,
+}: Props) {
+  const t = getDictFor(locale).shell
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
@@ -55,7 +64,7 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
     <div className="sticky top-0 z-20 border-b border-line bg-surface-base/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-3">
         <label htmlFor={inputId} className="shrink-0 text-sm font-medium text-primary">
-          Jusqu&apos;au chapitre
+          {t.boundaryLabel}
         </label>
 
         <input
@@ -67,7 +76,7 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
           value={shown}
           list={listId}
           onChange={(event) => commit(Number(event.target.value))}
-          aria-valuetext={`chapitre ${shown} sur ${maxChapter}`}
+          aria-valuetext={t.boundaryValue(shown, maxChapter)}
           className="h-1.5 min-w-48 flex-1 cursor-pointer accent-[var(--accent)]"
         />
         <datalist id={listId}>
@@ -82,22 +91,20 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
           max={maxChapter}
           value={shown}
           onChange={(event) => commit(Number(event.target.value))}
-          aria-label="Numéro de chapitre"
+          aria-label={t.boundaryInputLabel}
           className="w-20 rounded-sm border border-line-strong bg-surface-overlay px-2 py-1 text-right font-mono text-sm text-primary"
         />
 
         {pending && (
           <span className="text-xs text-muted" role="status">
-            recalcul…
+            {t.boundaryRecomputing}
           </span>
         )}
       </div>
 
       {atPresent && maxChapter > 0 && (
         <p className="border-t border-line px-6 py-1 text-center text-xs text-muted">
-          Vue compl&egrave;te : tout ce que vous avez import&eacute; jusqu&apos;au
-          chapitre {maxChapter}. Reculez le curseur pour retrouver un &eacute;tat
-          ant&eacute;rieur de vos connaissances.
+          {t.boundaryFullView(maxChapter)}
         </p>
       )}
 
@@ -106,9 +113,9 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
           role="status"
           className="border-t border-[var(--accent-soft)] bg-[var(--accent-soft)] px-6 py-1.5 text-center text-sm text-[var(--text-primary)]"
         >
-          Vous consultez l&apos;état de vos connaissances{' '}
-          <strong>à la fin du chapitre {shown}</strong>. Tout ce qui est révélé
-          après est masqué — y compris rétroactivement.
+          {t.boundaryRewoundLead}{' '}
+          <strong>{t.boundaryRewoundStrong(shown)}</strong>
+          {t.boundaryRewoundTail}
         </p>
       )}
     </div>

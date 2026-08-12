@@ -36,6 +36,8 @@ export type StoryTime =
 export const nodeTypes = pgTable('node_types', {
   key: text('key').primaryKey(),
   labelFr: text('label_fr').notNull(),
+  /** English display label. NULL falls back to labelFr. See migration 0019. */
+  labelEn: text('label_en'),
   description: text('description'),
   builtin: boolean('builtin').notNull().default(true),
 })
@@ -43,6 +45,8 @@ export const nodeTypes = pgTable('node_types', {
 export const predicates = pgTable('predicates', {
   key: text('key').primaryKey(),
   labelFr: text('label_fr').notNull(),
+  /** English display label. NULL falls back to labelFr. See migration 0019. */
+  labelEn: text('label_en'),
   isDirected: boolean('is_directed').notNull().default(true),
   isSymmetric: boolean('is_symmetric').notNull().default(false),
   inverseKey: text('inverse_key'),
@@ -97,6 +101,12 @@ export const entityLabels = pgTable(
     label: text('label').notNull(),
     normalizedLabel: text('normalized_label').notNull(),
     kind: labelKindEnum('kind').notNull().default('alias'),
+    /**
+     * Language of this label. French rows are the canonical graph vocabulary;
+     * English rows exist only for display and lexical search, added at
+     * publication when the English form is known. See migration 0019.
+     */
+    lang: text('lang').$type<'fr' | 'en'>().notNull().default('fr'),
     revealedInChapter: integer('revealed_in_chapter').notNull(),
     precedence: integer('precedence').notNull().default(0),
     sourceAssertionId: uuid('source_assertion_id'),
@@ -107,6 +117,12 @@ export const entityLabels = pgTable(
   (t) => [
     index('entity_labels_entity_idx').on(
       t.entityId,
+      t.revealedInChapter,
+      t.precedence,
+    ),
+    index('entity_labels_lang_idx').on(
+      t.entityId,
+      t.lang,
       t.revealedInChapter,
       t.precedence,
     ),
@@ -425,6 +441,13 @@ export const glossaryTerms = pgTable(
     normalizedSource: text('normalized_source').notNull(),
     /** What it is called in the graph. Your decision, not a proposal. */
     frenchTerm: text('french_term').notNull(),
+    /**
+     * The English form, when the system has seen one: the source wording of an
+     * English chapter, or the correspondence read off a parallel text. NULL
+     * means no English form is known — display falls back to the French one.
+     * See migration 0019.
+     */
+    englishTerm: text('english_term'),
     note: text('note'),
     decidedInChapter: integer('decided_in_chapter').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

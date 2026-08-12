@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
+import { getDict, getLocale } from '@/lib/i18n/server.ts'
 import { GlobalSearch } from './global-search.tsx'
+import { LanguageToggle } from './language-toggle.tsx'
 import { RailLink } from './rail-link.tsx'
 
 /**
@@ -33,20 +35,6 @@ interface Boundary {
   chapters: number[]
 }
 
-const EXPLORER = [
-  { href: '/graph', label: 'Graphe', icon: 'graph' as const },
-  { href: '/chronologie', label: 'Chronologie', icon: 'time' as const },
-  { href: '/mysteres', label: 'Mystères', icon: 'mystery' as const },
-  { href: '/recherche', label: 'Recherche', icon: 'search' as const },
-]
-
-const ATELIER = [
-  { href: '/chapitres', label: 'Chapitres', icon: 'book' as const },
-  { href: '/import', label: 'Importer', icon: 'upload' as const },
-  { href: '/ask', label: 'Demander', icon: 'ask' as const },
-  { href: '/reglages', label: 'Réglages', icon: 'gear' as const },
-]
-
 /** Drawn here, not borrowed: no official mark of any work is used. */
 function Mark() {
   return (
@@ -64,6 +52,24 @@ export async function AppShell({
 }: {
   children: React.ReactNode
 }) {
+  const locale = await getLocale()
+  const dict = await getDict()
+  const t = dict.shell
+
+  const explorer = [
+    { href: '/graph', label: t.navGraph, icon: 'graph' as const },
+    { href: '/chronologie', label: t.navTimeline, icon: 'time' as const },
+    { href: '/mysteres', label: t.navMysteries, icon: 'mystery' as const },
+    { href: '/recherche', label: t.navSearch, icon: 'search' as const },
+  ]
+
+  const atelier = [
+    { href: '/chapitres', label: t.navChapters, icon: 'book' as const },
+    { href: '/import', label: t.navImport, icon: 'upload' as const },
+    { href: '/ask', label: t.navAsk, icon: 'ask' as const },
+    { href: '/reglages', label: t.navSettings, icon: 'gear' as const },
+  ]
+
   let isOwner = false
   let boundary: Boundary | null = null
 
@@ -105,12 +111,12 @@ export async function AppShell({
           </span>
         </Link>
 
-        <nav aria-label="Navigation principale" className="px-2 py-3">
+        <nav aria-label={t.navLabel} className="px-2 py-3">
           <p className="px-2 pb-1 font-display text-[0.7rem] uppercase tracking-[0.18em] text-[var(--accent)]">
-            Explorer
+            {t.explorer}
           </p>
           <ul className="space-y-0.5">
-            {EXPLORER.map((item) => (
+            {explorer.map((item) => (
               <li key={item.href}>
                 <RailLink {...item} />
               </li>
@@ -120,10 +126,10 @@ export async function AppShell({
           {isOwner && (
             <>
               <p className="mt-4 px-2 pb-1 font-display text-[0.7rem] uppercase tracking-[0.18em] text-[var(--accent)]">
-                Atelier
+                {t.atelier}
               </p>
               <ul className="space-y-0.5">
-                {ATELIER.map((item) => (
+                {atelier.map((item) => (
                   <li key={item.href}>
                     <RailLink {...item} />
                   </li>
@@ -133,10 +139,14 @@ export async function AppShell({
           )}
         </nav>
 
+        <div className="px-1 pb-3">
+          <LanguageToggle locale={locale} label={t.languageLabel} />
+        </div>
+
         {!isOwner && (
           <div className="px-3 pb-4">
             <Link href="/connexion" className="bouton bouton-primaire w-full !text-sm">
-              Se connecter
+              {t.signIn}
             </Link>
           </div>
         )}
@@ -146,7 +156,7 @@ export async function AppShell({
       <div className="flex min-w-0 flex-col">
         <div className="sticky top-0 z-30 border-b-[3px] border-ink bg-[var(--surface-raised)]">
           <div className="flex items-center gap-3 px-4 py-2">
-            <GlobalSearch />
+            <GlobalSearch locale={locale} />
           </div>
           {/*
            * The boundary, once, above everything.
@@ -160,6 +170,7 @@ export async function AppShell({
               boundaryChapter={boundary.boundaryChapter}
               maxChapter={boundary.maxChapter}
               chapters={boundary.chapters}
+              locale={locale}
             />
           )}
         </div>
@@ -168,10 +179,9 @@ export async function AppShell({
 
         <footer className="mt-10 border-t-[3px] border-ink px-5 py-4">
           <p className="text-xs text-muted">
-            Bibliothèque privée · pages derrière authentification · direction
-            artistique originale, aucun asset officiel ·{' '}
+            {t.footerNote}
             <Link href="/etat" className="underline underline-offset-2 hover:text-secondary">
-              état du déploiement
+              {t.footerStatusLink}
             </Link>
           </p>
         </footer>

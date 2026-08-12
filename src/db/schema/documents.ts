@@ -42,6 +42,12 @@ export const profiles = pgTable('profiles', {
   displayName: text('display_name'),
   theme: text('theme').notNull().default('system'),
   /**
+   * Interface and answer language: 'fr' or 'en'. The knowledge graph stays
+   * canonically French; this decides how it is displayed. An anonymous visitor
+   * has no profile — their choice lives in a cookie. See migration 0018.
+   */
+  language: text('language').$type<'fr' | 'en'>().notNull().default('fr'),
+  /**
    * Reader position. NULL means "follow the latest published chapter", which
    * is the default and shows the entire graph — the boundary is a lens you
    * reach for, not a gate you unlock. See migration 0011.

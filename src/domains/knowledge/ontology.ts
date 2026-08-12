@@ -11,67 +11,78 @@ export const NODE_TYPES = [
   {
     key: 'character',
     labelFr: 'Personnage',
+    labelEn: 'Character',
     description:
       'Un individu nommé ou identifiable. Une silhouette non identifiée est aussi un personnage, avec un libellé de repli.',
   },
   {
     key: 'group',
     labelFr: 'Groupe',
+    labelEn: 'Group',
     description:
       'Équipage, organisation, faction, marine, famille, gouvernement — toute entité collective.',
   },
   {
     key: 'place',
     labelFr: 'Lieu',
+    labelEn: 'Place',
     description: 'Île, mer, royaume, ville, bâtiment, zone, région.',
   },
   {
     key: 'object',
     labelFr: 'Objet',
+    labelEn: 'Object',
     description: 'Arme, navire, document, trésor, ressource, artefact.',
   },
   {
     key: 'power',
     labelFr: 'Pouvoir',
+    labelEn: 'Power',
     description: 'Fruit du démon, technique, style de combat, capacité.',
   },
   {
     key: 'species',
     labelFr: 'Espèce',
+    labelEn: 'Species',
     description: 'Peuple, race, type de créature.',
   },
   {
     key: 'event',
     labelFr: 'Événement',
+    labelEn: 'Event',
     description: 'Un fait daté ou ordonné dans le temps de l’histoire.',
   },
   {
     key: 'battle',
     labelFr: 'Combat',
+    labelEn: 'Battle',
     description: 'Un affrontement, sous-type d’événement suivi séparément.',
   },
   {
     key: 'voyage',
     labelFr: 'Voyage',
+    labelEn: 'Voyage',
     description: 'Un déplacement d’un lieu vers un autre.',
   },
   {
     key: 'concept',
     labelFr: 'Concept',
+    labelEn: 'Concept',
     description:
       'Règle du monde, phénomène, notion, institution abstraite, coutume.',
   },
   {
     key: 'mystery',
     labelFr: 'Mystère',
+    labelEn: 'Mystery',
     description:
       'Question ouverte, énigme, promesse narrative en attente de résolution.',
   },
   // Documentary nodes: useful for provenance queries and for the graph's
   // "show me the source" affordance.
-  { key: 'chapter', labelFr: 'Chapitre', description: 'Nœud documentaire.' },
-  { key: 'page', labelFr: 'Page', description: 'Nœud documentaire.' },
-  { key: 'panel', labelFr: 'Case', description: 'Nœud documentaire.' },
+  { key: 'chapter', labelFr: 'Chapitre', labelEn: 'Chapter', description: 'Nœud documentaire.' },
+  { key: 'page', labelFr: 'Page', labelEn: 'Page', description: 'Nœud documentaire.' },
+  { key: 'panel', labelFr: 'Case', labelEn: 'Panel', description: 'Nœud documentaire.' },
 ] as const
 
 export type NodeTypeKey = (typeof NODE_TYPES)[number]['key']
@@ -94,6 +105,8 @@ const ANY_ENTITY = [
 export interface PredicateDef {
   key: string
   labelFr: string
+  /** English display label. The graph stays authored in French; see 0019. */
+  labelEn: string
   /** Direction carries meaning (A→B ≠ B→A). */
   directed: boolean
   /** A→B implies B→A. */
@@ -121,6 +134,7 @@ export const PREDICATES = [
   {
     key: 'appears_in',
     labelFr: 'apparaît dans',
+    labelEn: 'appears in',
     directed: true,
     symmetric: false,
     subjectTypes: ANY_ENTITY,
@@ -130,6 +144,7 @@ export const PREDICATES = [
   {
     key: 'mentions',
     labelFr: 'mentionne',
+    labelEn: 'mentions',
     directed: true,
     symmetric: false,
     inverseKey: 'mentioned_by',
@@ -140,6 +155,7 @@ export const PREDICATES = [
   {
     key: 'mentioned_by',
     labelFr: 'est mentionné par',
+    labelEn: 'is mentioned by',
     directed: true,
     symmetric: false,
     inverseKey: 'mentions',
@@ -150,6 +166,7 @@ export const PREDICATES = [
   {
     key: 'participates_in',
     labelFr: 'participe à',
+    labelEn: 'takes part in',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -159,6 +176,7 @@ export const PREDICATES = [
   {
     key: 'located_at',
     labelFr: 'se trouve à',
+    labelEn: 'is located at',
     directed: true,
     symmetric: false,
     subjectTypes: ['character', 'group', 'object', 'event', 'battle'],
@@ -170,6 +188,7 @@ export const PREDICATES = [
   {
     key: 'travels_from',
     labelFr: 'part de',
+    labelEn: 'departs from',
     directed: true,
     symmetric: false,
     subjectTypes: ['character', 'group', 'object', 'voyage'],
@@ -179,6 +198,7 @@ export const PREDICATES = [
   {
     key: 'travels_to',
     labelFr: 'se rend à',
+    labelEn: 'travels to',
     directed: true,
     symmetric: false,
     subjectTypes: ['character', 'group', 'object', 'voyage'],
@@ -190,6 +210,7 @@ export const PREDICATES = [
   {
     key: 'member_of',
     labelFr: 'appartient à',
+    labelEn: 'belongs to',
     directed: true,
     symmetric: false,
     subjectTypes: ['character', 'group'],
@@ -199,6 +220,7 @@ export const PREDICATES = [
   {
     key: 'leads',
     labelFr: 'dirige',
+    labelEn: 'leads',
     directed: true,
     symmetric: false,
     subjectTypes: ['character'],
@@ -208,6 +230,7 @@ export const PREDICATES = [
   {
     key: 'leaves',
     labelFr: 'quitte',
+    labelEn: 'leaves',
     directed: true,
     symmetric: false,
     subjectTypes: ['character', 'group'],
@@ -217,6 +240,7 @@ export const PREDICATES = [
   {
     key: 'secretly_member_of',
     labelFr: 'appartient secrètement à',
+    labelEn: 'secretly belongs to',
     directed: true,
     symmetric: false,
     subjectTypes: ['character', 'group'],
@@ -230,6 +254,7 @@ export const PREDICATES = [
   {
     key: 'allied_with',
     labelFr: 'est allié à',
+    labelEn: 'is allied with',
     directed: false,
     symmetric: true,
     subjectTypes: ACTORS,
@@ -239,6 +264,7 @@ export const PREDICATES = [
   {
     key: 'enemy_of',
     labelFr: 'est ennemi de',
+    labelEn: 'is an enemy of',
     directed: false,
     symmetric: true,
     subjectTypes: ACTORS,
@@ -248,6 +274,7 @@ export const PREDICATES = [
   {
     key: 'fights',
     labelFr: 'affronte',
+    labelEn: 'fights',
     directed: false,
     symmetric: true,
     subjectTypes: ACTORS,
@@ -257,6 +284,7 @@ export const PREDICATES = [
   {
     key: 'protects',
     labelFr: 'protège',
+    labelEn: 'protects',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -266,6 +294,7 @@ export const PREDICATES = [
   {
     key: 'captures',
     labelFr: 'capture',
+    labelEn: 'captures',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -277,6 +306,7 @@ export const PREDICATES = [
   {
     key: 'knows',
     labelFr: 'connaît',
+    labelEn: 'knows',
     directed: false,
     symmetric: true,
     subjectTypes: ['character'],
@@ -286,6 +316,7 @@ export const PREDICATES = [
   {
     key: 'meets',
     labelFr: 'rencontre',
+    labelEn: 'meets',
     directed: false,
     symmetric: true,
     subjectTypes: ['character'],
@@ -295,6 +326,7 @@ export const PREDICATES = [
   {
     key: 'speaks_to',
     labelFr: 'parle à',
+    labelEn: 'speaks to',
     directed: true,
     symmetric: false,
     subjectTypes: ['character'],
@@ -306,6 +338,7 @@ export const PREDICATES = [
   {
     key: 'owns',
     labelFr: 'possède',
+    labelEn: 'owns',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -315,6 +348,7 @@ export const PREDICATES = [
   {
     key: 'uses',
     labelFr: 'utilise',
+    labelEn: 'uses',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -324,6 +358,7 @@ export const PREDICATES = [
   {
     key: 'creates',
     labelFr: 'crée',
+    labelEn: 'creates',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -333,6 +368,7 @@ export const PREDICATES = [
   {
     key: 'destroys',
     labelFr: 'détruit',
+    labelEn: 'destroys',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -344,6 +380,7 @@ export const PREDICATES = [
   {
     key: 'parent_of',
     labelFr: 'est parent de',
+    labelEn: 'is a parent of',
     directed: true,
     symmetric: false,
     inverseKey: 'child_of',
@@ -355,6 +392,7 @@ export const PREDICATES = [
   {
     key: 'child_of',
     labelFr: 'est enfant de',
+    labelEn: 'is a child of',
     directed: true,
     symmetric: false,
     inverseKey: 'parent_of',
@@ -366,6 +404,7 @@ export const PREDICATES = [
   {
     key: 'related_to',
     labelFr: 'est lié à',
+    labelEn: 'is related to',
     directed: false,
     symmetric: true,
     subjectTypes: ['character'],
@@ -375,6 +414,7 @@ export const PREDICATES = [
   {
     key: 'belongs_to_species',
     labelFr: 'est de l’espèce',
+    labelEn: 'is of the species',
     directed: true,
     symmetric: false,
     subjectTypes: ['character'],
@@ -386,6 +426,7 @@ export const PREDICATES = [
   {
     key: 'reveals',
     labelFr: 'révèle',
+    labelEn: 'reveals',
     directed: true,
     symmetric: false,
     subjectTypes: ANY_ENTITY,
@@ -396,6 +437,7 @@ export const PREDICATES = [
   {
     key: 'hides',
     labelFr: 'cache',
+    labelEn: 'hides',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -405,6 +447,7 @@ export const PREDICATES = [
   {
     key: 'promises',
     labelFr: 'promet',
+    labelEn: 'promises',
     directed: true,
     symmetric: false,
     subjectTypes: ['character'],
@@ -414,6 +457,7 @@ export const PREDICATES = [
   {
     key: 'seeks',
     labelFr: 'recherche',
+    labelEn: 'seeks',
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
@@ -423,6 +467,7 @@ export const PREDICATES = [
   {
     key: 'dies_at',
     labelFr: 'meurt à',
+    labelEn: 'dies at',
     directed: true,
     symmetric: false,
     subjectTypes: ['character'],
@@ -436,6 +481,7 @@ export const PREDICATES = [
   {
     key: 'causes',
     labelFr: 'cause',
+    labelEn: 'causes',
     directed: true,
     symmetric: false,
     subjectTypes: ['event', 'battle', 'voyage', 'character', 'group'],
@@ -445,6 +491,7 @@ export const PREDICATES = [
   {
     key: 'prevents',
     labelFr: 'empêche',
+    labelEn: 'prevents',
     directed: true,
     symmetric: false,
     subjectTypes: ['event', 'battle', 'character', 'group'],
@@ -454,6 +501,7 @@ export const PREDICATES = [
   {
     key: 'precedes',
     labelFr: 'précède',
+    labelEn: 'precedes',
     directed: true,
     symmetric: false,
     inverseKey: 'follows',
@@ -464,6 +512,7 @@ export const PREDICATES = [
   {
     key: 'follows',
     labelFr: 'suit',
+    labelEn: 'follows',
     directed: true,
     symmetric: false,
     inverseKey: 'precedes',
@@ -474,6 +523,7 @@ export const PREDICATES = [
   {
     key: 'overlaps',
     labelFr: 'chevauche',
+    labelEn: 'overlaps with',
     directed: false,
     symmetric: true,
     subjectTypes: ['event', 'battle', 'voyage'],
@@ -485,6 +535,7 @@ export const PREDICATES = [
   {
     key: 'has_alias',
     labelFr: 'porte l’alias',
+    labelEn: 'goes by the alias',
     directed: true,
     symmetric: false,
     subjectTypes: ['character', 'group', 'place', 'object'],
@@ -496,6 +547,7 @@ export const PREDICATES = [
   {
     key: 'maybe_same_as',
     labelFr: 'pourrait être identique à',
+    labelEn: 'might be the same as',
     directed: false,
     symmetric: true,
     subjectTypes: ANY_ENTITY,
@@ -508,6 +560,7 @@ export const PREDICATES = [
   {
     key: 'same_as',
     labelFr: 'est confirmé identique à',
+    labelEn: 'is confirmed the same as',
     directed: false,
     symmetric: true,
     subjectTypes: ANY_ENTITY,
@@ -522,6 +575,7 @@ export const PREDICATES = [
   {
     key: 'contradicts',
     labelFr: 'contredit',
+    labelEn: 'contradicts',
     directed: false,
     symmetric: true,
     subjectTypes: ANY_ENTITY,
@@ -532,6 +586,7 @@ export const PREDICATES = [
   {
     key: 'confirms',
     labelFr: 'confirme',
+    labelEn: 'confirms',
     directed: true,
     symmetric: false,
     subjectTypes: ANY_ENTITY,
@@ -541,6 +596,7 @@ export const PREDICATES = [
   {
     key: 'refutes',
     labelFr: 'réfute',
+    labelEn: 'refutes',
     directed: true,
     symmetric: false,
     subjectTypes: ANY_ENTITY,
@@ -554,6 +610,7 @@ export const PREDICATES = [
   {
     key: 'opens_mystery',
     labelFr: 'ouvre le mystère',
+    labelEn: 'opens the mystery',
     directed: true,
     symmetric: false,
     subjectTypes: ['event', 'battle', 'character', 'object', 'place', 'concept'],
@@ -563,6 +620,7 @@ export const PREDICATES = [
   {
     key: 'hints_at',
     labelFr: 'donne un indice sur',
+    labelEn: 'hints at',
     directed: true,
     symmetric: false,
     subjectTypes: ANY_ENTITY,
@@ -572,6 +630,7 @@ export const PREDICATES = [
   {
     key: 'resolves_mystery',
     labelFr: 'résout le mystère',
+    labelEn: 'resolves the mystery',
     directed: true,
     symmetric: false,
     subjectTypes: ANY_ENTITY,
@@ -582,6 +641,7 @@ export const PREDICATES = [
   {
     key: 'reopens_mystery',
     labelFr: 'réouvre le mystère',
+    labelEn: 'reopens the mystery',
     directed: true,
     symmetric: false,
     subjectTypes: ANY_ENTITY,

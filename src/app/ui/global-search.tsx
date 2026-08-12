@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { type Locale } from '@/lib/i18n/index.ts'
+import { getDictFor } from '@/lib/i18n/dictionaries.ts'
 
 /**
  * Search, in the frame rather than on a page.
@@ -11,7 +13,8 @@ import { useRouter } from 'next/navigation'
  * `/` focuses it from anywhere, the way it works in every tool whose users
  * spend all day inside it.
  */
-export function GlobalSearch() {
+export function GlobalSearch({ locale }: { locale: Locale }) {
+  const t = getDictFor(locale).shell
   const router = useRouter()
   const input = useRef<HTMLInputElement>(null)
 
@@ -44,17 +47,17 @@ export function GlobalSearch() {
       }}
     >
       <label htmlFor="recherche-globale" className="sr-only">
-        Chercher une entité, un lieu, une phrase
+        {t.searchLabel}
       </label>
       <input
         id="recherche-globale"
         ref={input}
         type="search"
-        placeholder="Chercher un personnage, un lieu, une phrase…    /"
+        placeholder={t.searchPlaceholder}
         className="w-full max-w-2xl !border-[3px] !py-1.5 text-sm"
       />
       <button type="submit" className="bouton !py-1 !text-sm">
-        Chercher
+        {t.searchSubmit}
       </button>
     </form>
   )

@@ -171,10 +171,11 @@ async function main(): Promise<void> {
 async function seedOntology(sql: postgres.Sql): Promise<void> {
   for (const t of NODE_TYPES) {
     await sql`
-      INSERT INTO node_types (key, label_fr, description, builtin)
-      VALUES (${t.key}, ${t.labelFr}, ${t.description}, true)
+      INSERT INTO node_types (key, label_fr, label_en, description, builtin)
+      VALUES (${t.key}, ${t.labelFr}, ${t.labelEn}, ${t.description}, true)
       ON CONFLICT (key) DO UPDATE SET
         label_fr    = EXCLUDED.label_fr,
+        label_en    = EXCLUDED.label_en,
         description = EXCLUDED.description
       WHERE node_types.builtin
     `
@@ -188,16 +189,17 @@ async function seedOntology(sql: postgres.Sql): Promise<void> {
 
     await sql`
       INSERT INTO predicates (
-        key, label_fr, is_directed, is_symmetric, inverse_key,
+        key, label_fr, label_en, is_directed, is_symmetric, inverse_key,
         subject_types, object_types, is_identity,
         requires_explicit_review, builtin, description
       ) VALUES (
-        ${p.key}, ${p.labelFr}, ${p.directed}, ${p.symmetric}, ${inverseKey ?? null},
+        ${p.key}, ${p.labelFr}, ${p.labelEn}, ${p.directed}, ${p.symmetric}, ${inverseKey ?? null},
         ${sql.array([...p.subjectTypes])}, ${sql.array([...p.objectTypes])},
         ${isIdentity}, ${requiresReview}, true, ${p.description}
       )
       ON CONFLICT (key) DO UPDATE SET
         label_fr                 = EXCLUDED.label_fr,
+        label_en                 = EXCLUDED.label_en,
         is_directed              = EXCLUDED.is_directed,
         is_symmetric             = EXCLUDED.is_symmetric,
         inverse_key              = EXCLUDED.inverse_key,
