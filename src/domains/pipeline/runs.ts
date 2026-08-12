@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
-import { ingestionRuns, ingestionSteps } from '@/db/schema/ingestion.ts'
+import { ingestionRuns, ingestionSteps, runCheckpoints } from '@/db/schema/ingestion.ts'
 import type { ProviderChoice } from '@/domains/ai/index.ts'
 import { PIPELINE_VERSION } from '../ingestion/import.ts'
 import { STEPS, stepDefinition, type StepKey } from './registry.ts'
@@ -134,6 +134,48 @@ export async function discardRun(runId: string): Promise<void> {
   await withIngest(async (db) => {
     await db.delete(ingestionSteps).where(eq(ingestionSteps.runId, runId))
     await db.delete(ingestionRuns).where(eq(ingestionRuns.id, runId))
+  })
+}
+
+/**
+ * Units of work already bought, so a retry does not buy them again.
+ *
+ * A step is the wrong unit of progress once a step costs money. Extraction is
+ * twenty billed calls; a step retried from the top pays for all twenty a second
+ * time, and on an unstable connection that happened three times in one evening
+ * on a chapter estimated at thirty cents.
+ *
+ * The key is the step's business: for extraction it is a hash of the panel refs
+ * in a slice, which is stable across retries and changes the instant the input
+ * does — so a genuine reprocessing still redoes the work, and only a retry of
+ * the identical work is skipped.
+ */
+export async function completedUnits(
+  runId: string,
+  stepKey: string,
+): Promise<Map<string, string | null>> {
+  return withIngest(async (db) => {
+    const rows = await db
+      .select({ unitKey: runCheckpoints.unitKey, detail: runCheckpoints.detail })
+      .from(runCheckpoints)
+      .where(and(eq(runCheckpoints.runId, runId), eq(runCheckpoints.stepKey, stepKey)))
+    return new Map(rows.map((row) => [row.unitKey, row.detail]))
+  })
+}
+
+export async function recordUnit(
+  runId: string,
+  userId: string,
+  stepKey: string,
+  unitKey: string,
+  detail?: string,
+): Promise<void> {
+  await withIngest(async (db) => {
+    await db
+      .insert(runCheckpoints)
+      .values({ runId, userId, stepKey, unitKey, detail: detail ?? null })
+      // Recording the same unit twice is a retry behaving correctly.
+      .onConflictDoNothing()
   })
 }
 

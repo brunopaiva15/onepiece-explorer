@@ -399,3 +399,34 @@ describe('resuming a step that failed halfway', () => {
     expect(Number(after?.count)).toBe(Number(before?.count))
   })
 })
+
+describe('paying once for a slice', () => {
+  it('replays a checkpointed slice instead of calling the model again', async () => {
+    /*
+     * The failure this guards cost real money. pg-boss retries a job whose
+     * worker died; extraction restarted at its first slice; and every call that
+     * had already landed was bought a second time. On an unstable connection
+     * the same chapter was billed three times over — an estimate of thirty
+     * cents reaching four dollars.
+     */
+    const { completedUnits, recordUnit } = await import('@/domains/pipeline/runs.ts')
+    const { userId, chapterId } = await importFixtureChapter()
+    const runId = await createRun(userId, chapterId)
+
+    const payload = JSON.stringify({
+      accepted: { entities: [], assertions: [], events: [], mysteries: [] },
+      quarantined: [],
+    })
+
+    await recordUnit(runId, userId, 'extract_candidates', 'abc123', payload)
+    // A retry recording the same unit is the mechanism working, not an error.
+    await recordUnit(runId, userId, 'extract_candidates', 'abc123', payload)
+
+    const done = await completedUnits(runId, 'extract_candidates')
+    expect(done.size).toBe(1)
+    expect(done.get('abc123')).toBe(payload)
+
+    // Keyed per step: another step's units must not make this one skip work.
+    expect((await completedUnits(runId, 'describe_panels')).size).toBe(0)
+  })
+})

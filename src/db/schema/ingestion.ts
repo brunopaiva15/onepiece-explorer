@@ -184,3 +184,31 @@ export const quarantine = pgTable(
     index('quarantine_user_idx').on(t.userId, t.createdAt),
   ],
 )
+
+/**
+ * Units of work already completed inside a step.
+ *
+ * A step is too coarse to be the unit of progress when it costs money. One
+ * extraction is twenty billed calls, and a step retried from the top pays for
+ * all twenty again — which is exactly what happened, three times, on a chapter
+ * estimated at thirty cents.
+ */
+export const runCheckpoints = pgTable(
+  'run_checkpoints',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => ingestionRuns.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    stepKey: text('step_key').notNull(),
+    /** Whatever identifies a unit for this step. Stable across retries. */
+    unitKey: text('unit_key').notNull(),
+    detail: text('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('run_checkpoints_unit').on(table.runId, table.stepKey, table.unitKey),
+    index('run_checkpoints_lookup').on(table.runId, table.stepKey),
+  ],
+)

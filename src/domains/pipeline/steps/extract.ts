@@ -1,4 +1,5 @@
 import 'server-only'
+import { createHash } from 'node:crypto'
 import { and, asc, eq, lte } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { pages, panels, textBlocks } from '@/db/schema/documents.ts'
@@ -9,12 +10,14 @@ import {
   buildAnchorSources,
   filterExtraction,
   proposalFingerprint,
+  type FilterResult,
   type OntologyView,
   type Quarantined,
 } from '@/domains/ai/anchoring.ts'
 import type { Extraction, PanelDescription } from '@/domains/ai/schemas.ts'
 import { PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { quarantineItems } from '../quarantine.ts'
+import { completedUnits, recordUnit } from '../runs.ts'
 import { reanchorOrphans } from '../reanchor.ts'
 import { buildRefTable } from '../refs.ts'
 import type { StepContext, StepResult } from './context.ts'
@@ -97,6 +100,43 @@ export function splitSlice(slice: Slice): Slice[] {
  * the first slice rather than into every one: repeating them would have the
  * model propose the same fact once per slice.
  */
+/**
+ * A slice's identity, stable across retries.
+ *
+ * The panel refs it carries, sorted and hashed. Stable because a retry sends
+ * the same panels; sensitive because re-detecting panels renumbers them, so a
+ * genuine reprocessing gets new keys and redoes the work.
+ */
+function sliceKey(slice: Slice): string {
+  const refs = [
+    ...slice.descriptions.map((d) => d.panel_ref),
+    ...slice.blocks.map((b) => b.ref),
+  ].sort()
+  return createHash('sha256').update(refs.join('|')).digest('hex').slice(0, 32)
+}
+
+/**
+ * Was this a connection that died, or an answer that did not fit?
+ *
+ * The distinction decides the remedy and the cost. A truncated stream is fixed
+ * by asking again — the same slice, unchanged. An answer that genuinely
+ * overflows is fixed by asking for less. Halving on a network error doubles the
+ * number of billed calls to solve a problem that was never about size, which is
+ * most of how one chapter reached four dollars.
+ */
+function looksLikeNetwork(message: string): boolean {
+  const m = message.toLowerCase()
+  return (
+    m.includes('connection error') ||
+    m.includes('terminated') ||
+    m.includes('econnreset') ||
+    m.includes('socket') ||
+    m.includes('fetch failed') ||
+    m.includes('unterminated string') ||
+    m.includes('unexpected end of json')
+  )
+}
+
 export function sliceChapter(descriptions: PanelDescription[], blocks: PromptBlock[]): Slice[] {
   if (descriptions.length === 0) return [{ descriptions: [], blocks }]
 
@@ -305,16 +345,53 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
    * much answer. Two splits take forty panels down to ten, and a slice that
    * still fails at ten is not failing because of its size.
    */
-  const pending: Array<{ slice: Slice; depth: number }> = slices.map((slice) => ({
-    slice,
-    depth: 0,
-  }))
+  /*
+   * What this run already bought.
+   *
+   * pg-boss retries a job whose worker died, and the step used to restart at
+   * its first slice — paying again for every call that had already landed and
+   * written its proposals. On a connection that drops, the same chapter was
+   * bought three times.
+   */
+  const alreadyDone = await completedUnits(runId, 'extract_candidates')
+  const pending: Array<{ slice: Slice; depth: number; retried: boolean }> = []
+  let resumed = 0
+
+  for (const slice of slices) {
+    const saved = alreadyDone.get(sliceKey(slice))
+    if (saved === undefined) {
+      pending.push({ slice, depth: 0, retried: false })
+      continue
+    }
+    // Replayed, not re-bought. The answer was paid for; only the writing of it
+    // was lost.
+    if (saved) {
+      try {
+        const restored = JSON.parse(saved) as FilterResult
+        accepted.entities.push(...restored.accepted.entities)
+        accepted.assertions.push(...restored.accepted.assertions)
+        accepted.events.push(...restored.accepted.events)
+        accepted.mysteries.push(...restored.accepted.mysteries)
+        quarantined.push(...restored.quarantined)
+      } catch {
+        // A checkpoint we cannot read is worth less than the call it saves;
+        // redo the slice rather than silently drop its proposals.
+        pending.push({ slice, depth: 0, retried: false })
+        continue
+      }
+    }
+    resumed++
+  }
+
+  if (resumed > 0) {
+    console.log(`[extract] ${resumed} tranche(s) déjà payée(s), rejouées sans rappeler le modèle`)
+  }
   let done = 0
   let failedSlices = 0
   let lastFailure: string | null = null
 
   while (pending.length > 0) {
-    const { slice, depth } = pending.shift()!
+    const { slice, depth, retried } = pending.shift()!
     done++
     if (slices.length > 1) {
       console.log(
@@ -341,9 +418,20 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
 
+      /*
+       * A dropped stream is retried as-is; only an answer that really did not
+       * fit is halved. Halving a network failure doubles the billed calls to
+       * solve a problem that was never about size.
+       */
+      if (looksLikeNetwork(message) && !retried) {
+        pending.unshift({ slice, depth, retried: true })
+        console.warn(`[extract] connexion perdue, on redemande la même tranche : ${message}`)
+        continue
+      }
+
       if (depth < MAX_SPLIT_DEPTH && slice.descriptions.length > 1) {
         const halves = splitSlice(slice)
-        pending.unshift(...halves.map((half) => ({ slice: half, depth: depth + 1 })))
+        pending.unshift(...halves.map((half) => ({ slice: half, depth: depth + 1, retried: false })))
         console.warn(`[extract] tranche en échec, redécoupée en ${halves.length} : ${message}`)
         continue
       }
@@ -382,6 +470,22 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     accepted.events.push(...sliceFiltered.accepted.events)
     accepted.mysteries.push(...sliceFiltered.accepted.mysteries)
     quarantined.push(...sliceFiltered.quarantined)
+
+    /*
+     * Written down the moment it lands.
+     *
+     * The proposals reach review_items only after every slice has returned, so
+     * without this a worker that dies on slice eighteen loses eighteen paid
+     * answers. Recording here costs one small insert per call and removes the
+     * only reason a retry was ever expensive.
+     */
+    await recordUnit(
+      runId,
+      userId,
+      'extract_candidates',
+      sliceKey(slice),
+      JSON.stringify(sliceFiltered),
+    )
   }
 
   if (failedSlices > 0 && failedSlices === slices.length) {
