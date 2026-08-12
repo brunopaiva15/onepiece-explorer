@@ -55,7 +55,7 @@ export default async function ImportPage() {
           className="flex h-24 w-24 shrink-0 flex-col items-center justify-center border-[4px] border-ink bg-[var(--accent)] text-ink"
           style={{ boxShadow: 'var(--shadow-hard)' }}
         >
-          <span className="cartouche !text-ink/70">Chapitre</span>
+          <span className="cartouche !text-ink/85">Chapitre</span>
           <span className="chiffre text-4xl">{suggested}</span>
         </div>
         <div className="min-w-0">
@@ -79,7 +79,7 @@ export default async function ImportPage() {
               <li key={chapter.id} className="flex items-baseline gap-3 py-2.5">
                 <Link
                   href={`/chapitres/${chapter.id}`}
-                  className="font-mono text-sm text-accent hover:underline"
+                  className="font-mono text-sm text-accent-ink hover:underline"
                 >
                   {String(chapter.number).padStart(3, '0')}
                 </Link>

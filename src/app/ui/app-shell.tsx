@@ -106,7 +106,7 @@ export async function AppShell({
         </Link>
 
         <nav aria-label="Navigation principale" className="px-2 py-3">
-          <p className="px-2 pb-1 font-display text-[0.7rem] uppercase tracking-[0.18em] text-[var(--accent)]">
+          <p className="etiquette px-2 pb-1 text-xs !tracking-[0.12em] text-[var(--accent)]">
             Explorer
           </p>
           <ul className="space-y-0.5">
@@ -119,7 +119,7 @@ export async function AppShell({
 
           {isOwner && (
             <>
-              <p className="mt-4 px-2 pb-1 font-display text-[0.7rem] uppercase tracking-[0.18em] text-[var(--accent)]">
+              <p className="etiquette mt-4 px-2 pb-1 text-xs !tracking-[0.12em] text-[var(--accent)]">
                 Atelier
               </p>
               <ul className="space-y-0.5">

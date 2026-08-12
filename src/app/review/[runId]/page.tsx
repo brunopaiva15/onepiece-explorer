@@ -37,7 +37,7 @@ export default async function ReviewPage({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <Link
           href={`/runs/${runId}`}
-          className="font-display text-sm uppercase text-muted no-underline hover:text-primary"
+          className="etiquette text-sm text-muted no-underline hover:text-primary"
         >
           ‹ Traitement
         </Link>

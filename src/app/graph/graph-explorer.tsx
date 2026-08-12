@@ -43,6 +43,11 @@ function typeColour(key: string): string {
   return `var(--type-${key}, var(--surface-sunken))`
 }
 
+/** The ink that colour takes — black or white, whichever it carries. */
+function typeInk(key: string): string {
+  return `var(--type-${key}-ink, var(--text-primary))`
+}
+
 
 export function GraphExplorer({
   projection,
@@ -115,7 +120,7 @@ export function GraphExplorer({
                 onClick={() => toggleType(type.key)}
                 aria-pressed={active.includes(type.key)}
                 className={`badge ${on ? '' : 'opacity-40'}`}
-                style={on ? { background: typeColour(type.key), color: '#fff' } : undefined}
+                style={on ? { background: typeColour(type.key), color: typeInk(type.key) } : undefined}
               >
                 {type.labelFr}
                 <span className="tabular opacity-80">{count}</span>
@@ -148,8 +153,8 @@ export function GraphExplorer({
               <ul className="mt-1 space-y-1">
                 <li>La taille suit le nombre de relations.</li>
                 <li>
-                  <span style={{ color: 'var(--epi-inferred)' }}>Violet</span> : déduction.{' '}
-                  <span style={{ color: 'var(--epi-hypothetical)' }}>Ambre</span> : hypothèse.
+                  <span style={{ color: 'var(--epi-inferred-ink)' }}>Violet</span> : déduction.{' '}
+                  <span style={{ color: 'var(--epi-hypothetical-ink)' }}>Ambre</span> : hypothèse.
                   Gris : fait affirmé.
                 </li>
               </ul>
@@ -187,7 +192,7 @@ export function GraphExplorer({
                 <div className="min-w-0">
                   <span
                     className="badge"
-                    style={{ background: typeColour(selected.nodeType), color: '#fff' }}
+                    style={{ background: typeColour(selected.nodeType), color: typeInk(selected.nodeType) }}
                   >
                     {selected.nodeType}
                   </span>

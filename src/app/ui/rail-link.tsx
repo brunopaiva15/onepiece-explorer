@@ -40,10 +40,10 @@ export function RailLink({
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
-      className={`flex items-center gap-2.5 border-[3px] px-2.5 py-1.5 font-display text-sm uppercase tracking-wide no-underline transition-colors ${
+      className={`etiquette flex items-center gap-2.5 border-[3px] px-2.5 py-1.5 text-sm no-underline transition-colors ${
         active
           ? 'border-ink bg-[var(--accent)] text-ink'
-          : 'border-transparent text-white/85 hover:border-ink hover:bg-white/10 hover:text-white'
+          : 'border-transparent text-white hover:border-ink hover:bg-white/10'
       }`}
     >
       <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 shrink-0">

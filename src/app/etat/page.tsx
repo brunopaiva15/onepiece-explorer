@@ -301,7 +301,7 @@ export default async function StatePage() {
               Le schéma est en retard sur le code. Depuis votre machine, avec le{' '}
               <code>DIRECT_URL</code> de production dans{' '}
               <code>.env.local</code> :{' '}
-              <code className="text-accent">pnpm db:push</code>, puis{' '}
+              <code className="text-accent-ink">pnpm db:push</code>, puis{' '}
               <code>pnpm doctor</code>. Rien ne l&apos;applique au
               déploiement&nbsp;: c&apos;est délibéré — une migration qui
               s&apos;exécute à chaud pendant qu&apos;une ancienne version tourne
@@ -328,9 +328,9 @@ export default async function StatePage() {
               style={{
                 color:
                   check.state === 'fail'
-                    ? 'var(--epi-contradicted)'
+                    ? 'var(--epi-contradicted-ink)'
                     : check.state === 'warn'
-                      ? 'var(--epi-hypothetical)'
+                      ? 'var(--epi-hypothetical-ink)'
                       : undefined,
               }}
             >
@@ -395,7 +395,7 @@ export default async function StatePage() {
       </section>
 
       <p className="mt-10 text-sm text-muted">
-        <Link href="/" className="text-accent hover:underline">
+        <Link href="/" className="text-accent-ink hover:underline">
           Retour à l&apos;accueil
         </Link>
       </p>

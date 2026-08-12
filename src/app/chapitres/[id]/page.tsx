@@ -166,7 +166,7 @@ export default async function ChapterPage({
              * what it is.
              */
             <details className="mt-8 border-[3px] border-ink bg-surface-raised">
-              <summary className="cursor-pointer px-3 py-2.5 font-display text-sm uppercase text-primary">
+              <summary className="etiquette cursor-pointer px-3 py-2.5 text-sm text-primary">
                 Le même chapitre en{' '}
                 {chapter.parallelLanguage === 'fr' ? 'français' : 'anglais'}
                 <span className="ml-2 font-sans normal-case text-muted">

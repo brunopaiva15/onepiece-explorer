@@ -73,7 +73,7 @@ export default async function DeltaPage({
                 className="rounded-sm border border-[var(--epi-contradicted)] bg-surface-raised p-3 text-sm"
               >
                 <span className="text-primary">{fact.subjectLabel}</span>{' '}
-                <span className="font-mono text-accent">{fact.predicate}</span>
+                <span className="font-mono text-accent-ink">{fact.predicate}</span>
                 <span className="ml-2 text-muted">
                   — cru depuis le chapitre {fact.heldSince}
                 </span>
@@ -91,7 +91,7 @@ export default async function DeltaPage({
               <li key={`${name.entityId}-${name.label}`} className="text-sm">
                 <Link
                   href={`/entite/${name.entityId}?ch=${delta.chapterNumber}`}
-                  className="text-accent hover:underline"
+                  className="text-accent-ink hover:underline"
                 >
                   {name.label}
                 </Link>
@@ -137,7 +137,7 @@ export default async function DeltaPage({
             {delta.newFacts.map((fact) => (
               <li key={fact.id} className="text-primary">
                 {fact.subjectLabel}{' '}
-                <span className="font-mono text-accent">{fact.predicate}</span>{' '}
+                <span className="font-mono text-accent-ink">{fact.predicate}</span>{' '}
                 {fact.objectLabel ?? ''}
                 {fact.epistemicStatus !== 'explicit' && (
                   <span className="ml-2 text-xs text-muted">

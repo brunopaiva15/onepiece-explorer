@@ -152,7 +152,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
       )}
 
       {error && (
-        <p role="alert" className="mt-3 text-sm text-[var(--epi-contradicted)]">
+        <p role="alert" className="mt-3 text-sm text-[var(--epi-contradicted-ink)]">
           {error}
         </p>
       )}

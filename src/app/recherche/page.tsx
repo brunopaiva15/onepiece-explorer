@@ -183,7 +183,7 @@ export default async function SearchPage({
                   >
                     {path.labels.get(step.from) ?? step.from}
                   </Link>
-                  <span className="font-mono text-accent">{step.predicate}</span>
+                  <span className="font-mono text-accent-ink">{step.predicate}</span>
                   <Link
                     href={`/entite/${step.to}?ch=${session.boundaryChapter}`}
                     className="text-primary hover:underline"

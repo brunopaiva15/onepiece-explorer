@@ -25,7 +25,7 @@ export function PageTitle({
       {back && (
         <Link
           href={back.href}
-          className="font-display text-sm uppercase tracking-wide text-muted no-underline hover:text-primary"
+          className="etiquette text-sm text-muted no-underline hover:text-primary"
         >
           ‹ {back.label}
         </Link>

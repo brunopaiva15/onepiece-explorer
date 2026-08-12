@@ -193,7 +193,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                 {entry.page.isDoubleSpread && (
                   <span
                     title="Double page probable"
-                    className="rounded-sm bg-surface-sunken px-1 text-[0.65rem] text-secondary"
+                    className="rounded-sm bg-surface-sunken px-1 text-xs text-secondary"
                   >
                     double
                   </span>
@@ -201,7 +201,7 @@ export function PageGrid({ chapterId, chapterNumber, readingDirection, pages }: 
                 {entry.page.textBlockCount > 0 && (
                   <span
                     title={`${entry.page.textBlockCount} blocs de texte extraits`}
-                    className="rounded-sm bg-surface-sunken px-1 text-[0.65rem] text-secondary"
+                    className="rounded-sm bg-surface-sunken px-1 text-xs text-secondary"
                   >
                     {entry.page.textBlockCount} txt
                   </span>

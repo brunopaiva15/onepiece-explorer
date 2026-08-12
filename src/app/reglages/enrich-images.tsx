@@ -101,7 +101,7 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
       )}
 
       {result && !result.ok && (
-        <p role="alert" className="mt-3 text-sm text-[var(--epi-contradicted)]">
+        <p role="alert" className="mt-3 text-sm text-[var(--epi-contradicted-ink)]">
           {result.error}
         </p>
       )}
@@ -121,7 +121,7 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
             personnage secondaire ou une désignation provisoire, pas une erreur.
           </p>
           {result.failures ? (
-            <p className="mt-1 text-[var(--epi-contradicted)]">
+            <p className="mt-1 text-[var(--epi-contradicted-ink)]">
               {result.failures} échec(s) de téléchargement.
             </p>
           ) : null}

@@ -59,7 +59,7 @@ export default async function AskPage({
               La{' '}
               <Link
                 href={`/recherche?ch=${session.boundaryChapter}`}
-                className="text-accent underline"
+                className="text-accent-ink underline"
               >
                 recherche
               </Link>{' '}
@@ -67,7 +67,7 @@ export default async function AskPage({
               montre les extraits sans les reformuler. Le{' '}
               <Link
                 href={`/recherche?ch=${session.boundaryChapter}`}
-                className="text-accent underline"
+                className="text-accent-ink underline"
               >
                 chemin entre deux entités
               </Link>{' '}
@@ -120,7 +120,7 @@ export default async function AskPage({
               }`}
             >
               {answer.insufficientData && (
-                <p className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--epi-hypothetical)]">
+                <p className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--epi-hypothetical-ink)]">
                   Données insuffisantes
                 </p>
               )}
@@ -159,7 +159,7 @@ export default async function AskPage({
                * make the product look better while making it less useful.
                */
               <section className="mt-6">
-                <h2 className="text-sm font-semibold text-[var(--epi-contradicted)]">
+                <h2 className="text-sm font-semibold text-[var(--epi-contradicted-ink)]">
                   {answer.droppedCitations.length} source(s) écartée(s)
                 </h2>
                 <ul className="mt-2 space-y-1 text-sm text-secondary">
@@ -189,7 +189,7 @@ export default async function AskPage({
                     {index > 0 && ', '}
                     <Link
                       href={`/entite/${id}?ch=${session.boundaryChapter}`}
-                      className="text-accent hover:underline"
+                      className="text-accent-ink hover:underline"
                     >
                       fiche
                     </Link>

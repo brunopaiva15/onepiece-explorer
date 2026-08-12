@@ -194,7 +194,7 @@ export default async function SettingsPage() {
             </>
           ) : (
             <>
-              <strong className="font-medium text-[var(--epi-contradicted)]">
+              <strong className="font-medium text-[var(--epi-contradicted-ink)]">
                 Ouverte sur une autre biblioth&egrave;que.
               </strong>{' '}
               <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code> ne
@@ -280,7 +280,7 @@ export default async function SettingsPage() {
 
           {failures.length > 0 && (
             <>
-              <h3 className="mt-6 text-sm font-medium text-[var(--epi-contradicted)]">
+              <h3 className="mt-6 text-sm font-medium text-[var(--epi-contradicted-ink)]">
                 Échecs d&apos;étape
               </h3>
               <ul className="mt-2 space-y-2 text-sm">
@@ -314,7 +314,7 @@ export default async function SettingsPage() {
           <ul className="mt-3 space-y-1 text-sm text-secondary">
             {orphans.slice(0, 20).map((orphan) => (
               <li key={orphan.id}>
-                <span className="font-mono text-accent">{orphan.predicate}</span>
+                <span className="font-mono text-accent-ink">{orphan.predicate}</span>
                 <span className="ml-2 text-muted">chapitre {orphan.chapter}</span>
               </li>
             ))}

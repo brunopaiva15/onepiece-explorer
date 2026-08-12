@@ -221,24 +221,24 @@ export function RunProgress({ initial }: { initial: RunView }) {
                 style={{ background: tone.bg, color: tone.fg }}
               >
                 <span className="chiffre text-2xl leading-none opacity-70">{index + 1}</span>
-                <span className="font-display text-sm uppercase leading-tight">
+                <span className="etiquette text-sm leading-tight">
                   {LABELS[step.status] ?? step.status}
                 </span>
                 {step.attempt > 1 && (
-                  <span className="ml-auto font-display text-xs uppercase opacity-80">
+                  <span className="etiquette ml-auto text-xs opacity-90">
                     essai {step.attempt}
                   </span>
                 )}
               </div>
 
               <div className="flex flex-1 flex-col px-2.5 py-2">
-                <p className="font-display text-base uppercase leading-tight text-primary">
+                <p className="etiquette text-base leading-tight text-primary">
                   {step.label}
                 </p>
 
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   {step.usesModel && (
-                    <span className="badge badge-gris !text-[0.65rem]" title="Cette étape appelle un modèle">
+                    <span className="badge badge-gris !text-xs" title="Cette étape appelle un modèle">
                       modèle
                     </span>
                   )}
@@ -373,7 +373,7 @@ export function RunProgress({ initial }: { initial: RunView }) {
                 .map((step) => (
                   <p key={step.key} className="break-words">
                     <span className="text-muted">{step.key} — </span>
-                    <span className={step.error ? 'text-[var(--epi-contradicted)]' : 'text-primary'}>
+                    <span className={step.error ? 'text-[var(--epi-contradicted-ink)]' : 'text-primary'}>
                       {step.error ?? step.note}
                     </span>
                   </p>
@@ -444,7 +444,7 @@ function toneFor(status: string): { bg: string; fg: string } {
     case 'failed':
       return { bg: 'var(--coral)', fg: '#fff' }
     case 'cached':
-      return { bg: 'var(--sea)', fg: '#fff' }
+      return { bg: 'var(--sea)', fg: 'var(--ink)' }
     case 'skipped':
       return { bg: 'var(--surface-sunken)', fg: 'var(--text-secondary)' }
     default:

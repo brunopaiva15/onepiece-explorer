@@ -203,7 +203,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
                 }
               }}
               placeholder="https://onepiece.fandom.com/wiki/Chapter_1 — ou 1"
-              className="min-w-0 flex-1 border-[3px] border-ink bg-surface-overlay px-3 py-2 text-primary placeholder:text-muted/70"
+              className="min-w-0 flex-1 border-[3px] border-ink bg-surface-overlay px-3 py-2 text-primary placeholder:text-muted"
             />
             <button
               type="button"
@@ -327,7 +327,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
               'Chaque fait du graphe devra citer une phrase de ce texte : ' +
               "ce qui n'y est pas écrit n'entrera pas."
             }
-            className="mt-2 w-full resize-y border-[3px] border-ink bg-surface-raised px-3 py-2.5 font-sans text-primary placeholder:text-muted/70"
+            className="mt-2 w-full resize-y border-[3px] border-ink bg-surface-raised px-3 py-2.5 font-sans text-primary placeholder:text-muted"
             style={{ boxShadow: 'var(--shadow-hard)' }}
           />
 
@@ -459,7 +459,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
                   ? 'The same chapter, in English.'
                   : 'La version du chapitre dans l’autre langue.'
             }
-            className="mt-3 w-full resize-y rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 font-sans text-primary placeholder:text-muted/70"
+            className="mt-3 w-full resize-y rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 font-sans text-primary placeholder:text-muted"
           />
 
           {parallelTrimmed.length > 0 && (

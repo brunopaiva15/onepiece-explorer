@@ -74,22 +74,22 @@ export default async function EntityPage({
 
               <div className="mt-3 flex flex-wrap gap-4">
                 <span>
-                  <span className="cartouche block !text-white/70">1re apparition</span>
+                  <span className="cartouche block !text-white/85">1re apparition</span>
                   <span className="chiffre text-2xl">ch. {sheet.firstSeenChapter}</span>
                 </span>
                 <span>
-                  <span className="cartouche block !text-white/70">Faits</span>
+                  <span className="cartouche block !text-white/85">Faits</span>
                   <span className="chiffre text-2xl">{sheet.facts.length}</span>
                 </span>
                 {sheet.memberIds.length > 1 && (
                   <span title="Apparitions distinctes identifiées comme une seule personne">
-                    <span className="cartouche block !text-white/70">Fusionnées</span>
+                    <span className="cartouche block !text-white/85">Fusionnées</span>
                     <span className="chiffre text-2xl">{sheet.memberIds.length}</span>
                   </span>
                 )}
                 {sheet.labels.length > 1 && (
                   <span>
-                    <span className="cartouche block !text-white/70">Noms connus</span>
+                    <span className="cartouche block !text-white/85">Noms connus</span>
                     <span className="chiffre text-2xl">{sheet.labels.length}</span>
                   </span>
                 )}
@@ -203,7 +203,7 @@ function FactList({
               className="rounded-sm border border-line bg-surface-raised p-4"
             >
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono text-sm text-accent">{fact.predicate}</span>
+                <span className="font-mono text-sm text-accent-ink">{fact.predicate}</span>
                 {fact.otherId ? (
                   <Link
                     href={`/entite/${fact.otherId}?ch=${boundary}`}
@@ -216,7 +216,7 @@ function FactList({
                 )}
 
                 <span
-                  className="rounded-sm px-1.5 text-[0.7rem]"
+                  className="rounded-sm px-1.5 text-xs"
                   style={{
                     color: epistemicColour(fact.epistemicStatus),
                     border: `1px solid ${epistemicColour(fact.epistemicStatus)}`,
@@ -227,7 +227,7 @@ function FactList({
 
                 {fact.locked && (
                   <span
-                    className="rounded-sm border border-line px-1.5 text-[0.7rem] text-muted"
+                    className="rounded-sm border border-line px-1.5 text-xs text-muted"
                     title="Corrigé par vous : jamais remplacé par une nouvelle extraction"
                   >
                     votre correction
@@ -243,7 +243,7 @@ function FactList({
                 /* The reader is inside a window where this was believed and is
                    not yet refuted. Saying so is the point of the two-axis
                    model — a wiki would simply have deleted it. */
-                <p className="mt-1.5 text-sm text-[var(--epi-hypothetical)]">
+                <p className="mt-1.5 text-sm text-[var(--epi-hypothetical-ink)]">
                   Cette croyance sera démentie au chapitre {fact.knowledgeUntilChapter}.
                 </p>
               )}
@@ -314,12 +314,12 @@ function epistemicLabel(status: string): string {
 
 function epistemicColour(status: string): string {
   const colours: Record<string, string> = {
-    explicit: 'var(--epi-explicit)',
-    inferred_strong: 'var(--epi-inferred)',
-    hypothetical: 'var(--epi-hypothetical)',
-    contradicted: 'var(--epi-contradicted)',
-    refuted: 'var(--epi-refuted)',
-    user_validated: 'var(--epi-validated)',
+    explicit: 'var(--epi-explicit-ink)',
+    inferred_strong: 'var(--epi-inferred-ink)',
+    hypothetical: 'var(--epi-hypothetical-ink)',
+    contradicted: 'var(--epi-contradicted-ink)',
+    refuted: 'var(--epi-refuted-ink)',
+    user_validated: 'var(--epi-validated-ink)',
   }
   return colours[status] ?? 'var(--text-muted)'
 }

@@ -41,7 +41,7 @@ export default function ErrorBoundary({
           Si toutes les pages échouent
         </strong>{' '}
         : c&apos;est la configuration ou le schéma de la base.{' '}
-        <Link href="/etat" className="text-accent underline">
+        <Link href="/etat" className="text-accent-ink underline">
           L&apos;état du déploiement
         </Link>{' '}
         ne dépend de rien de ce qu&apos;il contrôle, donc il répond même

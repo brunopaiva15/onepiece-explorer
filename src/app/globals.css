@@ -32,6 +32,26 @@
   --font-display: var(--font-display-loaded), Impact, 'Arial Narrow Bold', sans-serif;
   --font-sans: var(--font-sans-loaded), 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /*
+   * The bottom of the type scale, raised.
+   *
+   * `text-sm` is not a footnote size here — it is the body size of this
+   * application. Roughly three hundred call sites use it for prose people
+   * actually read: a fact, a lead, the reason a run failed. At Tailwind's
+   * default 14px, on a textured ground, that is a squint. `text-xs` was worse:
+   * 12px carried the metadata that says which page and which panel a claim was
+   * anchored to, which is the sentence a reader checks most often.
+   *
+   * Raising the two smallest steps here rather than editing every call site
+   * keeps the ratio between them and means no page can quietly reintroduce the
+   * old size. Nothing above `base` moves — the headline sizes were never the
+   * problem.
+   */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1.2 / 0.8125);
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: calc(1.45 / 0.9375);
 }
 
 :root {
@@ -45,7 +65,7 @@
 
   --text-primary: #111111;
   --text-secondary: #3d3a33;
-  --text-muted: #6b6459;
+  --text-muted: #605A50;
   --text-inverted: #FFF8E7;
 
   /* The ink every outline is drawn with. */
@@ -77,8 +97,35 @@
   --epi-inferred: #7C3AED;
   --epi-hypothetical: #D99A16;
   --epi-contradicted: #E32636;
-  --epi-refuted: #6b6459;
+  --epi-refuted: #605A50;
   --epi-validated: #4F7D3A;
+
+  /*
+   * The same colours again, dark enough to be read as words.
+   *
+   * A colour that identifies a chip is not a colour that can set text, and
+   * treating the two as one job is what made half this interface unreadable:
+   * straw yellow is the product's own colour and reaches 1.4:1 against
+   * parchment, so every predicate set in it — `a_rencontré`, `appartient_à` —
+   * was a pale smear. Sea blue managed 2.9:1, hypothetical amber 2.2:1.
+   *
+   * So each colour that ever sets type gets a second value, tuned to clear
+   * 4.5:1 against all four light surfaces while staying recognisably the same
+   * hue. Fills keep the bright value, because a fill is read by its shape and
+   * its border, not by its luminance. In dark mode the bright values already
+   * clear 8:1 against the surfaces, so the two collapse back into one.
+   *
+   * The rule this encodes: `--x` fills, `--x-ink` writes. Never the reverse.
+   */
+  --accent-ink: #7F5300;
+  --sea-ink-text: #00618A;
+  --lava-ink: #A82F0E;
+  --epi-explicit-ink: #0B6666;
+  --epi-inferred-ink: #6D28D9;
+  --epi-hypothetical-ink: #7F5300;
+  --epi-contradicted-ink: #B01324;
+  --epi-refuted-ink: #5F594F;
+  --epi-validated-ink: #3B6529;
 
   --border: var(--ink);
   --border-strong: var(--ink);
@@ -100,7 +147,7 @@
 
     --text-primary: #FFF8E7;
     --text-secondary: #c9c2b4;
-    --text-muted: #948c7e;
+    --text-muted: #A29A8B;
     --text-inverted: #111111;
 
     --ink: #000000;
@@ -123,6 +170,19 @@
     --epi-contradicted: #ff5c4a;
     --epi-refuted: #948c7e;
     --epi-validated: #6fa855;
+
+    /* On ink, the bright values already carry. Only the three that sat below
+       4.5:1 against the raised surfaces are lifted. */
+    --accent-ink: #F5C542;
+    --sea-ink-text: #5CC5F5;
+    --lava-ink: #FF8560;
+    --epi-explicit-ink: #3FD0D0;
+    --epi-inferred-ink: #B79BFA;
+    --epi-hypothetical-ink: #F5C542;
+    --epi-contradicted-ink: #FF6B5A;
+    --epi-refuted-ink: #A79E8E;
+    --epi-validated-ink: #8FD46A;
+
     --border: #000000;
     --border-strong: #000000;
     --focus-ring: #F5C542;
@@ -143,7 +203,7 @@
 
   --text-primary: #FFF8E7;
   --text-secondary: #c9c2b4;
-  --text-muted: #948c7e;
+  --text-muted: #A29A8B;
   --text-inverted: #111111;
 
   --ink: #000000;
@@ -166,6 +226,17 @@
   --epi-contradicted: #ff5c4a;
   --epi-refuted: #948c7e;
   --epi-validated: #6fa855;
+
+  --accent-ink: #F5C542;
+  --sea-ink-text: #5CC5F5;
+  --lava-ink: #FF8560;
+  --epi-explicit-ink: #3FD0D0;
+  --epi-inferred-ink: #B79BFA;
+  --epi-hypothetical-ink: #F5C542;
+  --epi-contradicted-ink: #FF6B5A;
+  --epi-refuted-ink: #A79E8E;
+  --epi-validated-ink: #8FD46A;
+
   --border: #000000;
   --border-strong: #000000;
   --focus-ring: #ffc93c;
@@ -200,6 +271,31 @@
   --type-chapter: #8B5A2B;
   --type-page: #8B5A2B;
   --type-panel: #8B5A2B;
+
+  /*
+   * And the ink each of them takes.
+   *
+   * Every type chip painted its label white, which works for the nine dark
+   * colours and fails for the five light ones — sea, teal and gold all leave
+   * white text between 2.4:1 and 3.2:1, so the very chips a reader clicks to
+   * filter the graph were the least readable things on the page. Neither ink
+   * suits all fourteen, so each colour names its own; the value is simply
+   * whichever of black and white it contrasts with better.
+   */
+  --type-character-ink: var(--ink);
+  --type-group-ink: #FFFFFF;
+  --type-place-ink: var(--ink);
+  --type-object-ink: var(--ink);
+  --type-power-ink: #FFFFFF;
+  --type-species-ink: #FFFFFF;
+  --type-event-ink: var(--ink);
+  --type-battle-ink: #FFFFFF;
+  --type-voyage-ink: #FFFFFF;
+  --type-concept-ink: #FFFFFF;
+  --type-mystery-ink: #FFFFFF;
+  --type-chapter-ink: #FFFFFF;
+  --type-page-ink: #FFFFFF;
+  --type-panel-ink: #FFFFFF;
 }
 
 @theme inline {
@@ -230,6 +326,17 @@
   --color-epi-contradicted: var(--epi-contradicted);
   --color-epi-refuted: var(--epi-refuted);
   --color-epi-validated: var(--epi-validated);
+
+  /* Writing colours. `text-accent-ink`, not `text-accent`. */
+  --color-accent-ink: var(--accent-ink);
+  --color-sea-text: var(--sea-ink-text);
+  --color-lava-ink: var(--lava-ink);
+  --color-epi-explicit-ink: var(--epi-explicit-ink);
+  --color-epi-inferred-ink: var(--epi-inferred-ink);
+  --color-epi-hypothetical-ink: var(--epi-hypothetical-ink);
+  --color-epi-contradicted-ink: var(--epi-contradicted-ink);
+  --color-epi-refuted-ink: var(--epi-refuted-ink);
+  --color-epi-validated-ink: var(--epi-validated-ink);
 }
 
 html,
@@ -242,7 +349,10 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 1rem;
-  line-height: 1.5;
+  /* 1.5 is the minimum a paragraph tolerates, not a target. Text here is read
+     over a dot screen, which costs a little of whatever separation you give
+     it. */
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 
   /* Screentone: the dot pattern a page is printed with, at a size you notice
@@ -253,6 +363,23 @@ body {
   background-attachment: fixed;
 }
 
+/* --------------------------------------------------------------------------
+   Where the poster face is allowed.
+
+   Anton is a condensed poster type: one weight, very heavy, very narrow. At
+   36px it is the reason this application looks like a chapter title page. At
+   13px, set in capitals, it stops being a typeface and becomes a picket fence —
+   every letter is the same narrow vertical stroke, the counters close up, and
+   `RETOUR AUX CHAPITRES` takes a moment to resolve into words. It was doing
+   that job in the rail, on every badge, on every button, on every table header
+   and on every data label: nearly all the small text in the interface.
+
+   The rule now: **Anton above 18px, Nunito below it.** Headings, chapter
+   numbers and panel titles keep it. Everything small that used to reach for it
+   uses `.etiquette` — Nunito at 800, which is heavy enough to hold the same
+   register at a size a condensed face cannot.
+   -------------------------------------------------------------------------- */
+
 h1,
 h2,
 h3,
@@ -262,6 +389,15 @@ h3,
   text-transform: uppercase;
   letter-spacing: 0.01em;
   line-height: 0.95;
+}
+
+/* A small label that still shouts: heavy, wide, upper case — and legible,
+   which is the part the display face could not do at this size. */
+.etiquette {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
 }
 
 h1 {
@@ -330,19 +466,29 @@ table,
   align-items: center;
   gap: 0.3rem;
   border: 2px solid var(--ink);
-  padding: 0.1rem 0.5rem;
-  font-family: var(--font-display);
-  font-size: 0.8rem;
+  padding: 0.15rem 0.55rem;
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 0.8125rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  line-height: 1.5;
+  letter-spacing: 0.045em;
+  line-height: 1.4;
   background: var(--surface-overlay);
   color: var(--text-primary);
   white-space: nowrap;
 }
 
 .badge-or { background: var(--accent); color: var(--ink); }
-.badge-mer { background: var(--sea); color: #fff; }
+/*
+ * Black on sea, not white.
+ *
+ * The palette note above says it plainly — #0099D8 "fills chips and marks,
+ * where it sits under black at 5.9:1" — and then every chip painted with it
+ * used white, at 3.2:1, on the one state a reader most needs to catch at a
+ * glance. Following the reasoning that was already written down costs nothing
+ * and nearly doubles the contrast.
+ */
+.badge-mer { background: var(--sea); color: var(--ink); }
 .badge-vert { background: var(--epi-validated); color: #fff; }
 .badge-rouge { background: var(--coral); color: #fff; }
 .badge-gris { background: var(--surface-sunken); color: var(--text-secondary); }
@@ -360,10 +506,13 @@ table,
   border: 3px solid var(--ink);
   background: var(--surface-overlay);
   color: var(--text-primary);
-  font-family: var(--font-display);
+  /* Buttons are labels, and half of them are overridden down to `!text-xs` by
+     the pages that use them — which is exactly where the poster face failed. */
+  font-family: var(--font-sans);
+  font-weight: 800;
   font-size: 1rem;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   line-height: 1.4;
   box-shadow: var(--shadow-hard-sm);
   transition: transform 70ms, box-shadow 70ms;
@@ -381,7 +530,7 @@ table,
 }
 
 .bouton-primaire { background: var(--accent); color: var(--ink); }
-.bouton-mer { background: var(--sea); color: #fff; }
+.bouton-mer { background: var(--sea); color: var(--ink); }
 .bouton-danger { background: var(--coral); color: #fff; }
 
 .bouton:disabled {
@@ -408,12 +557,22 @@ table,
 .chiffre-xl { font-size: clamp(2.5rem, 2rem + 3vw, 4rem); }
 .chiffre-l { font-size: 2rem; }
 
-/* A label above a value: small, wide, unmissable as a label. */
+/*
+ * A label above a value: small, wide, unmissable as a label.
+ *
+ * This was the worst of the lot — 11.5px of condensed capitals, tracked out a
+ * tenth of an em and set in the muted grey, which is three separate things all
+ * subtracting from legibility at once, on the word that says what the number
+ * underneath it means. Same job, same register, now readable: Nunito 800 at
+ * 13px, tracked a little less because a normal-width face needs less.
+ */
 .cartouche {
-  font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 0.8125rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.07em;
+  line-height: 1.3;
   color: var(--text-muted);
 }
 
@@ -466,12 +625,13 @@ table {
 thead th {
   background: var(--sea-deep);
   color: #fff;
-  font-family: var(--font-display);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 0.875rem;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.045em;
   text-align: left;
-  padding: 0.4rem 0.7rem;
+  padding: 0.45rem 0.7rem;
   border-bottom: 3px solid var(--ink);
 }
 

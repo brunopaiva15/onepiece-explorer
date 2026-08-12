@@ -84,7 +84,7 @@ export default async function TimelinePage({
                 <li key={entry.entityId} className="text-sm text-secondary">
                   <Link
                     href={`/entite/${entry.entityId}?ch=${session.boundaryChapter}`}
-                    className="text-accent hover:underline"
+                    className="text-accent-ink hover:underline"
                   >
                     {entry.label}
                   </Link>
@@ -121,14 +121,14 @@ function Entry({
         </Link>
 
         {entry.kind === 'mystery' && (
-          <span className="rounded-sm border border-[var(--epi-hypothetical)] px-1.5 text-[0.7rem] text-[var(--epi-hypothetical)]">
+          <span className="rounded-sm border border-[var(--epi-hypothetical-ink)] px-1.5 text-xs text-[var(--epi-hypothetical-ink)]">
             mystère{entry.resolvedInChapter !== null && ' — résolu'}
           </span>
         )}
 
         {entry.isFlashback && (
           <span
-            className="rounded-sm border border-line px-1.5 text-[0.7rem] text-muted"
+            className="rounded-sm border border-line px-1.5 text-xs text-muted"
             title="Montré ici, survenu plus tôt dans l'histoire"
           >
             flashback
@@ -154,7 +154,7 @@ function Entry({
       )}
 
       {entry.resolvedInChapter !== null && (
-        <p className="mt-1 text-sm text-[var(--epi-validated)]">
+        <p className="mt-1 text-sm text-[var(--epi-validated-ink)]">
           Résolu au chapitre {entry.resolvedInChapter}.
         </p>
       )}

@@ -127,7 +127,7 @@ export default async function GraphTablePage({
                     <td className="py-2 pr-3">
                       <Link
                         href={`/entite/${node.id}?ch=${session.boundaryChapter}`}
-                        className="text-accent hover:underline"
+                        className="text-accent-ink hover:underline"
                       >
                         {node.label}
                       </Link>
@@ -181,7 +181,7 @@ export default async function GraphTablePage({
                     <td className="py-2 pr-3 text-primary">
                       {labelOf.get(edge.source) ?? '—'}
                     </td>
-                    <td className="py-2 pr-3 font-mono text-accent">{edge.predicate}</td>
+                    <td className="py-2 pr-3 font-mono text-accent-ink">{edge.predicate}</td>
                     <td className="py-2 pr-3 text-primary">
                       {labelOf.get(edge.target) ?? '—'}
                     </td>

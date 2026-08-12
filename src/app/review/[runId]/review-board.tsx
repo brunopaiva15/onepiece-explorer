@@ -535,7 +535,7 @@ export function ReviewBoard({ queue }: Props) {
       <div className="sticky top-[3.25rem] z-20 border-[3px] border-ink bg-surface-raised">
         <div className="flex flex-wrap items-center gap-3 px-3 py-2">
           <span className="chiffre text-3xl leading-none">{cursor + 1}</span>
-          <span className="font-display text-sm uppercase text-muted">/ {items.length}</span>
+          <span className="etiquette text-sm text-muted">/ {items.length}</span>
 
           <div className="flex gap-1.5">
             {counts.accept > 0 && <span className="badge badge-vert">{counts.accept} ✓</span>}
@@ -691,7 +691,7 @@ function PublishSummary({
 
       {result.failures.length > 0 && (
         <div className="mt-3 border-t border-line pt-3">
-          <p className="text-sm font-medium text-[var(--epi-contradicted)]">
+          <p className="text-sm font-medium text-[var(--epi-contradicted-ink)]">
             {result.failures.length} n&apos;ont pas pu être appliquée(s) :
           </p>
           <ul className="mt-1 space-y-1 text-sm text-secondary">
@@ -788,7 +788,7 @@ function ProposalCard({
           <div className="panneau-corps">
             {item.requiresExplicitReview && (
               <p
-                className="mb-3 border-[3px] border-ink bg-[var(--epi-hypothetical)] px-2 py-1 font-display text-sm uppercase text-ink"
+                className="mb-3 border-[3px] border-ink bg-[var(--epi-hypothetical)] px-2 py-1 etiquette text-sm text-ink"
                 title="Identité, révélation, mort, affiliation cachée ou contradiction : jamais acceptable en lot"
               >
                 Revue explicite obligatoire
@@ -832,7 +832,7 @@ function ProposalCard({
                   className={`bouton ${decision === kind ? tone || 'bouton-mer' : ''} !flex-col !gap-0 !py-2`}
                 >
                   <span>{label}</span>
-                  <kbd className="font-sans text-[0.65rem] font-bold opacity-70">{key}</kbd>
+                  <kbd className="font-sans text-xs font-bold opacity-85">{key}</kbd>
                 </button>
               ))}
             </div>
@@ -893,7 +893,7 @@ function DuplicateNotice({
           : 'bg-[var(--epi-hypothetical)] text-ink'
       }`}
     >
-      <p className="font-display text-sm uppercase">
+      <p className="etiquette text-sm">
         Doublon · copie {duplicate.rank} sur {duplicate.total}
         {settled && ' · reportée d’office'}
       </p>
@@ -1142,7 +1142,7 @@ function ProposalBody({
       <div className="mt-2">
         <p className="text-primary">
           <EntityEnd id={subject} name={end(record.subject)} />{' '}
-          <span className="font-mono text-sm text-accent">
+          <span className="font-mono text-sm text-accent-ink">
             {String(record.predicate ?? '')}
           </span>{' '}
           {object !== null ? (
@@ -1247,13 +1247,13 @@ function ProposalBody({
       <div className="mt-2">
         <p className="text-primary">{shown}</p>
         {shown !== written && (
-          <p className="mt-1.5 text-sm text-[var(--epi-validated)]">
+          <p className="mt-1.5 text-sm text-[var(--epi-validated-ink)]">
             Récrit avec les noms que vous avez tranchés dans ce lot — c’est cette
             version qui sera enregistrée.
           </p>
         )}
         {record.is_flashback === true && (
-          <p className="mt-1 text-sm text-[var(--epi-hypothetical)]">
+          <p className="mt-1 text-sm text-[var(--epi-hypothetical-ink)]">
             Présenté comme un souvenir : montré ici, survenu plus tôt.
           </p>
         )}
@@ -1269,7 +1269,7 @@ function ProposalBody({
       <div className="mt-2">
         <p className="text-primary">{shown}</p>
         {shown !== written && (
-          <p className="mt-1.5 text-sm text-[var(--epi-validated)]">
+          <p className="mt-1.5 text-sm text-[var(--epi-validated-ink)]">
             Récrit avec les noms que vous avez tranchés dans ce lot.
           </p>
         )}

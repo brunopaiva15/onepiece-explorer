@@ -49,7 +49,9 @@ function Tache({
   detail: string
 }) {
   const fond = { or: 'var(--accent)', mer: 'var(--sea)', rouge: 'var(--coral)' }[ton]
-  const encre = ton === 'or' ? 'var(--ink)' : '#fff'
+  // Straw and sea are both light enough that white on them is a smear; only
+  // Luffy red is dark enough to carry it.
+  const encre = ton === 'rouge' ? '#fff' : 'var(--ink)'
 
   return (
     <li className="panneau flex flex-col">
@@ -58,7 +60,7 @@ function Tache({
         style={{ background: fond, color: encre }}
       >
         <span className="chiffre text-4xl leading-none">{compte}</span>
-        <span className="font-display text-base uppercase leading-tight">{titre}</span>
+        <span className="etiquette text-base leading-tight">{titre}</span>
       </div>
       <div className="flex flex-1 flex-col justify-between gap-3 px-3 py-2.5">
         <p className="text-sm text-secondary">{detail}</p>
@@ -198,7 +200,7 @@ export default async function HomePage() {
             <h2 className="font-display text-xl uppercase text-primary">Derniers chapitres</h2>
             <Link
               href="/chapitres"
-              className="font-display text-sm uppercase text-accent-strong hover:underline"
+              className="etiquette text-sm text-accent-ink hover:underline"
             >
               Tous →
             </Link>
@@ -213,7 +215,7 @@ export default async function HomePage() {
                   <span className="chiffre text-3xl">{chapter.number}</span>
                 </Link>
                 <div className="min-w-0 flex-1 px-3 py-2">
-                  <p className="truncate font-display text-base uppercase text-primary">
+                  <p className="etiquette truncate text-base text-primary">
                     {chapter.title ?? `Chapitre ${chapter.number}`}
                   </p>
                   <div className="mt-1 flex items-center gap-2">

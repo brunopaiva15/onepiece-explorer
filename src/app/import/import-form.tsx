@@ -191,7 +191,7 @@ export function ImportForm({
             <div className="mt-3 border-[3px] border-ink bg-surface-raised">
               <p className="flex items-baseline gap-2 border-b-[3px] border-ink bg-[var(--sea-deep)] px-3 py-1.5 text-white">
                 <span className="chiffre text-2xl leading-none">{selected.length}</span>
-                <span className="font-display text-sm uppercase">
+                <span className="etiquette text-sm">
                   fichier{selected.length > 1 ? 's' : ''}
                 </span>
                 <span className="tabular ml-auto text-sm">{totalMb.toFixed(1)} Mo</span>

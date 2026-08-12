@@ -87,7 +87,7 @@ export function StartRun({
       </button>
 
       {error && (
-        <p role="alert" className="max-w-md text-sm text-[var(--epi-contradicted)]">
+        <p role="alert" className="max-w-md text-sm text-[var(--epi-contradicted-ink)]">
           {error}
         </p>
       )}
