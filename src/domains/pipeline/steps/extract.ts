@@ -21,6 +21,7 @@ import {
   type Quarantined,
 } from '@/domains/ai/anchoring.ts'
 import type { Extraction, PanelDescription } from '@/domains/ai/schemas.ts'
+import { splitPassages } from '@/domains/ingestion/passages.ts'
 import { PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { quarantineItems } from '../quarantine.ts'
 import { completedUnits, recordUnit } from '../runs.ts'
@@ -105,6 +106,48 @@ const SLICE_CONCURRENCY = 3
 interface Slice {
   descriptions: PanelDescription[]
   blocks: PromptBlock[]
+}
+
+/**
+ * Passages of slack on each side of the window.
+ *
+ * Two people writing the same chapter cut their paragraphs in different places,
+ * so the position that corresponds to a slice is approximate. Overshooting
+ * costs a passage of prompt; clipping loses the sentence carrying the name,
+ * which is the only reason the text is there.
+ */
+const PARALLEL_MARGIN = 1
+
+/**
+ * How much of the other-language text goes out with one slice.
+ *
+ * The second text is a naming aid, and a naming aid is only useful where it
+ * overlaps the passages being read: sending the whole translation with every
+ * slice would pay for the entire chapter once per call, and bury the sentences
+ * that matter in the ones that do not.
+ *
+ * Aligned by position rather than by content. The two texts tell the same
+ * chapter in the same order, so passage *k of n* on one side corresponds to
+ * roughly *k of n* on the other — good enough to put a name next to its
+ * translation, which is all this has to achieve.
+ *
+ * No attempt at real alignment, deliberately. Matching sentences across
+ * languages is a model call, and paying for one to save part of the cost of
+ * another is a trade this step does not need to make.
+ */
+export function parallelWindow(
+  parallel: string[],
+  span: { from: number; to: number },
+  total: number,
+): string[] {
+  if (parallel.length === 0 || total <= 0) return []
+  if (parallel.length <= 2 * PARALLEL_MARGIN + 1) return parallel
+
+  const ratio = parallel.length / total
+  const start = Math.floor(span.from * ratio) - PARALLEL_MARGIN
+  const end = Math.ceil((span.to + 1) * ratio) + PARALLEL_MARGIN
+
+  return parallel.slice(Math.max(0, start), Math.min(parallel.length, end))
 }
 
 /** Can this slice be made smaller, or is it already one unit of source? */
@@ -249,7 +292,11 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
 
   const world = await withIngest(async (db) => {
     const [chapter] = await db
-      .select({ workId: chapters.workId })
+      .select({
+        workId: chapters.workId,
+        parallelText: chapters.parallelText,
+        parallelLanguage: chapters.parallelLanguage,
+      })
       .from(chapters)
       .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))
       .limit(1)
@@ -411,6 +458,40 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
 
   const knownEntities = dedupeById(world.known)
 
+  /*
+   * The other-language text, cut up the same way its counterpart was.
+   *
+   * `splitPassages` rather than a second splitter, and split here rather than
+   * at import: the text is stored whole because nothing cites it, and cutting
+   * it with the same function as the citable side is what makes "passage k of
+   * n" mean the same thing on both, which is the entire basis of the alignment.
+   */
+  const parallelPassages =
+    world.chapter.parallelText !== null && world.chapter.parallelLanguage !== null
+      ? splitPassages(world.chapter.parallelText)
+      : []
+
+  /** Where each citable passage sits in reading order, for that alignment. */
+  const positionOfRef = new Map(promptBlocks.map((block, index) => [block.ref, index]))
+
+  function parallelFor(slice: Slice): { language: string; passages: string[] } | null {
+    if (parallelPassages.length === 0 || world.chapter.parallelLanguage === null) return null
+
+    const positions = slice.blocks
+      .map((block) => positionOfRef.get(block.ref))
+      .filter((position): position is number => position !== undefined)
+    if (positions.length === 0) return null
+
+    const passages = parallelWindow(
+      parallelPassages,
+      { from: Math.min(...positions), to: Math.max(...positions) },
+      promptBlocks.length,
+    )
+    if (passages.length === 0) return null
+
+    return { language: world.chapter.parallelLanguage, passages }
+  }
+
   const ontology: OntologyView = {
     nodeTypes: new Set(world.types.map((t) => t.key)),
     predicates: new Set(world.preds.map((p) => p.key)),
@@ -526,6 +607,8 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       ...slice.blocks.map((b) => b.ref),
     ]
 
+    const parallel = parallelFor(slice)
+
     let result: Awaited<ReturnType<typeof provider.extract>>
     try {
       result = await provider.extract({
@@ -537,6 +620,10 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         descriptions: slice.descriptions,
         textBlocks: slice.blocks,
         allowedRefs: refs,
+        // Omitted rather than sent empty when there is no second text, so the
+        // request — and the recorded response keyed on it — is byte for byte
+        // what it was before this existed.
+        ...(parallel ? { parallel } : {}),
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -813,6 +900,14 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   })
 
   const parts = [`${queued} propositions à revoir`]
+  if (parallelPassages.length > 0) {
+    // Worth a line: it changes what the model was shown, and therefore how the
+    // names in this batch were arrived at. A run that read a second text and
+    // one that did not are not the same run to compare.
+    parts.push(
+      `texte parallèle (${world.chapter.parallelLanguage}) fourni pour le nommage`,
+    )
+  }
   if (healed.healed > 0) {
     parts.push(`${healed.healed} fait(s) réancré(s) après suppression`)
   }

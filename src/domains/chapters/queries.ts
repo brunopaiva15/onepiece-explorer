@@ -106,6 +106,15 @@ export interface ChapterDetail {
   sourceKind: ChapterSourceKind
   /** The language the source is written in — the language its excerpts quote. */
   language: string
+  /**
+   * The same chapter in the other language, when one was supplied.
+   *
+   * Shown on the chapter page as prose rather than as numbered passages,
+   * because the numbering is what a citation points at and nothing may cite
+   * this. Seeing it stated that way is the point: what is citable has a number.
+   */
+  parallelText: string | null
+  parallelLanguage: 'fr' | 'en' | null
 }
 
 /** Metadata for one chapter. Ownership-scoped, like the list. */
@@ -123,6 +132,8 @@ export async function getChapter(
         status: chapters.status,
         sourceKind: chapters.sourceKind,
         language: chapters.language,
+        parallelText: chapters.parallelText,
+        parallelLanguage: chapters.parallelLanguage,
       })
       .from(chapters)
       .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))

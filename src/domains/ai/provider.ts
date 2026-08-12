@@ -99,6 +99,20 @@ export interface ExtractRequest {
   /** Text blocks, quoted verbatim, in an untrusted-data envelope. */
   textBlocks: Array<{ ref: string; text: string; panelRef: string | null }>
   allowedRefs: string[]
+  /**
+   * The same chapter in the other language, windowed to this slice.
+   *
+   * A naming aid and strictly that. Its passages carry no refs, so they are
+   * absent from `allowedRefs` and a proposal quoting one is quarantined by the
+   * anchoring filter like any other invented citation. That is the mechanism,
+   * not a promise: the prompt says the text is not citable, and the filter is
+   * what makes it true whatever the model does with the instruction.
+   *
+   * Absent when the chapter has no second text — and absent rather than empty,
+   * so a request that could have been made before this existed still hashes to
+   * what it hashed to then.
+   */
+  parallel?: { language: string; passages: string[] }
 }
 
 export interface ResolveRequest {

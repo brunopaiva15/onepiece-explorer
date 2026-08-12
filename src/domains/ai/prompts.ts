@@ -244,7 +244,45 @@ ${noOutsideKnowledge('pages')}
 `.trim()
 }
 
-export function extractionSystem(ontology: string, source: SourceKind): string {
+/**
+ * The rules for the second text, stated where rules live.
+ *
+ * Added to the system prompt only when a second text is actually supplied.
+ * Describing a document that is not there would be an invitation to picture
+ * one — the same failure as telling a model reading prose to consult "les pages
+ * fournies" — and it would cost every chapter without one a paragraph of cache.
+ *
+ * The instruction not to cite it is belt and braces, not the mechanism. The
+ * parallel passages have no refs, so `allowedRefs` cannot contain them and the
+ * anchoring filter quarantines anything quoting them. This paragraph exists so
+ * the model does not waste a proposal finding that out.
+ */
+const PARALLEL_TEXT = `
+On vous fournit aussi LE MÊME CHAPITRE DANS L'AUTRE LANGUE, sous
+<untrusted_document_text source="parallèle">. Il sert à une seule chose : lire
+la correspondance des noms.
+
+  • Il n'est PAS citable. Aucune référence n'y renvoie, et un extrait qui en
+    provient fait rejeter l'élément entier — citez toujours un passage du texte
+    principal.
+  • On n'en tire aucun fait. Si ce texte affirme quelque chose que le texte
+    principal ne dit pas, ne le proposez pas : l'élément n'aurait pas de preuve.
+  • Servez-vous-en pour « source_term » — la forme de l'autre langue — et pour
+    « naming_confident ». Quand la mise en regard donne la réponse, c'est un
+    fait, plus une convention à deviner : si le texte français écrit
+    « Équipage du Chapeau de Paille » là où l'anglais écrit « Straw Hat
+    Pirates », la forme française est établie, mettez true. Quand le texte
+    parallèle ne parle pas de cette entité, ou la nomme autrement sans que le
+    rapprochement soit sûr, mettez false comme avant.
+  • Les deux textes ne se découpent pas aux mêmes endroits et le passage n° 3
+    de l'un n'est pas le passage n° 3 de l'autre. Rapprochez par le sens.
+`.trim()
+
+export function extractionSystem(
+  ontology: string,
+  source: SourceKind,
+  hasParallelText = false,
+): string {
   const material =
     source === 'summary'
       ? 'du seul texte fourni — le récit détaillé de ce chapitre, découpé en passages'
@@ -259,7 +297,7 @@ ${ANTI_INJECTION}
 ${EVIDENCE_RULE}
 
 ${OUTPUT_LANGUAGE}
-
+${hasParallelText ? `\n${PARALLEL_TEXT}\n` : ''}
 Ontologie disponible — n'utilisez aucun autre type ni aucun autre prédicat :
 
 ${ontology}
@@ -281,6 +319,22 @@ la fusion, si elle a lieu, sera datée du chapitre qui la révèle.
 
 ${noOutsideKnowledge(source)}
 `.trim()
+}
+
+/**
+ * The other-language passages, as data.
+ *
+ * Labelled by language rather than numbered. A number here would look like a
+ * ref, and a ref is precisely what these do not have — the numbering in the
+ * prompt is the vocabulary of citation, and lending it to a text nothing may
+ * cite is how a model comes to cite it.
+ */
+export function parallelText(language: string, passages: string[]): string {
+  return untrusted(
+    `parallèle-${language}`,
+    `Le même chapitre en ${language === 'fr' ? 'français' : 'anglais'}, pour les noms uniquement :\n\n` +
+      passages.join('\n\n'),
+  )
 }
 
 export function resolutionSystem(source: SourceKind): string {

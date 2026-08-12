@@ -98,6 +98,19 @@ export const chapters = pgTable(
      * describing themselves correctly. See migration 0015.
      */
     sourceKind: text('source_kind').$type<ChapterSourceKind>().notNull().default('pages'),
+    /**
+     * The same chapter, written in the other language.
+     *
+     * A naming aid, never a source. The extraction step shows it alongside the
+     * passages so that «  Straw Hat Pirates » → «  Équipage du Chapeau de
+     * Paille » is read off a text someone already translated rather than
+     * invented one chapter at a time. Nothing in it is citable: its refs are
+     * never in the allowed list, so a proposal quoting it is quarantined like
+     * any other unanchored claim. See migration 0017.
+     */
+    parallelText: text('parallel_text'),
+    /** Language of `parallelText`, always different from `language`. */
+    parallelLanguage: text('parallel_language').$type<'fr' | 'en'>(),
     /** Content fingerprint over the source — makes re-import idempotent. */
     sourceFingerprint: text('source_fingerprint'),
     pageCount: integer('page_count').notNull().default(0),

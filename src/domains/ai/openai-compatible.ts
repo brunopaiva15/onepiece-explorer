@@ -5,6 +5,7 @@ import {
   descriptionSystem,
   extractionSystem,
   glossaryList,
+  parallelText,
   refList,
   resolutionSystem,
   summarySystem,
@@ -216,7 +217,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
       .join('\n\n')
 
     const result = await this.structured({
-      system: extractionSystem(request.ontology, request.source),
+      system: extractionSystem(
+        request.ontology,
+        request.source,
+        request.parallel !== undefined,
+      ),
       schema: extractionSchema,
       name: 'extraction',
       maxTokens: 16_000,
@@ -231,6 +236,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
           type: 'text',
           text: untrusted(`chapitre-${request.chapterNumber}`, blocks),
         },
+        ...(request.parallel
+          ? [
+              {
+                type: 'text' as const,
+                text: parallelText(request.parallel.language, request.parallel.passages),
+              },
+            ]
+          : []),
       ],
     })
 

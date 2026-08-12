@@ -322,3 +322,204 @@ describe('running the pipeline on a written chapter', () => {
     }
   })
 })
+
+/**
+ * The same chapter, twice, in two languages.
+ *
+ * The glossary (0016) stops the model re-inventing a French name every chapter,
+ * but it starts empty and the first chapters are decided with one side of the
+ * evidence: nothing in an English summary says whether French readers translate
+ * « Straw Hat Pirates ». Both versions side by side contain that answer, so the
+ * model reads it instead of guessing.
+ *
+ * What must hold is the boundary around that gain. The second text is not a
+ * source: it has no passages, no refs, and therefore nothing that can be cited.
+ * A fact it alone states does not enter the graph — which is the price of not
+ * having two citable texts, and it is the right price.
+ */
+const SUMMARY_EN = [
+  'The chapter opens on Fuchsia Village. A boy called Luffy begs a red-haired',
+  'man named Shanks to take him out to sea. Shanks refuses with a laugh: the sea',
+  'is far too dangerous for a child.',
+  '',
+  'A bandit walks into the tavern and humiliates Shanks in front of everyone.',
+  'Luffy is outraged that Shanks does not answer him.',
+  '',
+  'Left alone, Luffy swallows a strange fruit he finds in a chest. Shanks tells',
+  'him that he has eaten a devil fruit and will never be able to swim again.',
+].join('\n')
+
+describe('the same chapter in the other language', () => {
+  it('stores it beside the passages, marked as the other language', async () => {
+    const world = await seedWorld([])
+    const result = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+      parallelText: SUMMARY_EN,
+    })
+
+    expect(result.language).toBe('fr')
+    expect(result.parallelLanguage).toBe('en')
+
+    const rows = await raw<Array<{ parallel_text: string; parallel_language: string }>>`
+      SELECT parallel_text, parallel_language FROM chapters WHERE id = ${result.chapterId}`
+    expect(rows[0]!.parallel_language).toBe('en')
+    expect(rows[0]!.parallel_text).toContain('Fuchsia Village')
+
+    // No passages of its own. Passages are what a citation points at, and this
+    // text is the one thing in the chapter nothing may point at.
+    const passages = await chapterPassages(world.userId, result.chapterId)
+    expect(passages).toHaveLength(3)
+    expect(passages.every((passage) => !passage.text.includes('Fuchsia Village'))).toBe(true)
+  })
+
+  it('refuses two texts in the same language', async () => {
+    // Not a language question — a paste that went wrong. The same summary in
+    // both boxes teaches nothing about names and doubles what a slice costs.
+    const world = await seedWorld([])
+    await expect(
+      importSummary({
+        userId: world.userId,
+        workId: world.workId,
+        chapterNumber: 1,
+        text: SUMMARY,
+        parallelText: SUMMARY,
+      }),
+    ).rejects.toThrow(/même langue|deux textes/i)
+  })
+
+  it('refuses one too short to carry any correspondence', async () => {
+    const world = await seedWorld([])
+    await expect(
+      importSummary({
+        userId: world.userId,
+        workId: world.workId,
+        chapterNumber: 1,
+        text: SUMMARY,
+        parallelText: 'Luffy meets Shanks.',
+      }),
+    ).rejects.toThrow(/caractères/)
+  })
+
+  it('counts a changed second text as a new source', async () => {
+    const world = await seedWorld([])
+    const first = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+      parallelText: SUMMARY_EN,
+    })
+    expect(first.unchanged).toBe(false)
+
+    const same = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+      parallelText: SUMMARY_EN,
+    })
+    expect(same.unchanged).toBe(true)
+
+    /*
+     * Nothing cites it, and it still changes the source.
+     *
+     * The pipeline reads it, so a chapter processed with one translation and
+     * the same chapter processed with another are not the same run — the names
+     * it proposes were arrived at differently. Treating this as "unchanged"
+     * would leave the graph built from a text no longer stored.
+     */
+    const edited = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+      parallelText: SUMMARY_EN.replace('devil fruit', 'cursed fruit'),
+    })
+    expect(edited.unchanged).toBe(false)
+  })
+
+  it('removes it when the chapter is re-imported without it', async () => {
+    // An import states the whole source rather than adding to it — the same
+    // rule as the passages. Leaving the old translation in place would keep
+    // feeding the model a version of a summary you have since rewritten.
+    const world = await seedWorld([])
+    const { chapterId } = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+      parallelText: SUMMARY_EN,
+    })
+
+    const dropped = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+    })
+
+    expect(dropped.chapterId).toBe(chapterId)
+    expect(dropped.parallelLanguage).toBeNull()
+    const rows = await raw<Array<{ parallel_text: string | null }>>`
+      SELECT parallel_text FROM chapters WHERE id = ${chapterId}`
+    expect(rows[0]!.parallel_text).toBeNull()
+  })
+
+  it('leaves a chapter without one hashing exactly as it did before', async () => {
+    // The second text is appended to the fingerprint only when there is one, so
+    // re-importing a chapter you have not touched is still a no-op rather than
+    // a rewrite that orphans the evidence pointing at its passages.
+    const world = await seedWorld([])
+    await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+    })
+    const again = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+    })
+    expect(again.unchanged).toBe(true)
+  })
+
+  it('runs the pipeline with it and anchors every proposal to a passage', async () => {
+    const world = await seedWorld([])
+    const { chapterId } = await importSummary({
+      userId: world.userId,
+      workId: world.workId,
+      chapterNumber: 1,
+      text: SUMMARY,
+      parallelText: SUMMARY_EN,
+    })
+
+    const runId = await createRun(world.userId, chapterId)
+    const outcome = await executeRun(world.userId, chapterId, runId)
+    expect(outcome.status).toBe('succeeded')
+
+    const passages = await chapterPassages(world.userId, chapterId)
+    const stored = passages.map((passage) => passage.text).join('\n')
+
+    const items = await raw<Array<{ payload: { evidence?: Array<{ excerpt: string }> } }>>`
+      SELECT payload FROM review_items WHERE run_id = ${runId}`
+    expect(items.length).toBeGreaterThan(0)
+
+    /*
+     * Every citation lands in the citable text, and none in the translation.
+     *
+     * The guard is not the prompt asking nicely: the parallel passages carry no
+     * refs, so they cannot be in the allowed list, and anything quoting them is
+     * quarantined by the same check that catches an invented reference.
+     */
+    for (const item of items) {
+      for (const evidence of item.payload.evidence ?? []) {
+        expect(stored).toContain(evidence.excerpt)
+      }
+    }
+  })
+})

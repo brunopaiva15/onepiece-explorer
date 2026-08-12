@@ -53,6 +53,22 @@ export interface SummaryImportRequest {
   language?: SummaryLanguage
   /** The chapter, written out. Paragraphs become passages. */
   text: string
+  /**
+   * The same chapter in the other language, when you have it.
+   *
+   * A naming aid and nothing else. The glossary (0016) stops the model
+   * re-inventing a French form every chapter, but it starts empty and the first
+   * chapters are answered with only one side of the evidence: a model reading
+   * « Straw Hat Pirates » cannot find in an English text whether French readers
+   * translate it. Both versions side by side contain that answer already —
+   * whoever wrote the French one made the decision — so the model reads it off
+   * instead of guessing.
+   *
+   * It is never citable. Its refs are not in the allowed list, so a proposal
+   * quoting it is quarantined exactly like one quoting a reference that does
+   * not exist.
+   */
+  parallelText?: string
 }
 
 export interface SummaryImportResult {
@@ -60,6 +76,8 @@ export interface SummaryImportResult {
   passageCount: number
   characterCount: number
   language: SummaryLanguage
+  /** Set when a second-language text was stored beside the passages. */
+  parallelLanguage: SummaryLanguage | null
   /** True when this chapter already existed and its passages were replaced. */
   replaced: boolean
   /** Set when the same text was already imported for this chapter. */
@@ -96,6 +114,43 @@ export async function importSummary(
     )
   }
 
+  /*
+   * The second text, and the single thing that can be wrong about it.
+   *
+   * Its language is the other one, by construction — there are two, and a pair
+   * is what makes it useful. So it is not asked for and not detected, with one
+   * exception: when detection is *confident* that it matches the primary, the
+   * import refuses. That is not a language question, it is a paste that went
+   * wrong — the same text in both boxes, which would hand the model every
+   * sentence twice and teach it nothing about names. An unconfident guess is
+   * ignored here rather than escalated: unlike the primary language it decides
+   * nothing downstream, since no excerpt is ever quoted from this text.
+   */
+  const parallelText = request.parallelText?.trim() ?? ''
+  let parallelLanguage: SummaryLanguage | null = null
+
+  if (parallelText.length > 0) {
+    if (parallelText.length < MIN_SUMMARY_CHARS) {
+      throw new IngestionRejection(
+        'parallel_too_short',
+        `Le texte dans l'autre langue fait ${parallelText.length} caractères ; ` +
+          `il en faut au moins ${MIN_SUMMARY_CHARS}.`,
+        'Il sert à lire les noms des deux côtés : trop court, il ne contient ' +
+          'aucune correspondance exploitable. Laissez-le vide plutôt qu’à moitié.',
+      )
+    }
+
+    if (parallelText.length > MAX_SUMMARY_CHARS) {
+      throw new IngestionRejection(
+        'parallel_too_long',
+        `Le texte dans l'autre langue fait ${parallelText.length} caractères ` +
+          `(maximum ${MAX_SUMMARY_CHARS}).`,
+        'Il est fourni au modèle à chaque tranche : sa longueur se paie autant ' +
+          'que celle du texte principal.',
+      )
+    }
+  }
+
   const passages = splitPassages(text)
   if (passages.length === 0) {
     throw new IngestionRejection(
@@ -112,8 +167,17 @@ export async function importSummary(
    * must not re-run the pipeline; changing a sentence is a different source and
    * must. Hashing what actually gets stored — and therefore what the model will
    * actually read — is the only version of that test that cannot be wrong.
+   *
+   * Which is why the second text counts too, though nothing cites it: the
+   * pipeline reads it, so changing it changes the names that come out. Appended
+   * rather than mixed in, so a chapter that has none hashes to exactly what it
+   * hashed to before this existed — re-importing a chapter you have not touched
+   * must stay a no-op rather than become a rewrite that orphans its evidence.
    */
-  const fingerprint = createHash('sha256').update(passages.join('\n\n')).digest('hex')
+  const fingerprint = createHash('sha256')
+    .update(passages.join('\n\n'))
+    .update(parallelText.length > 0 ? `\n\n<<parallèle>>\n\n${parallelText}` : '')
+    .digest('hex')
 
   /*
    * The language is asked for when it cannot be told.
@@ -138,6 +202,20 @@ export async function importSummary(
       )
     }
     language = guess.language
+  }
+
+  if (parallelText.length > 0) {
+    const guess = detectLanguage(parallelText)
+    if (guess.confident && guess.language === language) {
+      throw new IngestionRejection(
+        'parallel_same_language',
+        `Les deux textes semblent être en ${language === 'fr' ? 'français' : 'anglais'}.`,
+        'Le second texte doit être la version du chapitre dans l’autre langue : ' +
+          'c’est la mise en regard qui donne la forme française des noms. ' +
+          'Vérifiez que vous n’avez pas collé deux fois le même résumé.',
+      )
+    }
+    parallelLanguage = language === 'fr' ? 'en' : 'fr'
   }
 
   return withIngest(async (db) => {
@@ -171,6 +249,16 @@ export async function importSummary(
       title: request.title ?? null,
       volume: request.volume ?? null,
       language,
+      /*
+       * Written on every import, null included.
+       *
+       * Same rule as the passages: an import states the whole source, it does
+       * not add to it. Re-importing without the second text is how you remove
+       * one, and leaving the old one in place would keep feeding the model a
+       * translation of a summary you have since rewritten.
+       */
+      parallelText: parallelText.length > 0 ? parallelText : null,
+      parallelLanguage,
       sourceKind: 'summary' as const,
       sourceFingerprint: fingerprint,
       status: 'uploaded' as const,
@@ -191,6 +279,7 @@ export async function importSummary(
           passageCount: passages.length,
           characterCount: text.length,
           language,
+          parallelLanguage,
           replaced: true,
           unchanged: true,
         }
@@ -247,6 +336,7 @@ export async function importSummary(
       passageCount: passages.length,
       characterCount: text.length,
       language,
+      parallelLanguage,
       replaced,
       unchanged: false,
     }

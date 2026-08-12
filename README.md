@@ -65,6 +65,13 @@ convention plutôt que du texte — « Straw Hat Pirates » oui, « Going Merry 
 peut-être pas — le modèle le déclare au lieu de trancher, l'entité part en revue
 avec un champ modifiable, et votre réponse sert à tous les chapitres suivants.
 
+Si vous avez le chapitre dans les deux langues, collez la seconde version au
+même endroit : elle est fournie au modèle **pour les noms seulement**. La mise
+en regard contient la réponse que ni l'un ni l'autre texte ne donne seul, donc
+le modèle la lit au lieu de la deviner. Elle n'est jamais citable — un fait
+qu'elle seule énoncerait n'entre pas dans le graphe, et une preuve qui la
+citerait est mise en quarantaine comme n'importe quelle référence inventée.
+
 ---
 
 ## Installation

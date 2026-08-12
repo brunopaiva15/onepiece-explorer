@@ -183,6 +183,19 @@ export async function importSummaryAction(
       }
     }
 
+    /*
+     * The other-language version, optional and never a second source.
+     *
+     * Read as a plain field rather than validated here: length and language
+     * belong to the importer, which is where the same rules apply to the
+     * primary text and where a rejection can explain itself in the same terms.
+     */
+    const parallelRaw = formData.get('parallelSummary')
+    const parallelSummary =
+      typeof parallelRaw === 'string' && parallelRaw.trim().length > 0
+        ? parallelRaw.slice(0, MAX_SUMMARY_CHARS + 1)
+        : undefined
+
     const volumeRaw = formData.get('volume')
     const volume = volumeRaw ? Number(volumeRaw) : undefined
     // Absent means unchecked: a checkbox posts nothing when it is off, so the
@@ -203,6 +216,7 @@ export async function importSummaryAction(
       ...(text(formData.get('title')) ? { title: text(formData.get('title')) } : {}),
       ...(Number.isFinite(volume) && volume !== undefined ? { volume } : {}),
       ...(language ? { language } : {}),
+      ...(parallelSummary ? { parallelText: parallelSummary } : {}),
     })
 
     /*

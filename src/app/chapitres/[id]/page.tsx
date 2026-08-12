@@ -154,6 +154,40 @@ export default async function ChapterPage({
             ))}
           </ol>
 
+          {chapter.parallelText !== null && (
+            /*
+             * The second text, shown as prose and never numbered.
+             *
+             * The numbering above is the vocabulary of citation — a proposal
+             * points at passage 7 — and this text can be pointed at by nothing.
+             * Giving it numbers of its own would suggest otherwise on the one
+             * page where the distinction has to be legible, so it keeps a shape
+             * that cannot be cited: a paragraph, behind a toggle, stated for
+             * what it is.
+             */
+            <details className="mt-8 border-[3px] border-ink bg-surface-raised">
+              <summary className="cursor-pointer px-3 py-2.5 font-display text-sm uppercase text-primary">
+                Le même chapitre en{' '}
+                {chapter.parallelLanguage === 'fr' ? 'français' : 'anglais'}
+                <span className="ml-2 font-sans normal-case text-muted">
+                  {chapter.parallelText.length} caractères · non citable
+                </span>
+              </summary>
+              <div className="border-t-[3px] border-ink px-3 py-2.5">
+                <p className="text-sm text-secondary">
+                  Fourni au modèle pour les noms uniquement&nbsp;: la mise en
+                  regard des deux langues donne la forme française d&apos;un nom
+                  au lieu de la lui faire deviner. Aucune preuve ne peut renvoyer
+                  ici, et un fait que ce texte serait seul à énoncer n&apos;entre
+                  pas dans le graphe.
+                </p>
+                <p className="mt-3 whitespace-pre-wrap text-primary">
+                  {chapter.parallelText}
+                </p>
+              </div>
+            </details>
+          )}
+
           <p className="mt-10 border-t border-line pt-6 text-sm text-muted">
             Chaque proposition devra citer mot pour mot un de ces passages. Un
             extrait qui n&apos;y apparaît pas est mis en quarantaine et

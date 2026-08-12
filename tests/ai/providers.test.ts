@@ -7,6 +7,7 @@ import {
   filterExtraction,
   type OntologyView,
 } from '@/domains/ai/anchoring.ts'
+import { extractionSystem, parallelText } from '@/domains/ai/prompts.ts'
 import { costCents, PRICING } from '@/domains/ai/provider.ts'
 import {
   clampPanelDescriptions,
@@ -18,7 +19,7 @@ import { cassetteKey, ReplayProvider } from '@/domains/ai/replay.ts'
 import { properNouns, SyntheticProvider } from '@/domains/ai/synthetic.ts'
 import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
 import type { ExtractRequest, ModelProvider } from '@/domains/ai/provider.ts'
-import { sliceChapter, splitSlice } from '@/domains/pipeline/steps/extract.ts'
+import { parallelWindow, sliceChapter, splitSlice } from '@/domains/pipeline/steps/extract.ts'
 
 const ONTOLOGY: OntologyView = {
   nodeTypes: new Set(NODE_TYPES.map((t) => t.key)),
@@ -484,5 +485,76 @@ describe('splitting a slice that failed', () => {
     const halves = splitSlice({ descriptions: panelsOf(1), blocks: [] })
     expect(halves).toHaveLength(1)
     expect(halves[0]!.descriptions).toHaveLength(1)
+  })
+})
+
+describe('the other-language text, windowed to a slice', () => {
+  /**
+   * The second text is a naming aid: it earns its tokens where it overlaps the
+   * passages being read, and nowhere else. Sending the whole translation with
+   * every slice would pay for the chapter once per call and bury the two
+   * sentences that carry the name in the forty that do not.
+   *
+   * Alignment is positional, because the two texts tell the same chapter in the
+   * same order and putting a name beside its translation is all this has to
+   * achieve. What must hold is the margin: two writers split their paragraphs
+   * differently, so the window has to overshoot rather than clip.
+   */
+  const parallelOf = (n: number): string[] =>
+    Array.from({ length: n }, (_, i) => `passage ${i + 1}`)
+
+  it('takes the matching stretch, with a margin on each side', () => {
+    const window = parallelWindow(parallelOf(20), { from: 10, to: 14 }, 20)
+
+    expect(window).toContain('passage 11')
+    expect(window).toContain('passage 15')
+    // The margin: one passage before and after, for the drift between two
+    // writers who cut their paragraphs in different places.
+    expect(window).toContain('passage 10')
+    expect(window).toContain('passage 16')
+    expect(window).not.toContain('passage 1')
+  })
+
+  it('scales when the two texts are cut into different numbers of passages', () => {
+    // Ten passages against forty: the second half of one is the second half of
+    // the other, whatever the counts.
+    const window = parallelWindow(parallelOf(10), { from: 20, to: 39 }, 40)
+    expect(window).not.toContain('passage 1')
+    expect(window).toContain('passage 10')
+  })
+
+  it('sends a short text whole rather than slicing it to nothing', () => {
+    expect(parallelWindow(parallelOf(3), { from: 0, to: 0 }, 40)).toHaveLength(3)
+  })
+
+  it('returns nothing when there is no second text', () => {
+    expect(parallelWindow([], { from: 0, to: 5 }, 40)).toEqual([])
+  })
+})
+
+describe('the extraction prompt about the other-language text', () => {
+  it('says nothing about it when there is none', () => {
+    // Describing a document that was not supplied is the same failure as
+    // telling a model reading prose to consult "les pages fournies": a model
+    // told to look at an absent text is a model invited to imagine one.
+    const system = extractionSystem('ontologie', 'summary')
+    expect(system).not.toContain('parallèle')
+  })
+
+  it('states that it cannot be cited, and what it is for', () => {
+    const system = extractionSystem('ontologie', 'summary', true)
+    expect(system).toContain('parallèle')
+    expect(system).toContain('source_term')
+    expect(system).toMatch(/n'est PAS citable|n’est PAS citable/)
+  })
+
+  it('labels the passages by language rather than numbering them', () => {
+    // A number here would read as a ref, and a ref is exactly what these do not
+    // have. Lending them the vocabulary of citation is how a model comes to
+    // cite them.
+    const rendered = parallelText('en', ['He hands over his straw hat.'])
+    expect(rendered).toContain('parallèle-en')
+    expect(rendered).toContain('He hands over his straw hat.')
+    expect(rendered).not.toMatch(/\[b\d+\]/)
   })
 })

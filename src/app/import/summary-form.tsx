@@ -47,6 +47,13 @@ export function SummaryForm({ suggestedNumber }: Props) {
     null,
   )
   const [text, setText] = useState('')
+  /*
+   * The same chapter in the other language, held beside the text rather than
+   * inside it. It is not part of the source: nothing cites it, and it is sent
+   * to the model only so that a French name can be read off a translation
+   * instead of guessed one chapter at a time.
+   */
+  const [parallel, setParallel] = useState('')
   const [language, setLanguage] = useState<SummaryLanguage | 'auto'>('auto')
   const [autoRun, setAutoRun] = useState(true)
   /*
@@ -78,6 +85,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
   if (state?.ok && state !== lastImport) {
     setLastImport(state)
     setText('')
+    setParallel('')
     setLanguage('auto')
     setNextNumber((current) => current + 1)
   }
@@ -105,6 +113,31 @@ export function SummaryForm({ suggestedNumber }: Props) {
   const tooShort = trimmed.length > 0 && trimmed.length < MIN_SUMMARY_CHARS
   const tooLong = trimmed.length > MAX_SUMMARY_CHARS
   const calls = Math.max(1, Math.ceil(passages.length / PASSAGES_PER_CALL))
+
+  /*
+   * The other-language version, and the one mistake it can carry.
+   *
+   * Its language is not asked for: there are two, and the pair is the point.
+   * What is checked is that it is not the *same* one — the same summary pasted
+   * into both boxes teaches the model nothing about names and doubles what
+   * every slice costs. Checked here as well as on the server so the answer
+   * arrives while the paste is still on screen.
+   */
+  const parallelTrimmed = parallel.trim()
+  const parallelGuess = useMemo(
+    () =>
+      parallelTrimmed.length >= MIN_SUMMARY_CHARS ? detectLanguage(parallelTrimmed) : null,
+    [parallelTrimmed],
+  )
+  const parallelTooShort =
+    parallelTrimmed.length > 0 && parallelTrimmed.length < MIN_SUMMARY_CHARS
+  const parallelTooLong = parallelTrimmed.length > MAX_SUMMARY_CHARS
+  const parallelSameLanguage =
+    effective !== null &&
+    parallelGuess !== null &&
+    parallelGuess.confident &&
+    parallelGuess.language === effective
+  const otherLanguage = effective === null ? null : effective === 'fr' ? 'en' : 'fr'
 
   return (
     <form action={submit} className="mt-8 space-y-7">
@@ -271,10 +304,90 @@ export function SummaryForm({ suggestedNumber }: Props) {
           </p>
         </fieldset>
 
+        {/* --- The same chapter, in the other language --------------------- */}
+        <details className="rounded-sm border border-line p-4">
+          <summary className="cursor-pointer text-sm font-medium text-primary">
+            Le même chapitre dans l’autre langue
+            <span className="font-normal text-muted"> (facultatif)</span>
+            {parallelTrimmed.length > 0 && (
+              <span className="badge badge-gris ml-2">
+                {otherLanguage ?? 'autre langue'}
+              </span>
+            )}
+          </summary>
+
+          <p className="mt-3 max-w-3xl text-sm text-secondary">
+            Si vous avez les deux versions, collez la seconde ici. Elle{' '}
+            <strong>n’est pas une source</strong>&nbsp;: rien ne pourra la citer, et
+            un fait qu’elle seule énonce n’entrera pas dans le graphe. Elle sert à
+            lire la correspondance des noms — « Straw Hat Pirates » en regard de
+            « Équipage du Chapeau de Paille » —, ce qu’aucun texte seul ne peut
+            donner. Le modèle cesse alors de deviner la forme française&nbsp;: il la
+            lit.
+          </p>
+
+          <textarea
+            name="parallelSummary"
+            // Labelled here rather than by a <label>: the visible name sits in
+            // the <summary> of the disclosure, which cannot label a control.
+            aria-label="Le même chapitre dans l’autre langue"
+            value={parallel}
+            onChange={(event) => setParallel(event.target.value)}
+            maxLength={MAX_SUMMARY_CHARS}
+            rows={8}
+            spellCheck
+            placeholder={
+              otherLanguage === 'fr'
+                ? 'La version française du même chapitre.'
+                : otherLanguage === 'en'
+                  ? 'The same chapter, in English.'
+                  : 'La version du chapitre dans l’autre langue.'
+            }
+            className="mt-3 w-full resize-y rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 font-sans text-primary placeholder:text-muted/70"
+          />
+
+          {parallelTrimmed.length > 0 && (
+            <p className="mt-2 text-sm text-muted">
+              {parallelTrimmed.length} caractères, fournis au modèle à chaque
+              tranche — pour les noms, jamais comme preuve.
+            </p>
+          )}
+
+          {parallelTooShort && (
+            <p className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink">
+              Encore {MIN_SUMMARY_CHARS - parallelTrimmed.length} caractères, ou
+              laissez vide&nbsp;: trop court, ce texte ne contient aucune
+              correspondance de noms exploitable.
+            </p>
+          )}
+          {parallelTooLong && (
+            <p className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
+              Au-delà de {MAX_SUMMARY_CHARS} caractères.
+            </p>
+          )}
+          {parallelSameLanguage && (
+            <p
+              role="alert"
+              className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white"
+            >
+              Ce texte semble être dans la même langue que le premier. C’est la
+              mise en regard des deux langues qui donne les noms&nbsp;; deux fois
+              le même résumé ne donne rien et double le coût de chaque tranche.
+            </p>
+          )}
+        </details>
+
         <div className="flex flex-wrap items-center gap-4">
           <button
             type="submit"
-            disabled={tooShort || tooLong || mustChooseLanguage}
+            disabled={
+              tooShort ||
+              tooLong ||
+              mustChooseLanguage ||
+              parallelTooShort ||
+              parallelTooLong ||
+              parallelSameLanguage
+            }
             className="bouton bouton-primaire !text-lg"
           >
             {pending

@@ -13,6 +13,7 @@ import {
   descriptionSystem,
   extractionSystem,
   glossaryList,
+  parallelText,
   refList,
   resolutionSystem,
   summarySystem,
@@ -213,7 +214,9 @@ export class AnthropicProvider implements ModelProvider {
      * part of the request. What changes per call — the descriptions and the text
      * blocks — goes after the cache breakpoint.
      */
-    const system = cacheable(extractionSystem(request.ontology, request.source))
+    const system = cacheable(
+      extractionSystem(request.ontology, request.source, request.parallel !== undefined),
+    )
     await this.warm(modelFor('extract'), system)
 
     const known =
@@ -268,6 +271,18 @@ export class AnthropicProvider implements ModelProvider {
           type: 'text',
           text: untrusted(`chapitre-${request.chapterNumber}`, blocks),
         },
+        // After the citable text, never before it. The passages a proposal must
+        // quote are what the model should be reading when it writes one; the
+        // translation is there to be consulted about a name, and its position
+        // says so.
+        ...(request.parallel
+          ? [
+              {
+                type: 'text' as const,
+                text: parallelText(request.parallel.language, request.parallel.passages),
+              },
+            ]
+          : []),
       ],
     })
 
