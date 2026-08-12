@@ -5,6 +5,7 @@ import { chapters, pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { reviewItems } from '@/db/schema/ingestion.ts'
 import { entityLabels } from '@/db/schema/knowledge.ts'
 import type { EvidenceRef } from '@/domains/ai/schemas.ts'
+import { groupDuplicates, type DuplicateInfo } from '@/domains/review/duplicates.ts'
 import { storage } from '@/domains/storage/index.ts'
 
 /**
@@ -48,6 +49,14 @@ export interface ReviewItemView {
   evidence: EvidenceView[]
   /** For resolution items: the existing entity's current display label. */
   relatedLabel: string | null
+  /**
+   * Set when another item of this run proposes the same thing.
+   *
+   * Counted over every item of the run, not just the pending page: a copy
+   * accepted in an earlier batch is exactly the one that changes the right
+   * answer for the card on screen, and it is no longer in the queue.
+   */
+  duplicate: DuplicateInfo | null
 }
 
 export interface ReviewQueue {
@@ -108,6 +117,26 @@ export async function getReviewQueue(
       .orderBy(desc(reviewItems.priority), asc(reviewItems.confidence))
       .limit(limit)
 
+    /*
+     * Every item of the run, decided ones included, for duplicate grouping.
+     *
+     * Separate from the display query on purpose. That one is paginated and
+     * filtered to what is still pending, which is right for what it shows and
+     * wrong for this: the copy that matters most is the one already accepted and
+     * therefore absent from the queue. Same ordering, so the rank shown to the
+     * reviewer ("2e des 3") follows the order they are walking.
+     */
+    const forGrouping = await db
+      .select({
+        id: reviewItems.id,
+        category: reviewItems.category,
+        payload: reviewItems.payload,
+        status: reviewItems.status,
+      })
+      .from(reviewItems)
+      .where(and(eq(reviewItems.runId, runId), eq(reviewItems.userId, userId)))
+      .orderBy(desc(reviewItems.priority), asc(reviewItems.confidence))
+
     const counts = await db.execute<{ status: string; count: number }>(sql`
       SELECT status, count(*)::int AS count
       FROM review_items
@@ -127,7 +156,7 @@ export async function getReviewQueue(
         ),
       )
 
-    return { head, rows, counts, explicit: explicit?.count ?? 0 }
+    return { head, rows, forGrouping, counts, explicit: explicit?.count ?? 0 }
   })
 
   if (!data) return null
@@ -139,6 +168,7 @@ export async function getReviewQueue(
   )
 
   const byStatus = new Map(data.counts.map((row) => [row.status, Number(row.count)]))
+  const duplicates = groupDuplicates(data.forGrouping)
 
   return {
     runId,
@@ -170,6 +200,7 @@ export async function getReviewQueue(
       relatedLabel: relatedEntityId(row.payload)
         ? (labelById.get(relatedEntityId(row.payload)!) ?? null)
         : null,
+      duplicate: duplicates.get(row.id) ?? null,
     })),
     counts: {
       pending: byStatus.get('proposed') ?? 0,

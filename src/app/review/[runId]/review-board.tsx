@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
+import type { DuplicateInfo } from '@/domains/review/duplicates.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
 import type { DecisionKind, PublishResult } from '@/domains/review/publish.ts'
 import { publishDecisionsAction } from './actions.ts'
@@ -54,6 +55,37 @@ export function ReviewBoard({ queue }: Props) {
 
   const items = queue.items
   const current = items[cursor]
+
+  /*
+   * Where each proposal's copies sit in the queue.
+   *
+   * A chapter is extracted in slices, so the same character is genuinely
+   * proposed twice — and the two cards can be forty apart in a queue of eighty.
+   * Nothing on screen used to connect them, which left "have I already accepted
+   * this one?" to memory, across a sitting. It is the one question the interface
+   * can answer outright.
+   */
+  const twinsByKey = useMemo(() => {
+    const positions = new Map<string, number[]>()
+    for (const [index, item] of items.entries()) {
+      const key = item.duplicate?.key
+      if (key === undefined) continue
+      const known = positions.get(key)
+      if (known) known.push(index)
+      else positions.set(key, [index])
+    }
+    return positions
+  }, [items])
+
+  const twinsOfCurrent = useMemo(() => {
+    if (!current?.duplicate) return []
+    return (twinsByKey.get(current.duplicate.key) ?? [])
+      .filter((position) => position !== cursor)
+      .map((position) => ({
+        position,
+        decision: decisions.get(items[position]!.id) ?? null,
+      }))
+  }, [current, cursor, decisions, items, twinsByKey])
 
   const decide = useCallback(
     (id: string, decision: DecisionKind) => {
@@ -120,16 +152,60 @@ export function ReviewBoard({ queue }: Props) {
    * wrong, and a button that swept them up would make the "explicit review"
    * flag decorative.
    */
-  const bulkEligible = useMemo(
-    () =>
-      items.filter(
-        (item) =>
-          !item.requiresExplicitReview &&
-          item.confidence >= 0.7 &&
-          !decisions.has(item.id),
-      ),
-    [items, decisions],
-  )
+  const bulkEligible = useMemo(() => {
+    /*
+     * One copy per proposal, never two.
+     *
+     * Bulk accept used to sweep both halves of a duplicate — same confidence,
+     * same flags, so both passed the filter — and published two nodes for one
+     * character in a single click. A group is claimed by the first copy that
+     * takes it: one already accepted in an earlier batch, one the reviewer has
+     * marked by hand, or failing both, the first eligible copy here. The rest
+     * are left undecided rather than rejected, because which copy to keep is a
+     * judgement and this button does not make judgements.
+     */
+    const claimed = new Set<string>()
+    for (const item of items) {
+      const key = item.duplicate?.key
+      if (key === undefined) continue
+      if (item.duplicate!.others.accepted > 0) claimed.add(key)
+      if (decisions.get(item.id) === 'accept') claimed.add(key)
+    }
+
+    const picked: ReviewItemView[] = []
+    for (const item of items) {
+      if (item.requiresExplicitReview || item.confidence < 0.7 || decisions.has(item.id)) {
+        continue
+      }
+      const key = item.duplicate?.key
+      if (key !== undefined) {
+        if (claimed.has(key)) continue
+        claimed.add(key)
+      }
+      picked.push(item)
+    }
+    return picked
+  }, [items, decisions])
+
+  /**
+   * Copies of one proposal marked "accept" more than once, right now.
+   *
+   * Shown next to the publish button rather than blocking it: publishing both is
+   * a legitimate thing to want if the reviewer decided the two appearances are
+   * two different characters. It just must not happen by inattention.
+   */
+  const doubleAccepted = useMemo(() => {
+    let extra = 0
+    for (const [, positions] of twinsByKey) {
+      const first = items[positions[0]!]!
+      const already = first.duplicate?.others.accepted ?? 0
+      const marked = positions.filter(
+        (position) => decisions.get(items[position]!.id) === 'accept',
+      ).length
+      if (already + marked > 1) extra += already + marked - 1
+    }
+    return extra
+  }, [decisions, items, twinsByKey])
 
   function acceptBulk(): void {
     setDecisions((previous) => {
@@ -223,6 +299,16 @@ export function ReviewBoard({ queue }: Props) {
             {counts.defer > 0 && <span className="badge badge-gris">{counts.defer} ⏸</span>}
           </div>
 
+          {doubleAccepted > 0 && (
+            <span
+              className="badge badge-rouge"
+              title="Deux copies d’une même proposition acceptées : le graphe recevra deux nœuds, que rien ne rapprochera ensuite."
+            >
+              {doubleAccepted} doublon{doubleAccepted > 1 ? 's' : ''} accepté
+              {doubleAccepted > 1 ? 's' : ''}
+            </span>
+          )}
+
           <div className="ml-auto flex flex-wrap gap-2">
             {bulkEligible.length > 0 && (
               <button
@@ -262,7 +348,12 @@ export function ReviewBoard({ queue }: Props) {
                 <button
                   type="button"
                   onClick={() => setCursor(index)}
-                  aria-label={`Proposition ${index + 1}`}
+                  aria-label={
+                    item.duplicate
+                      ? `Proposition ${index + 1}, copie ${item.duplicate.rank} sur ${item.duplicate.total}`
+                      : `Proposition ${index + 1}`
+                  }
+                  title={item.duplicate ? `Doublon · copie ${item.duplicate.rank}/${item.duplicate.total}` : undefined}
                   aria-current={index === cursor}
                   className={`block h-3 w-3 border-2 ${
                     index === cursor ? 'border-ink ring-2 ring-[var(--accent)]' : 'border-ink/40'
@@ -299,6 +390,8 @@ export function ReviewBoard({ queue }: Props) {
           onRename={(label) =>
             setRenames((previous) => new Map(previous).set(current.id, label))
           }
+          twins={twinsOfCurrent}
+          onJump={setCursor}
         />
       )}
     </section>
@@ -358,6 +451,13 @@ function PublishSummary({
   )
 }
 
+/** A copy of the proposal on screen, and what has been decided about it. */
+interface Twin {
+  /** Its index in the queue, so the reviewer can jump to it. */
+  position: number
+  decision: DecisionKind | null
+}
+
 function ProposalCard({
   item,
   index,
@@ -367,6 +467,8 @@ function ProposalCard({
   onMove,
   rename,
   onRename,
+  twins,
+  onJump,
 }: {
   item: ReviewItemView
   index: number
@@ -376,6 +478,8 @@ function ProposalCard({
   onMove: (delta: number) => void
   rename: string | null
   onRename: (label: string) => void
+  twins: Twin[]
+  onJump: (position: number) => void
 }) {
   return (
     <article className="mt-4 grid gap-4 lg:grid-cols-[3fr_2fr]">
@@ -421,6 +525,13 @@ function ProposalCard({
               >
                 Revue explicite obligatoire
               </p>
+            )}
+            {item.duplicate && (
+              <DuplicateNotice
+                duplicate={item.duplicate}
+                twins={twins}
+                onJump={onJump}
+              />
             )}
             <ProposalBody
               category={item.category}
@@ -476,6 +587,93 @@ function ProposalCard({
       </div>
     </article>
   )
+}
+
+/**
+ * "Have I already accepted this one?", answered on the card.
+ *
+ * The copies are listed with what was decided about each, and each is a button:
+ * the reviewer can go and look rather than trust a summary. What it never does
+ * is decide — two copies can legitimately both be accepted when the reviewer
+ * judges the appearances to be two different characters, which is precisely the
+ * case the extraction prompt is written to produce. This states the situation
+ * and hands it back.
+ */
+function DuplicateNotice({
+  duplicate,
+  twins,
+  onJump,
+}: {
+  duplicate: DuplicateInfo
+  twins: Twin[]
+  onJump: (position: number) => void
+}) {
+  const published = duplicate.others.accepted
+  const markedElsewhere = twins.some((twin) => twin.decision === 'accept')
+  const discarded = duplicate.others.rejected + duplicate.others.deferred
+
+  return (
+    <div
+      className={`mb-3 border-[3px] border-ink px-2 py-1.5 ${
+        published > 0 || markedElsewhere
+          ? 'bg-[var(--coral)] text-white'
+          : 'bg-[var(--epi-hypothetical)] text-ink'
+      }`}
+    >
+      <p className="font-display text-sm uppercase">
+        Doublon · copie {duplicate.rank} sur {duplicate.total}
+      </p>
+
+      <p className="mt-1 text-sm">
+        {published > 0
+          ? `${published} copie${published > 1 ? 's' : ''} déjà acceptée${
+              published > 1 ? 's' : ''
+            } et publiée${published > 1 ? 's' : ''} : accepter celle-ci ajouterait un ` +
+            `second nœud au graphe, que rien ne rapprochera ensuite.`
+          : markedElsewhere
+            ? 'Une autre copie est déjà marquée « accepter ». Une seule suffit.'
+            : 'Le chapitre est extrait par tranches, et la même proposition revient ' +
+              'd’une tranche à l’autre. N’en acceptez qu’une — sauf si vous jugez ' +
+              'qu’il s’agit de deux apparitions différentes.'}
+      </p>
+
+      {discarded > 0 && (
+        <p className="mt-1 text-sm">
+          {duplicate.others.rejected > 0 &&
+            `${duplicate.others.rejected} rejetée(s)`}
+          {duplicate.others.rejected > 0 && duplicate.others.deferred > 0 && ' · '}
+          {duplicate.others.deferred > 0 &&
+            `${duplicate.others.deferred} reportée(s)`}
+          {' lors d’une publication précédente.'}
+        </p>
+      )}
+
+      {twins.length > 0 && (
+        <ul className="mt-1.5 flex flex-wrap gap-1.5">
+          {twins.map((twin) => (
+            <li key={twin.position}>
+              <button
+                type="button"
+                onClick={() => onJump(twin.position)}
+                className="bouton !py-0.5 !text-xs"
+              >
+                n°{twin.position + 1} · {twinStateLabel(twin.decision)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function twinStateLabel(decision: DecisionKind | null): string {
+  const labels: Partial<Record<DecisionKind, string>> = {
+    accept: '✓ acceptée',
+    reject: '✕ rejetée',
+    defer: '⏸ reportée',
+  }
+  return (decision && labels[decision]) || 'pas encore décidée'
 }
 
 function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
