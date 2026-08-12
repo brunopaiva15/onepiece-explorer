@@ -1,10 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
-import { listChapters } from '@/domains/chapters/queries.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
-import { BoundarySlider } from '../boundary-slider.tsx'
 import { Portrait } from '@/app/components/portrait.tsx'
 
 export const metadata: Metadata = { title: 'Graphe — vue tableau' }
@@ -30,7 +28,6 @@ export default async function GraphTablePage({
 }) {
   const { ch } = await searchParams
   const session = await getViewerSession(ch)
-  const chapters = await listChapters(session.userId, session.workId)
   const projection = await projectGraph(session.userId, session.boundaryChapter)
 
   const labelOf = new Map(projection.nodes.map((node) => [node.id, node.label]))
@@ -60,11 +57,6 @@ export default async function GraphTablePage({
 
   return (
     <>
-      <BoundarySlider
-        boundaryChapter={session.boundaryChapter}
-        maxChapter={session.maxChapter}
-        chapters={chapters.filter((c) => c.status === 'published').map((c) => c.number)}
-      />
 
       <main id="contenu" className="mx-auto max-w-5xl px-6 py-8">
         <div className="flex flex-wrap items-end justify-between gap-4">

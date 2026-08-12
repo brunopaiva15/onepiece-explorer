@@ -2,10 +2,8 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
-import { listChapters } from '@/domains/chapters/queries.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
-import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
 import { Portrait } from '@/app/components/portrait.tsx'
 
 export const metadata: Metadata = { title: 'Fiche' }
@@ -24,23 +22,18 @@ export default async function EntityPage({
 
   const sheet = await getEntitySheet(session.userId, session.boundaryChapter, id)
   if (!sheet) notFound()
-
-  const [chapters, portrait] = await Promise.all([
-    listChapters(session.userId, session.workId),
-    // Every member of the identity component: after a merge the picture may
-    // hang off the half that is no longer the representative.
-    displayImage(session.userId, session.boundaryChapter, sheet.memberIds),
-  ])
+  // Every member of the identity component: after a merge the picture may hang
+  // off the half that is no longer the representative.
+  const portrait = await displayImage(
+    session.userId,
+    session.boundaryChapter,
+    sheet.memberIds,
+  )
   const outgoing = sheet.facts.filter((fact) => fact.direction === 'outgoing')
   const incoming = sheet.facts.filter((fact) => fact.direction === 'incoming')
 
   return (
     <>
-      <BoundarySlider
-        boundaryChapter={session.boundaryChapter}
-        maxChapter={session.maxChapter}
-        chapters={chapters.filter((c) => c.status === 'published').map((c) => c.number)}
-      />
 
       <main id="contenu" className="mx-auto max-w-4xl px-6 py-8">
         <nav className="text-sm">

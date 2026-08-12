@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { display, sans } from './fonts.ts'
-import { SiteFooter, SiteHeader } from './site-header.tsx'
+import { AppShell } from './ui/app-shell.tsx'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -37,9 +37,7 @@ export default function RootLayout({
         <a href="#contenu" className="skip-link">
           Aller au contenu principal
         </a>
-        <SiteHeader />
-        {children}
-        <SiteFooter />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   )

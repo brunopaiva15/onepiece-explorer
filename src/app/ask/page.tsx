@@ -1,10 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
-import { listChapters } from '@/domains/chapters/queries.ts'
 import { ask } from '@/domains/assistant/answer.ts'
 import { hasModelCredentials, isAssistantEnabled } from '@/lib/env.ts'
-import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
 
 export const metadata: Metadata = { title: 'Question' }
 export const dynamic = 'force-dynamic'
@@ -28,7 +26,6 @@ export default async function AskPage({
 }) {
   const { ch, q } = await searchParams
   const session = await getReaderSession(ch)
-  const chapters = await listChapters(session.userId, session.workId)
 
   const question = (q ?? '').trim()
   const answer = question
@@ -37,11 +34,6 @@ export default async function AskPage({
 
   return (
     <>
-      <BoundarySlider
-        boundaryChapter={session.boundaryChapter}
-        maxChapter={session.maxChapter}
-        chapters={chapters.filter((c) => c.status === 'published').map((c) => c.number)}
-      />
 
       <main id="contenu" className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="text-3xl font-semibold text-primary">Poser une question</h1>

@@ -1,10 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
-import { listChapters } from '@/domains/chapters/queries.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
-import { BoundarySlider } from './boundary-slider.tsx'
 import { GraphCanvas } from './graph-canvas.tsx'
 
 export const metadata: Metadata = { title: 'Graphe' }
@@ -29,7 +27,6 @@ export default async function GraphPage({
   // string is untrusted input, and one that widened what the reader can see
   // would be the whole product failing at once.
   const session = await getViewerSession(ch)
-  const chapters = await listChapters(session.userId, session.workId)
 
   const nodeTypes = type ? type.split(',').filter(Boolean) : undefined
   const projection = await projectGraph(session.userId, session.boundaryChapter, {
@@ -69,11 +66,6 @@ export default async function GraphPage({
 
   return (
     <>
-      <BoundarySlider
-        boundaryChapter={session.boundaryChapter}
-        maxChapter={session.maxChapter}
-        chapters={chapters.filter((c) => c.status === 'published').map((c) => c.number)}
-      />
 
       <main id="contenu" className="mx-auto max-w-6xl px-6 py-8">
         <div className="flex flex-wrap items-end justify-between gap-4">

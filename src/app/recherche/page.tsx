@@ -1,10 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
-import { listChapters } from '@/domains/chapters/queries.ts'
 import { search, shortestPath, type SearchHit } from '@/domains/search/index.ts'
 import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
-import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
 import { Portrait } from '@/app/components/portrait.tsx'
 
 export const metadata: Metadata = { title: 'Recherche' }
@@ -26,7 +24,6 @@ export default async function SearchPage({
 }) {
   const { ch, q, de, vers } = await searchParams
   const session = await getViewerSession(ch)
-  const chapters = await listChapters(session.userId, session.workId)
 
   const query = (q ?? '').trim()
   const results = query
@@ -48,11 +45,6 @@ export default async function SearchPage({
 
   return (
     <>
-      <BoundarySlider
-        boundaryChapter={session.boundaryChapter}
-        maxChapter={session.maxChapter}
-        chapters={chapters.filter((c) => c.status === 'published').map((c) => c.number)}
-      />
 
       <main id="contenu" className="mx-auto max-w-4xl px-6 py-8">
         <h1 className="text-3xl font-semibold text-primary">Recherche</h1>
