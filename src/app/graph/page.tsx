@@ -3,7 +3,8 @@ import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
-import { GraphCanvas } from './graph-canvas.tsx'
+import { NODE_TYPES } from '@/domains/knowledge/ontology.ts'
+import { GraphExplorer } from './graph-explorer.tsx'
 
 export const metadata: Metadata = { title: 'Graphe' }
 export const dynamic = 'force-dynamic'
@@ -65,57 +66,62 @@ export default async function GraphPage({
   }
 
   return (
-    <>
+    <main id="contenu" className="mx-auto max-w-[1500px] px-4 py-4">
+      {/*
+       * Counts as figures, the alternative view as a button, and no paragraph
+       * explaining the drawing — that legend now lives in the selection panel,
+       * where it is read once and then replaced by what you clicked.
+       */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <h1 className="font-display text-2xl uppercase leading-none text-primary">Graphe</h1>
 
-      <main id="contenu" className="mx-auto max-w-6xl px-6 py-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold text-primary">Graphe</h1>
-            <p className="mt-1 text-sm text-secondary">
-              {projection.nodes.length} nœud
-              {projection.nodes.length === 1 ? '' : 's'} ·{' '}
-              {projection.edges.length} relation
-              {projection.edges.length === 1 ? '' : 's'}
-              {projection.mergedAway > 0 && (
-                <>
-                  {' · '}
-                  <span title="Entités fusionnées par une identité révélée à ce chapitre ou avant">
-                    {projection.mergedAway} apparition(s) regroupée(s)
-                  </span>
-                </>
-              )}
-            </p>
-          </div>
-
-          <Link
-            href={`/graph/table?ch=${session.boundaryChapter}`}
-            className="rounded-sm border border-line-strong px-4 py-2 text-sm font-medium text-primary hover:bg-surface-raised"
+        <span className="flex items-baseline gap-1.5">
+          <span className="chiffre text-2xl">{projection.nodes.length}</span>
+          <span className="cartouche">nœuds</span>
+        </span>
+        <span className="flex items-baseline gap-1.5">
+          <span className="chiffre text-2xl">{projection.edges.length}</span>
+          <span className="cartouche">relations</span>
+        </span>
+        {projection.mergedAway > 0 && (
+          <span
+            className="flex items-baseline gap-1.5"
+            title="Entités fusionnées par une identité révélée à ce chapitre ou avant"
           >
-            Vue tableau
-          </Link>
-        </div>
-
-        {projection.truncated && (
-          <p
-            role="status"
-            className="mt-4 rounded-sm border border-[var(--epi-hypothetical)] bg-surface-raised p-3 text-sm text-primary"
-          >
-            Graphe tronqué : {projection.truncated.shown} nœuds affichés sur{' '}
-            {projection.truncated.total}. Les plus connectés sont conservés —
-            c&apos;est l&apos;ossature de l&apos;histoire, pas ses premiers
-            chapitres. Filtrez par type pour voir le reste.
-          </p>
+            <span className="chiffre text-2xl">{projection.mergedAway}</span>
+            <span className="cartouche">regroupées</span>
+          </span>
         )}
 
-        <GraphCanvas projection={projection} portraits={portraits} />
+        <Link
+          href={`/graph/table?ch=${session.boundaryChapter}`}
+          className="bouton ml-auto !py-1 !text-sm"
+        >
+          Vue tableau
+        </Link>
+      </div>
 
-        <p className="mt-6 text-sm text-muted">
-          La taille d&apos;un nœud suit son nombre de relations. La couleur d&apos;un
-          lien indique son statut : gris pour un fait affirmé, violet pour une
-          déduction, ambre pour une hypothèse. Cliquez un nœud pour ouvrir sa
-          fiche.
+      {projection.truncated && (
+        <p
+          role="status"
+          className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-1.5 text-sm text-ink"
+        >
+          Graphe tronqué : {projection.truncated.shown} nœuds sur{' '}
+          {projection.truncated.total}. Les plus connectés sont conservés —
+          c&apos;est l&apos;ossature de l&apos;histoire. Filtrez par type pour
+          voir le reste.
         </p>
-      </main>
-    </>
+      )}
+
+      <div className="mt-4">
+        <GraphExplorer
+          projection={projection}
+          portraits={portraits}
+          nodeTypes={NODE_TYPES.map((t) => ({ key: t.key, labelFr: t.labelFr }))}
+          boundaryChapter={session.boundaryChapter}
+          active={nodeTypes ?? []}
+        />
+      </div>
+    </main>
   )
 }
