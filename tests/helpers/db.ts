@@ -247,6 +247,31 @@ export async function addQuote(
   `
 }
 
+/**
+ * A portrait, hung off an entity.
+ *
+ * `revealedIn` is the reveal chapter of the *label* that matched, not the
+ * entity's first appearance: a face found by a true name must not appear
+ * before the reader learns that name.
+ */
+export async function addPortrait(
+  world: SeededWorld,
+  entityId: string,
+  input: { matchedLabel: string; revealedIn: number },
+): Promise<void> {
+  await raw`
+    INSERT INTO entity_images (
+      user_id, entity_id, source, source_ref, source_url, attribution,
+      storage_key, matched_label, match_method, match_score, revealed_in_chapter
+    ) VALUES (
+      ${world.userId}, ${entityId}, 'onepieceapi', ${randomUUID()},
+      'https://example.invalid/x', 'onepieceapi.com',
+      ${`${world.userId}/entities/${entityId}/full/x.webp`},
+      ${input.matchedLabel}, 'exact', 1, ${input.revealedIn}
+    )
+  `
+}
+
 export async function closeDb(): Promise<void> {
   await raw.end({ timeout: 5 })
 }

@@ -7,6 +7,7 @@ import {
   nodeTypeLabel,
   predicateLabel,
 } from '@/domains/knowledge/predicate-label.ts'
+import { identityComponents } from './projection.ts'
 import { describeStoryTime } from './timeline.ts'
 
 /**
@@ -44,8 +45,18 @@ export const STORY_WINDOW = 6
 const QUOTE_MIN = 40
 const QUOTE_MAX = 240
 
-/** Signed URLs are a round trip each; a thread needs a few faces, not a crowd. */
-const PORTRAITS_PER_CHAPTER = 6
+/**
+ * Faces signed per chapter.
+ *
+ * Signing is a round trip per file against the storage provider, and a window
+ * covers six chapters, so this cannot be unbounded. It counts entities that
+ * *have* a picture rather than candidates — capping the candidate list first
+ * spent the whole budget on events and groups that no catalogue illustrates,
+ * and returned a chapter with no faces at all. A chapter introducing more than
+ * sixteen illustrated entities will still lose the tail, silently; that is the
+ * one thing here that is a trade rather than a fix.
+ */
+const PORTRAITS_PER_CHAPTER = 16
 
 export type BeatKind =
   | 'chapitre'
@@ -405,16 +416,37 @@ async function withPortraits(
         .map((beat) => beat.entityId)
         .filter((id): id is string => id !== null),
     ),
-  ].slice(0, PORTRAITS_PER_CHAPTER)
-
+  ]
   if (ids.length === 0) return beats
 
-  const found = await displayImages(userId, chapter, ids)
-  return beats.map((beat) =>
-    beat.entityId && found.has(beat.entityId)
-      ? { ...beat, portrait: found.get(beat.entityId) ?? null }
-      : beat,
+  /*
+   * Every member of each identity component, not just the bead's own entity.
+   *
+   * After a merge the picture hangs off whichever half the enrichment matched,
+   * which is not necessarily the half the thread is naming. The entity sheet
+   * has always resolved the component before asking for a face; a thread that
+   * did not showed nothing for exactly the characters whose two silhouettes
+   * the reader had just seen joined.
+   */
+  const components = await identityComponents(userId, chapter, ids)
+  const candidates = [...new Set(ids.flatMap((id) => components.get(id) ?? [id]))]
+
+  const found = await displayImages(
+    userId,
+    chapter,
+    candidates,
+    PORTRAITS_PER_CHAPTER,
   )
+  if (found.size === 0) return beats
+
+  return beats.map((beat) => {
+    if (!beat.entityId) return beat
+    for (const member of components.get(beat.entityId) ?? [beat.entityId]) {
+      const portrait = found.get(member)
+      if (portrait) return { ...beat, portrait }
+    }
+    return beat
+  })
 }
 
 /**

@@ -29,10 +29,21 @@ export interface DisplayImage {
   height: number | null
 }
 
+/**
+ * `limit` caps how many pictures are *signed*, not how many are looked up.
+ *
+ * The distinction is the whole point. Signing is a round trip per file against
+ * the storage provider; the lookup is one query. A caller that trims its list
+ * of candidates before calling spends its budget on entities that may have no
+ * picture at all, and comes back with nothing — which is indistinguishable, on
+ * the page, from a catalogue that matched nobody. Hand over every candidate in
+ * priority order and let the cap fall on the ones that really have a face.
+ */
 export async function displayImages(
   userId: string,
   boundaryChapter: number,
   entityIds: string[],
+  limit?: number,
 ): Promise<Map<string, DisplayImage>> {
   const found = await imagesFor(userId, boundaryChapter, entityIds)
   if (found.size === 0) return new Map()
@@ -40,8 +51,21 @@ export async function displayImages(
   const store = storage()
   const out = new Map<string, DisplayImage>()
 
+  const seen = new Set<string>()
+  const wanted =
+    limit === undefined
+      ? [...found.values()]
+      : entityIds
+          .filter((id) => {
+            if (seen.has(id) || !found.has(id)) return false
+            seen.add(id)
+            return true
+          })
+          .slice(0, limit)
+          .map((id) => found.get(id)!)
+
   await Promise.all(
-    [...found.values()].map(async (image) => {
+    wanted.map(async (image) => {
       try {
         const [url, thumbUrl] = await Promise.all([
           store.signedUrl(image.storageKey),

@@ -5,6 +5,7 @@ import {
   addEvent,
   addLabel,
   addMystery,
+  addPortrait,
   addQuote,
   closeDb,
   createEntity,
@@ -325,6 +326,85 @@ describe('what the first real chapter showed', () => {
     const page = await read(1, 1, 4)
 
     expect(at(page, 1, 'entree')).toHaveLength(1)
+  })
+})
+
+describe('the faces on the thread', () => {
+  it('gives a character their portrait', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, {
+      matchedLabel: 'Monkey D. Luffy',
+      revealedIn: 1,
+    })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')[0]!.portrait).not.toBeNull()
+    expect(at(page, 1, 'entree')[0]!.portrait!.matchedLabel).toBe('Monkey D. Luffy')
+  })
+
+  it('does not spend its budget on entities that have no picture', async () => {
+    /*
+     * The failure this pins: a chapter introduces a crowd, the cap trims the
+     * *candidates* to the first handful, those happen to be groups and places
+     * no catalogue illustrates, and the chapter comes back with no faces —
+     * looking exactly like a chapter whose characters matched nothing.
+     */
+    // More candidates than the cap, and the only one with a face is last.
+    for (let i = 0; i < 20; i++) {
+      const extra = await createEntity(world, 'place', 1)
+      await addLabel(world, extra, `Île ${i}`, 'true_name', 1, 100)
+    }
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, {
+      matchedLabel: 'Monkey D. Luffy',
+      revealedIn: 1,
+    })
+
+    const page = await read(1, 1, 4)
+    const face = at(page, 1, 'entree').find((beat) => beat.entityId === luffy)
+
+    expect(face!.portrait).not.toBeNull()
+  })
+
+  it('finds a picture hanging off the merged half of an entity', async () => {
+    const silhouette = await createEntity(world, 'character', 1)
+    const named = await createEntity(world, 'character', 1)
+    await addLabel(world, silhouette, 'la silhouette', 'alias', 1, 10)
+    await addLabel(world, named, 'Shanks', 'true_name', 1, 100)
+    // The catalogue matched the half that carries the true name.
+    await addPortrait(world, named, { matchedLabel: 'Shanks', revealedIn: 1 })
+    await addAssertion(world, {
+      subject: silhouette,
+      predicate: 'same_as',
+      object: named,
+      knowledgeFrom: 1,
+    })
+
+    const page = await read(1, 1, 4)
+    const beat = at(page, 1, 'entree').find(
+      (candidate) => candidate.entityId === silhouette,
+    )
+
+    expect(beat!.portrait).not.toBeNull()
+    expect(beat!.portrait!.matchedLabel).toBe('Shanks')
+  })
+
+  it('never shows a face before the name that found it', async () => {
+    const stranger = await createEntity(world, 'character', 1)
+    await addLabel(world, stranger, 'l’homme au tablier de cuir', 'alias', 1, 10)
+    await addLabel(world, stranger, 'Kaelo Renn', 'true_name', 3, 100)
+    await addPortrait(world, stranger, {
+      matchedLabel: 'Kaelo Renn',
+      revealedIn: 3,
+    })
+
+    const page = await read(1, 4, 4)
+
+    expect(at(page, 1, 'entree')[0]!.portrait).toBeNull()
+    expect(at(page, 3, 'nom')[0]!.portrait).not.toBeNull()
   })
 })
 
