@@ -6,6 +6,7 @@ import {
   addLabel,
   addMystery,
   addPortrait,
+  addPresence,
   addQuote,
   closeDb,
   raw,
@@ -616,5 +617,84 @@ describe('a library with nothing in it', () => {
   it('returns nothing when the reader has read nothing', async () => {
     const page = await read(1, 5, 0)
     expect(page.beats).toEqual([])
+  })
+})
+
+/**
+ * Heard of, then seen.
+ *
+ * Koby tells Luffy about a pirate hunter named Zoro at chapter 2; Zoro walks on
+ * at chapter 3. The graph called both the same thing, because the occurrence
+ * kind was derived from the medium of the evidence and a written chapter has no
+ * drawings — so everything was a mention, and « entre en scène » fired wherever
+ * the entity was first heard of.
+ */
+describe('mentionné, puis vu', () => {
+  it('says a character is spoken of before they walk on', async () => {
+    const zoro = await createEntity(world, 'character', 2)
+    await addLabel(world, zoro, 'Roronoa Zoro', 'true_name', 2, 100)
+    await addPresence(world, zoro, { chapterNumber: 2, kind: 'mention' })
+    await addPresence(world, zoro, { chapterNumber: 3, kind: 'appearance' })
+
+    const page = await read(1, 4, 4)
+
+    expect(at(page, 2, 'mention').map((beat) => beat.text)).toEqual([
+      'Roronoa Zoro',
+    ])
+    expect(at(page, 2, 'entree')).toHaveLength(0)
+    expect(at(page, 3, 'entree').map((beat) => beat.text)).toEqual([
+      'Roronoa Zoro',
+    ])
+  })
+
+  it('walks someone on at the chapter that shows them', async () => {
+    const kuina = await createEntity(world, 'character', 3)
+    await addLabel(world, kuina, 'Kuina', 'true_name', 3, 100)
+    await addPresence(world, kuina, { chapterNumber: 3, kind: 'appearance' })
+
+    const page = await read(1, 4, 4)
+
+    expect(at(page, 3, 'entree')).toHaveLength(1)
+    expect(at(page, 3, 'mention')).toHaveLength(0)
+  })
+
+  it('leaves a library recorded before the field exactly as it was', async () => {
+    /*
+     * No stated row at all: the old answer, walking on. Occurrences written
+     * before migration 0020 say « mention » about everyone, and reading those
+     * would demote every character ever imported.
+     */
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(1)
+    expect(at(page, 1, 'mention')).toHaveLength(0)
+  })
+})
+
+describe('l’ordre des entrées en scène', () => {
+  it('introduces people before what they carry', async () => {
+    /*
+     * « Gomu Gomu no Pistol entre en scène » stood above the character whose
+     * power it is, because the order was the order the extraction happened to
+     * emit them. A chapter introduces a cast, then where they are, then what
+     * they carry.
+     */
+    const pouvoir = await createEntity(world, 'power', 1)
+    await addLabel(world, pouvoir, 'Gomu Gomu no Pistol', 'true_name', 1, 100)
+    const lieu = await createEntity(world, 'place', 1)
+    await addLabel(world, lieu, 'Village de Fuchsia', 'true_name', 1, 100)
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+
+    const beats = at(await read(1, 1, 4), 1, 'entree')
+
+    expect(beats.map((beat) => beat.text)).toEqual([
+      'Monkey D. Luffy',
+      'Village de Fuchsia',
+      'Gomu Gomu no Pistol',
+    ])
   })
 })

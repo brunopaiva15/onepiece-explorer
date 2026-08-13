@@ -356,6 +356,15 @@ export async function publishDecisions(
         })
         if (added) result.labelsCreated++
 
+        await recordPresence(db, {
+          userId,
+          entityId: twin,
+          chapterId: run.chapterId,
+          chapterNumber: run.chapterNumber,
+          kind: candidate.presence ?? 'appearance',
+          confidence: candidate.confidence,
+        })
+
         await db.insert(auditLog).values({
           userId,
           action: 'entity_reused',
@@ -410,6 +419,15 @@ export async function publishDecisions(
         // now. Importing out of order must not change when a name became known.
         revealedInChapter: run.chapterNumber,
         precedence: precedenceFor(candidate.label_kind),
+      })
+
+      await recordPresence(db, {
+        userId,
+        entityId: entity.id,
+        chapterId: run.chapterId,
+        chapterNumber: run.chapterNumber,
+        kind: candidate.presence ?? 'appearance',
+        confidence: candidate.confidence,
       })
 
       result.entitiesCreated++
@@ -1111,6 +1129,61 @@ function refusalReason(error: unknown): string {
   if (!message) return 'Refusée par la base.'
   const firstLine = message.split('\n')[0]?.trim() ?? message
   return firstLine.startsWith('Failed query') ? 'Refusée par la base.' : firstLine
+}
+
+/**
+ * Seen, or merely spoken of, at this chapter.
+ *
+ * `occurrence_kind` has carried the distinction since the schema was written
+ * and publication derived it from the *medium* of the evidence — a drawing was
+ * an appearance, text a mention. True of scanned pages, meaningless the day a
+ * chapter became prose: everything is text, so everything was a mention. The
+ * proposal says it now, because only the model reading the passage can tell
+ * « Koby parle de Zoro » from « Zoro dégaine ».
+ *
+ * Written for the entity itself rather than only for the relations it takes
+ * part in: a character can be named by a chapter and take part in nothing, and
+ * that is precisely the case this exists to record.
+ *
+ * Checked before inserting because `occurrences` has no unique index — the
+ * `onConflictDoNothing` elsewhere in this file has never had a conflict to
+ * catch, and publishing twice would stack rows.
+ */
+async function recordPresence(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    userId: string
+    entityId: string
+    chapterId: string
+    chapterNumber: number
+    kind: 'appearance' | 'mention'
+    confidence: number
+  },
+): Promise<void> {
+  const [existing] = await db
+    .select({ id: occurrences.id })
+    .from(occurrences)
+    .where(
+      and(
+        eq(occurrences.entityId, input.entityId),
+        eq(occurrences.chapterId, input.chapterId),
+        eq(occurrences.kind, input.kind),
+        eq(occurrences.stated, true),
+      ),
+    )
+    .limit(1)
+
+  if (existing) return
+
+  await db.insert(occurrences).values({
+    entityId: input.entityId,
+    userId: input.userId,
+    chapterId: input.chapterId,
+    kind: input.kind,
+    stated: true,
+    chapterNumber: input.chapterNumber,
+    confidence: input.confidence,
+  })
 }
 
 async function addMergedLabel(

@@ -72,6 +72,7 @@ const PORTRAITS_PER_CHAPTER = 16
 export type BeatKind =
   | 'chapitre'
   | 'citation'
+  | 'mention'
   | 'entree'
   | 'evenement'
   | 'souvenir'
@@ -279,15 +280,66 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
         -- refuse d'emmener Luffy » — and a sentence that names someone the
         -- reader has not been introduced to, with a face beside the name, is
         -- an introduction happening after the fact.
+        --
+        -- « entre en scène » or « est mentionné », decided by what the
+        -- extraction stated. Koby telling Luffy about a pirate hunter named
+        -- Zoro is not Zoro walking on: he is spoken of at chapter 2 and seen at
+        -- chapter 3, and the graph used to call both the same thing.
+        --
+        -- The stated flag is what keeps an existing library intact. Occurrences
+        -- written before the field say « mention » about everyone, because they
+        -- were derived from the medium of the evidence and a written chapter
+        -- has no drawings — reading those would demote every character ever
+        -- imported. With no stated row, the answer is the old one: walking on.
+        SELECT CASE WHEN EXISTS (
+                      SELECT 1 FROM occurrences o
+                       WHERE o.entity_id = en.id AND o.stated
+                         AND o.chapter_number = ${chapter}
+                         AND o.kind = 'mention')
+                    AND NOT EXISTS (
+                      SELECT 1 FROM occurrences o
+                       WHERE o.entity_id = en.id AND o.stated
+                         AND o.chapter_number = ${chapter}
+                         AND o.kind = 'appearance')
+               THEN 'mention' ELSE 'entree' END,
+               1, en.id,
+               (SELECT l.label FROM entity_labels l
+                 WHERE l.entity_id = en.id
+                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+                 LIMIT 1),
+               en.node_type, NULL::jsonb,
+               ${ENTRY_ORDER}
+          FROM entities en
+         WHERE en.first_seen_chapter = ${chapter}
+           AND NOT EXISTS (SELECT 1 FROM events e2 WHERE e2.entity_id = en.id)
+           AND NOT EXISTS (SELECT 1 FROM mysteries m2 WHERE m2.entity_id = en.id)
+
+        UNION ALL
+
+        -- Seen at last, having only been spoken of until now.
+        --
+        -- The other half of the same distinction: Zoro was named at chapter 2
+        -- and this is the chapter he walks on. Keyed on the first stated
+        -- appearance rather than on first_seen_chapter, which holds the
+        -- chapter the reader first *heard of* him — the right anchor for the
+        -- boundary, and the wrong one for this.
         SELECT 'entree', 1, en.id,
                (SELECT l.label FROM entity_labels l
                  WHERE l.entity_id = en.id
                  ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
                  LIMIT 1),
                en.node_type, NULL::jsonb,
-               extract(epoch FROM en.created_at)
+               ${ENTRY_ORDER}
           FROM entities en
-         WHERE en.first_seen_chapter = ${chapter}
+         WHERE en.first_seen_chapter < ${chapter}
+           AND EXISTS (SELECT 1 FROM occurrences o
+                        WHERE o.entity_id = en.id AND o.stated
+                          AND o.chapter_number = ${chapter}
+                          AND o.kind = 'appearance')
+           AND NOT EXISTS (SELECT 1 FROM occurrences o
+                            WHERE o.entity_id = en.id AND o.stated
+                              AND o.chapter_number < ${chapter}
+                              AND o.kind = 'appearance')
            AND NOT EXISTS (SELECT 1 FROM events e2 WHERE e2.entity_id = en.id)
            AND NOT EXISTS (SELECT 1 FROM mysteries m2 WHERE m2.entity_id = en.id)
 
@@ -372,10 +424,11 @@ function compose(row: Row, chapter: number, index: number): StoryBeat {
   const text = row.texte ?? ''
 
   switch (row.kind) {
+    case 'mention':
     case 'entree':
       return {
         ...base,
-        kind: 'entree',
+        kind: row.kind,
         text: text === '' ? 'entité sans nom révélé' : text,
         detail: row.detail ? nodeTypeLabel(row.detail) : null,
       }
@@ -562,6 +615,28 @@ const NARRATED = new Set<BeatKind>([
   'reponse',
   'dementi',
 ])
+
+/**
+ * The order people and things walk on in.
+ *
+ * Creation order is the order the extraction happened to emit them, which is
+ * how « Gomu Gomu no Pistol entre en scène » came to stand above the character
+ * whose power it is. A chapter introduces a cast, then where they are, then
+ * what they carry — nobody meets a fruit's ability before its owner.
+ *
+ * Types, then creation order inside a type. Multiplied wide enough that the
+ * epoch below it cannot reach the next rank.
+ */
+const ENTRY_ORDER = sql`
+  CASE en.node_type
+    WHEN 'character' THEN 0
+    WHEN 'group'     THEN 1
+    WHEN 'species'   THEN 2
+    WHEN 'place'     THEN 3
+    WHEN 'object'    THEN 4
+    WHEN 'power'     THEN 5
+    ELSE 6
+  END * 1e10 + extract(epoch FROM en.created_at)`
 
 /** Below this, a label is a word before it is a name. */
 const MENTION_MIN_LENGTH = 4

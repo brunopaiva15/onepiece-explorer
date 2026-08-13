@@ -188,6 +188,28 @@ export const candidateEntitySchema = z.object({
    * splits in two.
    */
   naming_confident: z.boolean(),
+  /**
+   * Seen, or merely spoken of.
+   *
+   * The distinction the graph could not make. `occurrence_kind` has carried
+   * `appearance | mention` since the schema was written, but publication
+   * derived it from the *medium* of the evidence — a drawing was an appearance,
+   * text was a mention. That was true of scanned pages and became meaningless
+   * the day a chapter became prose: everything is text now, so everything was a
+   * mention.
+   *
+   * Only the model reading the passage can tell « Koby parle de Zoro » from
+   * « Zoro dégaine ». So it says, and the graph stops confusing the first time
+   * a reader *hears of* something with the first time they *see* it.
+   *
+   * Optional rather than defaulted, and the difference is not cosmetic. A
+   * default makes the *output* type required, and the payloads already sitting
+   * in `review_items` are read back as this type — every proposal queued before
+   * today would stop type-checking as what it is. Absent means « nobody said »,
+   * which the reader of the field resolves to an appearance: the behaviour
+   * those rows already had.
+   */
+  presence: z.enum(['appearance', 'mention']).optional(),
   evidence: z.array(evidenceRefSchema).min(1).max(6),
   confidence: z.number().min(0).max(1),
 })

@@ -272,6 +272,31 @@ export async function addPortrait(
   `
 }
 
+/**
+ * A stated presence: seen, or merely spoken of.
+ *
+ * Only rows written with `stated` may be read as a statement about presence —
+ * the ones publication used to derive from the medium of the evidence mean
+ * something weaker. See migration 0020.
+ */
+export async function addPresence(
+  world: SeededWorld,
+  entityId: string,
+  input: { chapterNumber: number; kind: 'appearance' | 'mention' },
+): Promise<void> {
+  const chapterId = world.chapterIds.get(input.chapterNumber)
+  if (!chapterId) {
+    throw new Error(`Chapitre ${input.chapterNumber} absent du monde de test.`)
+  }
+
+  await raw`
+    INSERT INTO occurrences (entity_id, user_id, chapter_id, kind, stated,
+                             chapter_number, confidence)
+    VALUES (${entityId}, ${world.userId}, ${chapterId},
+            ${input.kind}::occurrence_kind, true, ${input.chapterNumber}, 1)
+  `
+}
+
 export async function closeDb(): Promise<void> {
   await raw.end({ timeout: 5 })
 }

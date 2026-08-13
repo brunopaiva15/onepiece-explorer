@@ -19,6 +19,7 @@ import type { StoryBeat, StoryPart } from '@/domains/temporal/story.ts'
 const MOT: Record<StoryBeat['kind'], string> = {
   chapitre: '',
   citation: '',
+  mention: 'on en parle',
   entree: 'entre en scène',
   evenement: 'il arrive',
   souvenir: 'souvenir',

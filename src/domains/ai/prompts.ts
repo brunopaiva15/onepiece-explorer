@@ -142,6 +142,17 @@ QUAND VOUS NE SAVEZ PAS, DEMANDEZ. Pour chaque entité :
   • « naming_confident » : false dès que vous hésitez sur la forme française —
     faut-il traduire ce nom ou le garder ? existe-t-il une forme française
     reçue ? s'agit-il d'un nom propre ou d'une description ?
+  • « presence » : « appearance » si la chose est présente dans la scène —
+    on la voit, elle agit, elle parle. « mention » si le passage ne fait qu'en
+    parler : quelqu'un la nomme, l'évoque, la cherche, sans qu'elle soit là.
+
+    « Koby parle à Luffy d'un chasseur de pirates nommé Zoro, enfermé dans une
+    base de la Marine » : Koby et Luffy sont « appearance », Zoro est
+    « mention ». Il n'entre en scène qu'au chapitre où on le voit.
+
+    Les deux comptent et les deux sont à extraire — c'est la différence entre
+    « le lecteur en a entendu parler » et « le lecteur l'a vu », et personne ne
+    peut la retrouver après coup à partir du texte que vous rendez.
 
 Mettre false n'est pas un aveu de faiblesse, c'est la bonne réponse : l'entité
 part en revue avec un champ modifiable, l'utilisateur tranche une fois, et sa

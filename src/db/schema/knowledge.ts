@@ -316,6 +316,14 @@ export const occurrences = pgTable(
       onDelete: 'cascade',
     }),
     kind: occurrenceKindEnum('kind').notNull(),
+    /**
+     * True when the extraction *said* so, rather than it being inferred from
+     * the medium of the evidence. Rows written before this existed mean only
+     * that evidence of some kind was found, and reading them as « merely
+     * mentioned » would demote every character in an existing library. See
+     * migration 0020.
+     */
+    stated: boolean('stated').notNull().default(false),
     chapterNumber: integer('chapter_number').notNull(),
     confidence: real('confidence').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true })
