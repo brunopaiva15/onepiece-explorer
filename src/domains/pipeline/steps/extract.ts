@@ -440,7 +440,13 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         ),
       )
 
-    const types = await db.select({ key: nodeTypes.key }).from(nodeTypes)
+    const types = await db
+      .select({
+        key: nodeTypes.key,
+        labelFr: nodeTypes.labelFr,
+        description: nodeTypes.description,
+      })
+      .from(nodeTypes)
     const preds = await db
       .select({
         key: predicates.key,
@@ -668,7 +674,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       result = await provider.extract({
         chapterNumber,
         source: context.sourceKind,
-        ontology: renderOntology(world.preds),
+        ontology: renderOntology(world.types, world.preds),
         knownEntities,
         /*
          * What this chapter has already proposed, so a relation can name it.
@@ -1052,8 +1058,29 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
  * Read from the database rather than from the TypeScript constant, because a
  * user-created predicate has to be usable without a code change — the ontology
  * is stored as data precisely so that adding one needs no migration.
+ *
+ * Both halves of it, now. The prompt has always said « n'utilisez aucun autre
+ * type ni aucun autre prédicat » and then listed only the predicates: the node
+ * types reached the model as bare tokens inside the signatures —
+ * `character|group|…|event|battle|voyage` — with no label, no description and
+ * no statement that these were the choices for `node_type`. A model asked to
+ * pick from a list it was never shown picks the handful it can infer, which is
+ * how eleven types became six in practice and how « battle » stayed a word in
+ * a type signature rather than something you could propose.
  */
-function renderOntology(
+function renderNodeTypes(
+  types: Array<{ key: string; labelFr: string; description: string | null }>,
+): string {
+  return types
+    .map(
+      (type) =>
+        `  ${type.key} (${type.labelFr})` +
+        (type.description ? `\n      ${type.description}` : ''),
+    )
+    .join('\n')
+}
+
+function renderPredicates(
   preds: Array<{
     key: string
     labelFr: string
@@ -1080,6 +1107,27 @@ function renderOntology(
       )
     })
     .join('\n')
+}
+
+/** The two halves, under headings that say which is which. */
+export function renderOntology(
+  types: Array<{ key: string; labelFr: string; description: string | null }>,
+  preds: Array<{
+    key: string
+    labelFr: string
+    subjectTypes: string[]
+    objectTypes: string[]
+    description: string | null
+  }>,
+): string {
+  return [
+    'TYPES DE NŒUD — la valeur du champ « node_type » :',
+    renderNodeTypes(types),
+    '',
+    'PRÉDICATS — la valeur du champ « predicate », avec les types acceptés',
+    'de chaque côté :',
+    renderPredicates(preds),
+  ].join('\n')
 }
 
 /**

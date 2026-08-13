@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { OCCURRENCE_TYPES } from '@/domains/knowledge/ontology.ts'
 
 /**
  * What a model is allowed to return.
@@ -235,6 +236,32 @@ export const candidateAssertionSchema = z.object({
 export const candidateEventSchema = z.object({
   local_id: z.string().min(1).max(60),
   summary: z.string().min(1).max(400),
+  /**
+   * Which of the three occurrence types this scene is.
+   *
+   * The ontology has carried « Combat » and « Voyage » since it was written,
+   * with a colour, a filter and a description each — and nothing could ever
+   * produce one. Publication read the *category* of the review item, which is
+   * `event` for every extracted scene, and wrote `event` as the node type. So
+   * « Zoro affronte Baggy en duel et le découpe en morceaux » became an
+   * ordinary event, the graph's « Combat » filter matched nothing whatever you
+   * imported, and the only honest reading of that filter was that combats were
+   * not detected.
+   *
+   * They were detected. They were being told apart from nothing.
+   *
+   * Only the model reading the passage can make this call — a fight and a
+   * departure are both « quelque chose qui arrive », and no structural property
+   * of the proposal separates them. So it says, once, in the same answer that
+   * already writes the summary.
+   *
+   * Optional rather than defaulted, for the reason `presence` is: the payloads
+   * already sitting in `review_items` are read back as this type, and a
+   * required field would stop every proposal queued before today from
+   * type-checking as what it is. Absent means « nobody said », which
+   * publication resolves to `event` — the behaviour those rows already had.
+   */
+  kind: z.enum(OCCURRENCE_TYPES).optional(),
   /** Participating entities by local_id or existing id. */
   participants: z.array(z.string().max(60)).max(20),
   /** True when the page presents this as a memory or a recounting. */

@@ -83,6 +83,27 @@ export const NODE_TYPES = [
 export type NodeTypeKey = (typeof NODE_TYPES)[number]['key']
 
 const ACTORS = ['character', 'group'] as const
+
+/**
+ * The three shapes of "something that happened".
+ *
+ * An event, a battle and a voyage are one family: an occurrence, situated in
+ * the story's time, that entities take part in. Only their flavour differs, and
+ * the ontology has to treat them as interchangeable wherever an occurrence is
+ * expected — otherwise classifying a scene more precisely would *narrow* what
+ * can be said about it, and calling a fight a fight would cost it its
+ * `located_at`.
+ *
+ * Spelled once and spread, rather than listed at each predicate. Listed, the
+ * three drifted apart: `event` and `battle` were accepted everywhere while
+ * `voyage` was missing from four signatures — a hole nobody could hit while
+ * nothing produced a voyage, and a publication failure the day something did.
+ */
+export const OCCURRENCE_TYPES = ['event', 'battle', 'voyage'] as const
+
+/** What an extracted occurrence may be published as. */
+export type OccurrenceKind = (typeof OCCURRENCE_TYPES)[number]
+
 const ANY_ENTITY = [
   'character',
   'group',
@@ -159,7 +180,7 @@ export const PREDICATES = [
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
-    objectTypes: ['event', 'battle', 'voyage'],
+    objectTypes: OCCURRENCE_TYPES,
     description: 'Prend part à un événement.',
   },
   {
@@ -167,7 +188,7 @@ export const PREDICATES = [
     labelFr: 'se trouve à',
     directed: true,
     symmetric: false,
-    subjectTypes: ['character', 'group', 'object', 'event', 'battle'],
+    subjectTypes: ['character', 'group', 'object', ...OCCURRENCE_TYPES],
     objectTypes: ['place'],
     description: 'Présence en un lieu, à un moment de l’histoire.',
   },
@@ -432,7 +453,7 @@ export const PREDICATES = [
     directed: true,
     symmetric: false,
     subjectTypes: ['character'],
-    objectTypes: ['event', 'battle', 'place'],
+    objectTypes: [...OCCURRENCE_TYPES, 'place'],
     requiresExplicitReview: true,
     description:
       'Mort constatée. Revue obligatoire : une fausse mort corrompt toutes les vues ultérieures.',
@@ -444,8 +465,8 @@ export const PREDICATES = [
     labelFr: 'cause',
     directed: true,
     symmetric: false,
-    subjectTypes: ['event', 'battle', 'voyage', 'character', 'group'],
-    objectTypes: ['event', 'battle', 'voyage'],
+    subjectTypes: [...OCCURRENCE_TYPES, 'character', 'group'],
+    objectTypes: OCCURRENCE_TYPES,
     description: 'Lien de causalité directe.',
   },
   {
@@ -453,8 +474,8 @@ export const PREDICATES = [
     labelFr: 'empêche',
     directed: true,
     symmetric: false,
-    subjectTypes: ['event', 'battle', 'character', 'group'],
-    objectTypes: ['event', 'battle', 'voyage'],
+    subjectTypes: [...OCCURRENCE_TYPES, 'character', 'group'],
+    objectTypes: OCCURRENCE_TYPES,
     description: 'Empêche un événement de se produire.',
   },
   {
@@ -463,8 +484,8 @@ export const PREDICATES = [
     directed: true,
     symmetric: false,
     inverseKey: 'follows',
-    subjectTypes: ['event', 'battle', 'voyage'],
-    objectTypes: ['event', 'battle', 'voyage'],
+    subjectTypes: OCCURRENCE_TYPES,
+    objectTypes: OCCURRENCE_TYPES,
     description: 'Ordre relatif, sans date exacte requise.',
   },
   {
@@ -473,8 +494,8 @@ export const PREDICATES = [
     directed: true,
     symmetric: false,
     inverseKey: 'precedes',
-    subjectTypes: ['event', 'battle', 'voyage'],
-    objectTypes: ['event', 'battle', 'voyage'],
+    subjectTypes: OCCURRENCE_TYPES,
+    objectTypes: OCCURRENCE_TYPES,
     description: 'Réciproque de « précède ».',
   },
   {
@@ -482,8 +503,8 @@ export const PREDICATES = [
     labelFr: 'chevauche',
     directed: false,
     symmetric: true,
-    subjectTypes: ['event', 'battle', 'voyage'],
-    objectTypes: ['event', 'battle', 'voyage'],
+    subjectTypes: OCCURRENCE_TYPES,
+    objectTypes: OCCURRENCE_TYPES,
     description: 'Simultanéité partielle.',
   },
 
@@ -562,7 +583,7 @@ export const PREDICATES = [
     labelFr: 'ouvre le mystère',
     directed: true,
     symmetric: false,
-    subjectTypes: ['event', 'battle', 'character', 'object', 'place', 'concept'],
+    subjectTypes: [...OCCURRENCE_TYPES, 'character', 'object', 'place', 'concept'],
     objectTypes: ['mystery'],
     description: 'Fait naître une question ouverte.',
   },

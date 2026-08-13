@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, lte, ne, sql } from 'drizzle-orm'
+import { and, eq, inArray, lte, ne, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
@@ -23,6 +23,8 @@ import type {
   EvidenceRef,
 } from '@/domains/ai/schemas.ts'
 import { normalizeText } from '@/domains/knowledge/normalize.ts'
+import { classifyOccurrence } from '@/domains/knowledge/occurrence.ts'
+import { OCCURRENCE_TYPES, type OccurrenceKind } from '@/domains/knowledge/ontology.ts'
 import { ECHO_TOO_CLOSE, findEcho } from '@/domains/review/echoes.ts'
 import { PIPELINE_VERSION } from '@/domains/ingestion/import.ts'
 import { rebuildRefTable } from '@/domains/pipeline/rebuild-refs.ts'
@@ -340,7 +342,7 @@ export async function publishDecisions(
       const twin = await exactTwin(db, {
         workId: run.workId,
         userId,
-        nodeType: candidate.node_type,
+        nodeTypes: [candidate.node_type],
         label: candidate.label,
         chapterNumber: run.chapterNumber,
       })
@@ -700,7 +702,34 @@ export async function publishDecisions(
         continue
       }
 
-      const nodeType = item.category === 'event' ? 'event' : 'mystery'
+      /*
+       * What the extraction said this was, not what category it arrived under.
+       *
+       * This line read `item.category === 'event' ? 'event' : 'mystery'`, and
+       * the left-hand branch is where « Combat » went to die: every extracted
+       * scene arrives under the category `event`, so every scene was published
+       * as the node type `event`. « Combat » and « Voyage » had a key, a French
+       * label, a description, a colour and a filter on the graph page, and no
+       * code path anywhere could produce one. The filter was not returning
+       * nothing because nothing had been detected — it was returning nothing
+       * because the type was unreachable.
+       *
+       * `kind` is absent on every proposal queued before the extraction learnt
+       * to state it, and those are not a closed set: a chapter processed
+       * yesterday and reviewed tomorrow publishes through this line with
+       * nothing to read. Defaulting them to `event` would keep making new
+       * unreachable combats for as long as the queue holds one, so they fall
+       * back to the same reading of the summary that migration 0022 applies to
+       * what is already in the graph — one word list, in
+       * `knowledge/occurrence.ts`, used by both.
+       *
+       * What the model said always wins. The fallback runs only where nobody
+       * said anything.
+       */
+      const nodeType =
+        item.category === 'event'
+          ? occurrenceType((decision.correctedPayload ?? item.payload) as CandidateEvent)
+          : 'mystery'
 
       /*
        * The same question, asked twice.
@@ -726,10 +755,18 @@ export async function publishDecisions(
           : (payload as CandidateMystery).question
       const label = text.slice(0, 200)
 
+      /*
+       * A scene is looked for under all three occurrence types, whichever one
+       * this proposal turned out to be. The copy already in the graph predates
+       * the classification and is an `event`; this one may be a `battle`, and
+       * they are the same scene.
+       */
+      const twinTypes = item.category === 'event' ? OCCURRENCE_TYPES : ['mystery']
+
       const twin = await exactTwin(db, {
         workId: run.workId,
         userId,
-        nodeType,
+        nodeTypes: twinTypes,
         label,
         chapterNumber: run.chapterNumber,
       })
@@ -754,7 +791,7 @@ export async function publishDecisions(
         const echo = await findEcho(db, {
           workId: run.workId,
           userId,
-          nodeType,
+          nodeTypes: twinTypes,
           text: label,
           chapterNumber: run.chapterNumber,
         })
@@ -1162,6 +1199,17 @@ async function insertEvidence(
  * failure, it is the ordinary case of a character named twice.
  */
 /**
+ * The node type an extracted scene becomes.
+ *
+ * Stated by the extraction when it could be; read from the summary when the
+ * proposal predates the field. Never guesses a `voyage` — see
+ * `classifyOccurrence` for why the departure vocabulary has no prudent list.
+ */
+export function occurrenceType(candidate: CandidateEvent): OccurrenceKind {
+  return candidate.kind ?? classifyOccurrence(candidate.summary)
+}
+
+/**
  * An accepted entity of the same type carrying exactly this name.
  *
  * Exact on the *normalised* label, which is the same normalisation the graph
@@ -1172,13 +1220,20 @@ async function insertEvidence(
  *
  * Bounded by the chapter like everything else. An entity first seen later than
  * the chapter being published cannot be what this chapter is naming.
+ *
+ * Several types rather than one, because an occurrence has three of them. The
+ * same scene re-proposed after this change is a `battle` where the copy already
+ * in the graph is an `event` — every scene published before the extraction
+ * could classify one is. Looking under a single type would miss it and write
+ * the second node, which is precisely the duplicate this check exists to
+ * prevent, introduced by the fix for something else.
  */
 async function exactTwin(
   db: Parameters<Parameters<typeof withIngest>[0]>[0],
   input: {
     workId: string
     userId: string
-    nodeType: string
+    nodeTypes: readonly string[]
     label: string
     chapterNumber: number
   },
@@ -1194,7 +1249,7 @@ async function exactTwin(
       and(
         eq(entities.workId, input.workId),
         eq(entities.userId, input.userId),
-        eq(entities.nodeType, input.nodeType),
+        inArray(entities.nodeType, [...input.nodeTypes]),
         eq(entities.reviewStatus, 'accepted'),
         lte(entities.firstSeenChapter, input.chapterNumber),
         eq(entityLabels.normalizedLabel, normalized),

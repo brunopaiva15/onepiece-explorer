@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { ECHO_TOO_CLOSE, ECHO_WORTH_SHOWING, findEcho } from '@/domains/review/echoes.ts'
+import { OCCURRENCE_TYPES } from '@/domains/knowledge/ontology.ts'
 import { withIngest } from '@/db/boundary.ts'
 import {
   addLabel,
@@ -70,7 +71,7 @@ function look(text: string, chapterNumber = 5) {
     findEcho(db, {
       workId: world.workId,
       userId: world.userId,
-      nodeType: 'event',
+      nodeTypes: OCCURRENCE_TYPES,
       text,
       chapterNumber,
     }),

@@ -34,8 +34,10 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  * '5' says that a relation's object is an entity and that a sentence is an
  *     event — the rule that used to be implicit in the ontology's object types
  *     and produced « meurt à "elle tombe dans un escalier" » when it was not.
+ * '6' lists the node types, which the prompt demanded and never supplied, and
+ *     asks an event which of the three occurrence types it is.
  */
-export const PROMPT_VERSION = '5'
+export const PROMPT_VERSION = '6'
 
 /**
  * What the model is reading.
@@ -335,6 +337,23 @@ validée — et jamais une phrase. Si ce que vous voulez dire ne s'écrit qu'en
 toutes lettres (« meurt en tombant dans un escalier »), c'est un événement :
 proposez-le comme tel. Une phrase glissée à la place d'un objet ne relie rien,
 ne se retrouve pas depuis l'autre bout, et sera mise en quarantaine.
+
+Chaque événement dit ce qu'il est, dans son champ « kind » :
+
+  • « battle » — un affrontement : on se bat, on s'attaque, on se défend, un
+    camp l'emporte sur l'autre. Le combat n'a pas besoin d'être équilibré ni
+    long : un coup unique qui met quelqu'un hors d'état en est un.
+  • « voyage » — un déplacement d'un lieu vers un autre : on embarque, on prend
+    la mer, on arrive quelque part.
+  • « event » — tout le reste, et c'est le cas courant. Dans le doute, mettez
+    « event » : une scène mal classée en combat est plus gênante qu'une scène
+    laissée en événement.
+
+Ce champ ne change rien à ce que vous racontez dans « summary » — écrivez le
+résumé comme vous l'auriez écrit sans lui. Il ne fait que nommer la sorte de
+scène, parce que rien dans la proposition ne permet de la deviner après coup :
+un combat et un départ sont l'un comme l'autre « quelque chose qui arrive », et
+seul celui qui lit le passage peut les distinguer.
 
 Une identité (« même personne que »), une mort, une filiation, une affiliation
 cachée ou la résolution d'un mystère demandent une preuve directe. En cas de

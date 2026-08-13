@@ -316,6 +316,104 @@ describe('publishing', () => {
   })
 })
 
+/**
+ * Which sort of node a scene becomes.
+ *
+ * « Combat » was in the ontology, on the graph's filter bar and in the
+ * palette, and this line decided that nothing would ever be one: publication
+ * read the review item's *category*, which is `event` for every extracted
+ * scene, and wrote `event` as the node type. Ten chapters in, the filter was
+ * empty and the only available reading was that combats went undetected.
+ */
+describe('an event and the sort of scene it is', () => {
+  /*
+   * The event is queued directly rather than extracted.
+   *
+   * The synthetic provider proposes entities and relations and no events at
+   * all, and what is under test here is the one line publication runs on a
+   * scene — not the extraction that produced it. Writing the review item is
+   * also the only way to reproduce the case that matters most: a payload with
+   * no `kind` at all, which is every proposal queued before this version.
+   */
+  async function publishEvent(payload: Record<string, unknown>): Promise<string | undefined> {
+    const { userId, chapterId, runId } = await prepare()
+
+    const [row] = await raw<Array<{ id: string }>>`
+      INSERT INTO review_items
+        (run_id, chapter_id, user_id, category, priority, payload,
+         proposal_fingerprint, requires_explicit_review, confidence)
+      VALUES
+        (${runId}, ${chapterId}, ${userId}, 'event', 40,
+         ${JSON.stringify({
+           local_id: 'ev1',
+           participants: [],
+           is_flashback: false,
+           evidence: [{ ref: 'block:1', kind: 'text', excerpt: 'x' }],
+           confidence: 0.9,
+           ...payload,
+         })}::jsonb,
+         ${`test:${String(payload.summary)}`}, false, 0.9)
+      RETURNING id
+    `
+
+    await publishDecisions(userId, runId, [
+      { reviewItemId: row!.id, decision: 'accept' },
+    ])
+
+    const found = await raw<Array<{ node_type: string }>>`
+      SELECT e.node_type FROM entities e
+      JOIN events ev ON ev.entity_id = e.id
+      WHERE ev.summary = ${String(payload.summary)}
+    `
+    return found[0]?.node_type
+  }
+
+  it('is published as a combat when the extraction says so', async () => {
+    expect(
+      await publishEvent({ kind: 'battle', summary: 'Zoro affronte Baggy en duel.' }),
+    ).toBe('battle')
+  })
+
+  it('is published as a voyage when the extraction says so', async () => {
+    expect(
+      await publishEvent({ kind: 'voyage', summary: 'Luffy prend la mer pour le Grand Line.' }),
+    ).toBe('voyage')
+  })
+
+  /*
+   * What the model said wins, even against the words it wrote. The summary
+   * here reads as a fight and the classification says otherwise; only one of
+   * the two actually read the passage.
+   */
+  it('believes the stated kind over the summary’s vocabulary', async () => {
+    expect(
+      await publishEvent({
+        kind: 'event',
+        summary: 'Koby raconte comment Alvida a vaincu son équipage.',
+      }),
+    ).toBe('event')
+  })
+
+  /*
+   * A proposal queued before the extraction learnt to state `kind` — imported
+   * yesterday, reviewed tomorrow — reaches this line with nothing to read.
+   * Left to default it would keep minting unreachable combats for as long as
+   * the queue holds one, so it falls back to the same reading of the summary
+   * that migration 0022 applies to what is already in the graph.
+   */
+  it('reads the summary when the proposal predates the field', async () => {
+    expect(await publishEvent({ summary: 'Beckman neutralise seul la bande de Higuma.' })).toBe(
+      'battle',
+    )
+  })
+
+  it('leaves a quiet scene an ordinary event', async () => {
+    expect(
+      await publishEvent({ summary: 'Luffy raconte à Nami l’histoire de son chapeau.' }),
+    ).toBe('event')
+  })
+})
+
 describe('what publication must never do', () => {
   it('publishes nothing when given no decisions', async () => {
     const { userId, runId } = await prepare()
