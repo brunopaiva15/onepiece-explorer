@@ -78,10 +78,33 @@ export function ingestSql(): postgres.Sql {
     ? required('TEST_DATABASE_URL', process.env.TEST_DATABASE_URL)
     : required('DIRECT_URL', process.env.DIRECT_URL ?? process.env.DATABASE_URL)
 
-  /** Direct connection: long-lived, prepared statements are fine and useful. */
+  /*
+   * Direct connection: long-lived, prepared statements are fine and useful —
+   * on a machine you own, where this process is the only one holding it.
+   *
+   * Serverless is the opposite arrangement, and the default was written for the
+   * first. Supabase's session-mode pooler allows fifteen clients for the whole
+   * project; every warm instance keeps up to `max` of them open for the idle
+   * timeout, and instances multiply on their own. Four each is three instances
+   * before the sixteenth request is refused — and every page takes one, because
+   * resolving the reader's session reads the profile through this role.
+   *
+   * The symptom is not subtle and it is not local: « max clients reached in
+   * session mode », on /etat, about a database that is perfectly healthy.
+   *
+   * One connection per instance, released in five seconds, is what a serverless
+   * runtime should hold: an invocation uses it and gives it back. It is still
+   * an override, because the ceiling belongs to the project rather than to the
+   * code — a pool raised in Supabase should be usable from here without a
+   * deploy.
+   */
+  const serverless = Boolean(
+    process.env.VERCEL ?? process.env.AWS_LAMBDA_FUNCTION_NAME,
+  )
+
   ingestSqlCache = postgres(url, {
-    max: Number(process.env.DB_INGEST_POOL_MAX ?? 4),
-    idle_timeout: 30,
+    max: Number(process.env.DB_INGEST_POOL_MAX ?? (serverless ? 1 : 4)),
+    idle_timeout: serverless ? 5 : 30,
     connect_timeout: 10,
     onnotice: () => {},
   })
