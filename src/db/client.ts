@@ -43,6 +43,18 @@ function isTest(): boolean {
   return process.env.NODE_ENV === 'test' || process.env.TEST_DB === '1'
 }
 
+/**
+ * A runtime that multiplies instances behind one database.
+ *
+ * Pool sizes are written for a process you can count. Here you cannot: a burst
+ * of requests becomes a burst of instances, each with a pool of its own, and
+ * the database's connection slots are shared between all of them. So both pools
+ * are sized per instance, small, and released quickly.
+ */
+function isServerless(): boolean {
+  return Boolean(process.env.VERCEL ?? process.env.AWS_LAMBDA_FUNCTION_NAME)
+}
+
 let appSqlCache: postgres.Sql | null = null
 let ingestSqlCache: postgres.Sql | null = null
 let appDbCache: Db | null = null
@@ -55,16 +67,36 @@ export function appSql(): postgres.Sql {
     ? required('TEST_DATABASE_URL', process.env.TEST_DATABASE_URL)
     : required('DATABASE_URL', process.env.DATABASE_URL)
 
+  const serverless = isServerless()
+
   /**
    * `prepare: false` is mandatory against Supavisor in transaction mode: the
    * pooler hands the connection to another client between transactions, so a
    * prepared statement cached on the client would reference a plan that no
    * longer exists on the server.
+   *
+   * Ten per instance was a ceiling on nothing.
+   *
+   * A page render holds several of these at once — story mode reads a chapter
+   * per connection — so ten was roughly two renders' worth, and every instance
+   * that had ever served a request kept up to ten open for twenty seconds after
+   * finishing. Instances multiply on their own, and the slots belong to the
+   * database rather than to any one of them: a few seconds of a reader dragging
+   * the chapter slider, which re-renders a dynamic page per step, was enough to
+   * reach « remaining connection slots are reserved for roles with the
+   * SUPERUSER attribute » — an error about a database that is perfectly
+   * healthy, on every page at once, for as long as the instances stayed warm.
+   *
+   * Four, released after five seconds. Four is above what any single request
+   * needs — nothing here nests two boundary transactions, and story mode caps
+   * its window at three — so a page is never waiting on its own pool, and the
+   * arithmetic across warm instances stays survivable. It is still an override,
+   * because the real ceiling belongs to the database rather than to this file.
    */
   appSqlCache = postgres(url, {
-    max: Number(process.env.DB_POOL_MAX ?? 10),
+    max: Number(process.env.DB_POOL_MAX ?? (serverless ? 4 : 10)),
     prepare: false,
-    idle_timeout: 20,
+    idle_timeout: serverless ? 5 : 20,
     connect_timeout: 10,
     onnotice: () => {},
   })
@@ -98,9 +130,7 @@ export function ingestSql(): postgres.Sql {
    * code — a pool raised in Supabase should be usable from here without a
    * deploy.
    */
-  const serverless = Boolean(
-    process.env.VERCEL ?? process.env.AWS_LAMBDA_FUNCTION_NAME,
-  )
+  const serverless = isServerless()
 
   ingestSqlCache = postgres(url, {
     max: Number(process.env.DB_INGEST_POOL_MAX ?? (serverless ? 1 : 4)),
