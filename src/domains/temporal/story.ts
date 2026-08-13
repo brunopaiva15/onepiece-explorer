@@ -69,6 +69,22 @@ export type BeatKind =
   | 'reponse'
   | 'question'
 
+/**
+ * A run of a line, with a face when the run is a name that has one.
+ *
+ * A sentence like « Au Partys Bar, Shanks refuse d'emmener Luffy en mer » names
+ * two characters the library already knows and can already illustrate. Splitting
+ * it here rather than in the page keeps one rule in one place, and makes the
+ * rule testable: only labels the reader has already been given, only whole
+ * words, longest first, and only when a face actually exists — a name with no
+ * picture is left exactly as it was written.
+ */
+export interface StoryPart {
+  text: string
+  entityId?: string
+  portrait?: DisplayImage
+}
+
 export interface StoryBeat {
   id: string
   chapter: number
@@ -80,6 +96,10 @@ export interface StoryBeat {
    * name held until now, an event's summary, what a belief cost to hold.
    */
   detail: string | null
+  /** `text`, split around the named faces. Null when it names none. */
+  textParts: StoryPart[] | null
+  /** The same for `detail`. */
+  detailParts: StoryPart[] | null
   entityId: string | null
   portrait: DisplayImage | null
 }
@@ -147,6 +167,8 @@ export async function getStoryPage(
       kind: 'chapitre' as const,
       text: meta.title ?? '',
       detail: null,
+      textParts: null,
+      detailParts: null,
       entityId: null,
       portrait: null,
     },
@@ -296,7 +318,14 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
 /** A row of the union, turned into the line the page shows. */
 function compose(row: Row, chapter: number, index: number): StoryBeat {
   const id = `${chapter}-${row.kind}-${row.entityId ?? index}`
-  const base = { id, chapter, entityId: row.entityId, portrait: null }
+  const base = {
+    id,
+    chapter,
+    entityId: row.entityId,
+    portrait: null,
+    textParts: null,
+    detailParts: null,
+  }
   const text = row.texte ?? ''
 
   switch (row.kind) {
@@ -391,6 +420,8 @@ async function readRefutations(
       .filter(Boolean)
       .join(' '),
     detail: `cru depuis le chapitre ${Number(row.heldSince)}`,
+    textParts: null,
+    detailParts: null,
     entityId: null,
     portrait: null,
   }))
@@ -409,7 +440,7 @@ async function withPortraits(
   chapter: number,
   beats: StoryBeat[],
 ): Promise<StoryBeat[]> {
-  const ids = [
+  const named = [
     ...new Set(
       beats
         .filter((beat) => beat.kind === 'entree' || beat.kind === 'nom')
@@ -417,6 +448,9 @@ async function withPortraits(
         .filter((id): id is string => id !== null),
     ),
   ]
+
+  const mentions = await readMentions(userId, chapter, beats)
+  const ids = [...new Set([...named, ...mentions.map((m) => m.entityId)])]
   if (ids.length === 0) return beats
 
   /*
@@ -439,14 +473,138 @@ async function withPortraits(
   )
   if (found.size === 0) return beats
 
-  return beats.map((beat) => {
-    if (!beat.entityId) return beat
-    for (const member of components.get(beat.entityId) ?? [beat.entityId]) {
+  const faceOf = (entityId: string): DisplayImage | null => {
+    for (const member of components.get(entityId) ?? [entityId]) {
       const portrait = found.get(member)
-      if (portrait) return { ...beat, portrait }
+      if (portrait) return portrait
     }
-    return beat
+    return null
+  }
+
+  // Only names that really have a face become mentions. Marking up a name that
+  // resolves to nothing would change how the sentence reads and show nothing.
+  const illustrated = mentions.filter((mention) => faceOf(mention.entityId) !== null)
+
+  return beats.map((beat) => {
+    const portrait = beat.entityId ? faceOf(beat.entityId) : null
+    if (!NARRATED.has(beat.kind)) {
+      return portrait ? { ...beat, portrait } : beat
+    }
+    return {
+      ...beat,
+      portrait,
+      textParts: splitOnNames(beat.text, illustrated, faceOf),
+      detailParts: beat.detail
+        ? splitOnNames(beat.detail, illustrated, faceOf)
+        : null,
+    }
   })
+}
+
+/** Beads whose line is a sentence about the world rather than a name. */
+const NARRATED = new Set<BeatKind>([
+  'evenement',
+  'souvenir',
+  'question',
+  'reponse',
+  'dementi',
+])
+
+/** Below this, a label is a word before it is a name. */
+const MENTION_MIN_LENGTH = 4
+
+interface Mention {
+  label: string
+  entityId: string
+}
+
+/**
+ * Which known names occur in this chapter's sentences.
+ *
+ * Asked the other way round on purpose: not "which entities does the reader
+ * know" — at chapter 800 that is thousands of rows — but "which of their
+ * labels appear in these particular lines", which PostgreSQL answers with one
+ * `position()` per label and returns only the handful that matched.
+ *
+ * Row-level security does the rest, and it is what makes this safe: a label
+ * revealed later is not in the table as far as this transaction is concerned,
+ * so a sentence that happens to contain a name the reader has not been given
+ * yet simply does not match it. The case-sensitive comparison is deliberate
+ * too — « Bandits » is a group, « bandits » is a word.
+ */
+async function readMentions(
+  userId: string,
+  chapter: number,
+  beats: StoryBeat[],
+): Promise<Mention[]> {
+  const blob = beats
+    .filter((beat) => NARRATED.has(beat.kind))
+    .flatMap((beat) => [beat.text, beat.detail ?? ''])
+    .join('\n')
+
+  if (blob.trim() === '') return []
+
+  const rows = await withBoundary({ userId, boundaryChapter: chapter }, async (db) =>
+    db.execute(sql`
+      SELECT l.entity_id AS "entityId", l.label
+        FROM entity_labels l
+        JOIN entities en ON en.id = l.entity_id
+       WHERE char_length(l.label) >= ${MENTION_MIN_LENGTH}
+         AND position(l.label IN ${blob}) > 0
+    `),
+  )
+
+  const seen = new Set<string>()
+  const out: Mention[] = []
+  for (const row of rows as unknown as Mention[]) {
+    const key = `${row.entityId}|${row.label}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(row)
+  }
+  // Longest first, so « Monkey D. Luffy » wins over « Luffy » at the same spot.
+  return out.sort((a, b) => b.label.length - a.label.length)
+}
+
+/**
+ * Cut a line around the names that carry a face.
+ *
+ * Whole words only: without the lookarounds, « Luffy » matches inside
+ * « Luffytaro » and the sentence grows a face in the middle of a word. Returns
+ * null when the line names nobody, so the page keeps rendering plain text
+ * rather than a one-element list.
+ */
+function splitOnNames(
+  line: string,
+  mentions: Mention[],
+  faceOf: (entityId: string) => DisplayImage | null,
+): StoryPart[] | null {
+  if (mentions.length === 0 || line === '') return null
+
+  const pattern = new RegExp(
+    `(?<![\\p{L}\\p{N}])(${mentions.map((m) => escapeRegExp(m.label)).join('|')})(?![\\p{L}\\p{N}])`,
+    'gu',
+  )
+
+  const parts: StoryPart[] = []
+  let cursor = 0
+  for (const match of line.matchAll(pattern)) {
+    const found = mentions.find((mention) => mention.label === match[1])
+    const portrait = found ? faceOf(found.entityId) : null
+    if (!found || !portrait) continue
+
+    if (match.index > cursor) parts.push({ text: line.slice(cursor, match.index) })
+    parts.push({ text: match[1]!, entityId: found.entityId, portrait })
+    cursor = match.index + match[1]!.length
+  }
+
+  if (parts.length === 0) return null
+  if (cursor < line.length) parts.push({ text: line.slice(cursor) })
+  return parts
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
