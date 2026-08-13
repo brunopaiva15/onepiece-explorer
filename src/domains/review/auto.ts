@@ -2,6 +2,7 @@ import 'server-only'
 import { and, eq } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { reviewItems } from '@/db/schema/ingestion.ts'
+import { mismatchOf, resolveNodeTypes } from './queue.ts'
 import { publishDecisions, type Decision, type PublishResult } from './publish.ts'
 
 /**
@@ -65,6 +66,8 @@ export interface AutoReviewResult {
   heldForIdentity: number
   /** Relations left waiting on one of those names. */
   heldByName: number
+  /** Relations the ontology refuses as written, left for a human to reshape. */
+  heldByTypes: number
   /** Categories publication cannot apply, parked rather than accepted. */
   deferred: number
   published: PublishResult | null
@@ -108,11 +111,27 @@ export async function autoReview(
     heldForNaming: 0,
     heldForIdentity: 0,
     heldByName: 0,
+    heldByTypes: 0,
     deferred: 0,
     published: null,
   }
 
   if (pending.length === 0) return result
+
+  /*
+   * Relations the ontology cannot express as written.
+   *
+   * « Monkey D. Luffy member_of Village de Fuchsia » — a true fact carrying a
+   * predicate meant for crews, which the database refuses (ADR 0004). Accepting
+   * it here would spend a publication on a failure nobody is watching, and the
+   * red block listing it would appear on a screen this pass never shows anyone.
+   *
+   * So it is left proposed rather than deferred: the review card knows how to
+   * offer the predicates that *would* accept these two ends, and choosing one
+   * is a judgement about meaning. That is precisely the kind of question this
+   * pass hands back.
+   */
+  const nodeTypes = await resolveNodeTypes(pending, pending)
 
   /*
    * The one question that stays human: what do we call this?
@@ -194,6 +213,10 @@ export async function autoReview(
         result.heldByName++
         continue
       }
+      if (mismatchOf(item.payload, nodeTypes) !== null) {
+        result.heldByTypes++
+        continue
+      }
     }
 
     decisions.push({ reviewItemId: item.id, decision: 'accept' })
@@ -214,6 +237,12 @@ export function autoReviewNote(result: AutoReviewResult): string {
     parts.push(
       `${result.heldForNaming} question(s) de nom laissée(s) à trancher` +
         (result.heldByName > 0 ? ` (+ ${result.heldByName} relation(s) en attente)` : ''),
+    )
+  }
+  if (result.heldByTypes > 0) {
+    parts.push(
+      `${result.heldByTypes} relation(s) au prédicat incompatible — ` +
+        `la carte propose ceux qui conviennent`,
     )
   }
   if (result.heldForIdentity > 0) {

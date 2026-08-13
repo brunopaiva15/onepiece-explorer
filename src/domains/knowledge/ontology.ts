@@ -608,3 +608,83 @@ export const REVIEW_REQUIRED_PREDICATES = new Set<string>(
 export const PREDICATE_BY_KEY = new Map<string, PredicateDef>(
   PREDICATES.map((p) => [p.key, p as PredicateDef]),
 )
+
+/**
+ * Why a relation cannot be written, and what could be written instead.
+ *
+ * The database refuses an edge whose ends do not match its predicate — « le
+ * prédicat member_of n'accepte pas un objet de type place » — and it is right
+ * to (ADR 0004). What was wrong is *when* the reviewer found out: after
+ * publishing. The extraction prompt already states each predicate's types and
+ * the model still picks `member_of` for a village now and then, so the answer
+ * is not a better sentence in the prompt but the same check, run early enough
+ * to be useful.
+ *
+ * `alternatives` is what turns the notice into something you can act on. « Luffy
+ * appartient à Fuchsia » is not a hallucination; it is a true fact wearing the
+ * wrong predicate, and refusing it outright loses exactly the kind of link this
+ * graph keeps missing. The list is every predicate that accepts these two types,
+ * in ontology order — which is not alphabetical but grouped by meaning, so the
+ * spatial ones come first for a character and a place.
+ */
+export interface TypeMismatch {
+  predicate: string
+  subjectType: string
+  objectType: string | null
+  /** Which end is at fault. Both, when both are. */
+  subjectAccepted: boolean
+  objectAccepted: boolean
+  expectedSubjectTypes: readonly string[]
+  expectedObjectTypes: readonly string[]
+  /** Predicates that accept this pair of types, in ontology order. */
+  alternatives: Array<{ key: string; labelFr: string }>
+}
+
+/**
+ * Check a relation against the ontology, before it is offered or written.
+ *
+ * Null means "nothing to say": either the predicate agrees with the types, or
+ * the predicate is unknown here — the ontology is stored as data so a user may
+ * add one, and this module must not declare a predicate it has never heard of
+ * to be wrong. An unresolved end is the same situation and answered the same
+ * way; the database is the one that fails closed.
+ */
+export function checkTypes(
+  predicate: string,
+  subjectType: string | null,
+  objectType: string | null,
+): TypeMismatch | null {
+  const def = PREDICATE_BY_KEY.get(predicate)
+  if (!def || subjectType === null) return null
+
+  const subjectAccepted = (def.subjectTypes as readonly string[]).includes(subjectType)
+  // A literal object — « travels_to "la base de la Marine" » — has no node type
+  // and the database checks nothing for it either.
+  const objectAccepted =
+    objectType === null || (def.objectTypes as readonly string[]).includes(objectType)
+
+  if (subjectAccepted && objectAccepted) return null
+
+  return {
+    predicate,
+    subjectType,
+    objectType,
+    subjectAccepted,
+    objectAccepted,
+    expectedSubjectTypes: def.subjectTypes,
+    expectedObjectTypes: def.objectTypes,
+    alternatives: alternativesFor(subjectType, objectType),
+  }
+}
+
+/** Every predicate that would accept these two ends. */
+export function alternativesFor(
+  subjectType: string,
+  objectType: string | null,
+): Array<{ key: string; labelFr: string }> {
+  return PREDICATES.filter(
+    (p) =>
+      (p.subjectTypes as readonly string[]).includes(subjectType) &&
+      (objectType === null || (p.objectTypes as readonly string[]).includes(objectType)),
+  ).map((p) => ({ key: p.key as string, labelFr: p.labelFr }))
+}
