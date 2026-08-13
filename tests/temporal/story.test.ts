@@ -441,6 +441,26 @@ describe('the faces on the thread', () => {
     expect(at(page, 1, 'entree')[0]!.portrait!.matchedLabel).toBe('Monkey D. Luffy')
   })
 
+  it('gives a face to someone who is only spoken of', async () => {
+    /*
+     * « On en parle · Polo » came back a grey square, then « entre en scène ·
+     * Polo » two chapters later carried his face. The bead about a name is the
+     * one that least survives having none: the kind was split out of « entre en
+     * scène » and this list was not told about it.
+     */
+    const polo = await createEntity(world, 'character', 2)
+    await addLabel(world, polo, 'Polo', 'true_name', 2, 100)
+    await addPresence(world, polo, { chapterNumber: 2, kind: 'mention' })
+    await addPortrait(world, polo, { matchedLabel: 'Polo', revealedIn: 2 })
+
+    const page = await read(1, 4, 4)
+    const beat = at(page, 2, 'mention')[0]!
+
+    expect(beat.text).toBe('Polo')
+    expect(beat.portrait).not.toBeNull()
+    expect(beat.portrait!.matchedLabel).toBe('Polo')
+  })
+
   it('does not spend its budget on entities that have no picture', async () => {
     /*
      * The failure this pins: a chapter introduces a crowd, the cap trims the

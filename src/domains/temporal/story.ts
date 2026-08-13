@@ -573,10 +573,19 @@ async function readRefutations(
 /**
  * Faces, signed at this chapter.
  *
- * Only on the two beats where a face is the point — someone walking on, and a
- * name landing. A portrait was found *by* a name, so it appears in the chapter
- * that reveals that name and never in the one where the character was still a
- * silhouette. The database applies that; nothing here has to remember.
+ * Only on the beats where a face is the point — someone walking on, someone
+ * spoken of, a name landing. A portrait was found *by* a name, so it appears in
+ * the chapter that reveals that name and never in the one where the character
+ * was still a silhouette. The database applies that; nothing here has to
+ * remember.
+ *
+ * « On en parle » is on that list, and was left off it when the kind was split
+ * out of « entre en scène ». Being spoken of is a beat about a *name* — it is
+ * the whole of what the bead says — so a nameless grey square is the one place
+ * a face is least optional. It is not a spoiler either: the reader has been
+ * given the name, and a portrait hangs off a label the boundary has already
+ * released. Polo is talked about at chapter 19 and walks on at 21; the same
+ * face belongs to both.
  */
 async function withPortraits(
   userId: string,
@@ -586,7 +595,12 @@ async function withPortraits(
   const named = [
     ...new Set(
       beats
-        .filter((beat) => beat.kind === 'entree' || beat.kind === 'nom')
+        .filter(
+          (beat) =>
+            beat.kind === 'entree' ||
+            beat.kind === 'mention' ||
+            beat.kind === 'nom',
+        )
         .map((beat) => beat.entityId)
         .filter((id): id is string => id !== null),
     ),
