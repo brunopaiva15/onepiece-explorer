@@ -1,8 +1,15 @@
 import 'server-only'
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { LABEL_PRECEDENCE } from '@/db/schema/enums.ts'
-import { auditLog, entities, entityLabels, glossaryTerms } from '@/db/schema/knowledge.ts'
+import {
+  auditLog,
+  entities,
+  entityLabels,
+  events,
+  glossaryTerms,
+  mysteries,
+} from '@/db/schema/knowledge.ts'
 import { LABEL_KINDS, type LabelKind } from './label-kind.ts'
 import { normalizeText } from './normalize.ts'
 
@@ -42,6 +49,13 @@ import { normalizeText } from './normalize.ts'
  *   wordings the entity carries, because those are what a later chapter will
  *   actually contain.
  *
+ *   It must not stop at the label. An event is named by its own summary and a
+ *   mystery by its question — prose the pipeline wrote with the name spelt out
+ *   inside it. Correcting the label alone leaves the fiche saying « Hermep »
+ *   and the timeline under it saying Helmeppo, three beats down, next to the
+ *   corrected portrait. See rewriteProse() for what that covers and what it
+ *   refuses to touch.
+ *
  * Bounded like everything else: the glossary entry is dated by the label's own
  * revelation chapter, so a name settled at chapter 3 reaches chapter 4's
  * extraction and never reaches chapter 2's.
@@ -62,10 +76,15 @@ export interface RenameResult {
   previousLabel: string
   label: string
   kind: LabelKind
+  /** The surviving name's own revelation — the earlier of the two on a fold. */
   revealedInChapter: number
+  /** The entity already carried this name: the two rows became one. */
+  folded: boolean
   keptAsAlias: boolean
   /** Source wordings now mapped to this name for later extractions. */
   glossaryTerms: number
+  /** Event summaries and mystery questions that spelt it the old way. */
+  proseRewritten: number
 }
 
 /**
@@ -165,7 +184,9 @@ export async function renameEntityLabel(
         id: entityLabels.id,
         label: entityLabels.label,
         normalizedLabel: entityLabels.normalizedLabel,
+        kind: entityLabels.kind,
         precedence: entityLabels.precedence,
+        revealedInChapter: entityLabels.revealedInChapter,
       })
       .from(entityLabels)
       .where(
@@ -176,37 +197,62 @@ export async function renameEntityLabel(
         ),
       )
 
-    /*
-     * A name the entity already carries is not a rename.
-     *
-     * Turning « Helmeppo » into a second « Hermep » would leave two rows saying
-     * the same word, one of which the display would pick arbitrarily. What the
-     * reader means by that gesture is either « drop this one » or « show that
-     * one instead », and both are operations this function does not perform —
-     * so it says which name is in the way rather than quietly making a
-     * duplicate.
-     */
-    const clash = siblings.find((sibling) => sibling.normalizedLabel === normalized)
-    if (clash) {
-      throw new Error(
-        `Cette entité porte déjà le nom « ${clash.label} ». ` +
-          'Corrigez celui-là plutôt que d’en créer un second identique.',
-      )
-    }
-
     // A rename must not renumber a precedence publication or a merge chose
     // deliberately; a change of kind is exactly the case where it should.
-    const precedence = kind === row.kind ? row.precedence : LABEL_PRECEDENCE[kind]
+    const wanted = kind === row.kind ? row.precedence : LABEL_PRECEDENCE[kind]
 
-    await db
-      .update(entityLabels)
-      .set({
-        label,
-        normalizedLabel: normalized,
-        kind,
-        ...(precedence === row.precedence ? {} : { precedence }),
-      })
-      .where(eq(entityLabels.id, row.id))
+    /*
+     * The entity already carries this name — so the two are one name.
+     *
+     * This used to be a refusal, and the refusal was useless in the case that
+     * produces it. Chapter 3 reproposes « Helmeppo » as a second label of a
+     * character already corrected to « Hermep » at chapter 1: the reader asks
+     * for the same correction again and is told « corrigez plutôt celui-là » —
+     * about a row that is already right, with nothing to do to it. The message
+     * was accurate and left the duplicate exactly where it was.
+     *
+     * Saying « this row and that row are the same name » *is* the answer, so it
+     * is applied rather than argued with. The two fold into one: the surviving
+     * row keeps the strongest precedence of the pair, so a display the reader
+     * chose is never demoted by a fold, and the **earliest** revelation of the
+     * pair, because the entity really was named this at that chapter — in a
+     * spelling now corrected. Anything later would hide a name the reader had.
+     */
+    const clash = siblings.find((sibling) => sibling.normalizedLabel === normalized)
+    const precedence = clash ? Math.max(clash.precedence, wanted) : wanted
+    const differs = normalized !== row.normalizedLabel
+
+    /** What the surviving row says once the two have folded into one. */
+    const survivingKind = clash && clash.precedence >= wanted ? clash.kind : kind
+    const revealedInChapter = clash
+      ? Math.min(clash.revealedInChapter, row.revealedInChapter)
+      : row.revealedInChapter
+
+    if (clash) {
+      await db
+        .update(entityLabels)
+        .set({
+          // The wording as it was just typed: the reader retyped the name they
+          // want to see, and « hermep » corrected to « Hermep » is the whole
+          // point of some of these corrections.
+          label,
+          normalizedLabel: normalized,
+          kind: survivingKind,
+          precedence,
+          revealedInChapter,
+        })
+        .where(eq(entityLabels.id, clash.id))
+    } else {
+      await db
+        .update(entityLabels)
+        .set({
+          label,
+          normalizedLabel: normalized,
+          kind,
+          ...(precedence === row.precedence ? {} : { precedence }),
+        })
+        .where(eq(entityLabels.id, row.id))
+    }
 
     /*
      * The previous wording, kept as a name nothing displays.
@@ -214,10 +260,23 @@ export async function renameEntityLabel(
      * Skipped when the correction is an accent or a capital — « hermep » and
      * « Hermep » normalise to the same string, so the row would be a duplicate
      * of the one just rewritten and would add nothing to find it by.
+     *
+     * On a fold there is no row to insert: the one being folded already carries
+     * that wording, so it is demoted in place rather than duplicated — and
+     * dropped outright when the reader unticked the box, which is the only way
+     * this function ever deletes a name.
      */
-    const differs = normalized !== row.normalizedLabel
     const keptAsAlias = keepPrevious && differs
-    if (keptAsAlias) {
+    if (clash) {
+      if (keptAsAlias) {
+        await db
+          .update(entityLabels)
+          .set({ kind: 'alias', precedence: SEARCH_ONLY_PRECEDENCE })
+          .where(eq(entityLabels.id, row.id))
+      } else {
+        await db.delete(entityLabels).where(eq(entityLabels.id, row.id))
+      }
+    } else if (keptAsAlias) {
       await db.insert(entityLabels).values({
         entityId: row.entityId,
         userId,
@@ -279,7 +338,7 @@ export async function renameEntityLabel(
             sourceTerm: wording.label,
             normalizedSource: wording.normalizedLabel,
             frenchTerm: label,
-            decidedInChapter: row.revealedInChapter,
+            decidedInChapter: revealedInChapter,
           })
           .onConflictDoUpdate({
             target: [glossaryTerms.workId, glossaryTerms.normalizedSource],
@@ -291,6 +350,15 @@ export async function renameEntityLabel(
       }
     }
 
+    const proseRewritten = isDisplayedName
+      ? await rewriteProse(db, {
+          userId,
+          workId: row.workId,
+          from: row.label,
+          to: label,
+        })
+      : 0
+
     await db.insert(auditLog).values({
       userId,
       action: 'entity_renamed',
@@ -301,10 +369,12 @@ export async function renameEntityLabel(
         from: row.label,
         to: label,
         fromKind: row.kind,
-        kind,
-        revealedInChapter: row.revealedInChapter,
+        kind: survivingKind,
+        revealedInChapter,
+        folded: clash !== undefined,
         keptAsAlias,
         glossaryTerms: recorded,
+        proseRewritten,
       },
     })
 
@@ -312,10 +382,129 @@ export async function renameEntityLabel(
       entityId: row.entityId,
       previousLabel: row.label,
       label,
-      kind,
-      revealedInChapter: row.revealedInChapter,
+      kind: survivingKind,
+      revealedInChapter,
+      folded: clash !== undefined,
       keptAsAlias,
       glossaryTerms: recorded,
+      proseRewritten,
     }
   })
+}
+
+/**
+ * The sentences that spelt it the old way.
+ *
+ * A name is not only a label. An event is *named by its own summary* — the
+ * pipeline has no better title for « Helmeppo détruit les boulettes de riz de
+ * Rika » than that sentence — and a mystery by its question, so the story mode
+ * reads prose in which the name was written out in full. Correct the label
+ * alone and the fiche says « Hermep » while the timeline underneath it still
+ * says Helmeppo, three beats down, with the corrected portrait beside it.
+ *
+ * The review queue already does this for the batch being decided: a name
+ * retyped there is carried into the event summaries and mystery questions
+ * written before your decision. This is the same rule for what is already
+ * published, which is where a correction made forty chapters later lands.
+ *
+ * Whole words only, and case-sensitively. « Ace » must not fire inside
+ * « Aces » — the lookarounds are the ones the story mode uses to place faces in
+ * a sentence, for the same reason.
+ *
+ * **What is deliberately not touched:** the chapter text. `text_blocks` holds
+ * what the source says, evidence is anchored by finding an excerpt inside it,
+ * and rewriting a word there would either break every quote that cites the
+ * block or — worse — quietly succeed and leave the graph claiming the source
+ * used a wording it never used. The prose rewritten here is ours: summaries and
+ * questions the pipeline composed, never a quotation.
+ */
+async function rewriteProse(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: { userId: string; workId: string; from: string; to: string },
+): Promise<number> {
+  const { userId, workId, from, to } = input
+  if (from === to || from.trim() === '') return 0
+
+  const pattern = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapeRegExp(from)}(?![\\p{L}\\p{N}])`,
+    'gu',
+  )
+  const swap = (text: string | null): string | null => {
+    if (text === null || !text.includes(from)) return null
+    const next = text.replace(pattern, to)
+    return next === text ? null : next
+  }
+
+  let rewritten = 0
+
+  const eventRows = await db
+    .select({ entityId: events.entityId, summary: events.summary })
+    .from(events)
+    .where(and(eq(events.workId, workId), eq(events.userId, userId)))
+
+  for (const event of eventRows) {
+    const summary = swap(event.summary)
+    if (summary === null) continue
+    await db
+      .update(events)
+      .set({ summary })
+      .where(eq(events.entityId, event.entityId))
+    rewritten++
+  }
+
+  const mysteryRows = await db
+    .select({ entityId: mysteries.entityId, question: mysteries.question })
+    .from(mysteries)
+    .where(and(eq(mysteries.workId, workId), eq(mysteries.userId, userId)))
+
+  for (const mystery of mysteryRows) {
+    const question = swap(mystery.question)
+    if (question === null) continue
+    await db
+      .update(mysteries)
+      .set({ question })
+      .where(eq(mysteries.entityId, mystery.entityId))
+    rewritten++
+  }
+
+  /*
+   * And the copy of that sentence kept as a label.
+   *
+   * An event carries its summary twice: once in `events`, once truncated in
+   * `entity_labels`, which is what search indexes and what the story mode falls
+   * back to when the summary is empty. Left behind, the old spelling comes back
+   * through the search box.
+   *
+   * Restricted to event and mystery nodes, and that restriction is the whole
+   * safety of this: labels of *characters* are names, and rewriting another
+   * character's name because it contains this wording is precisely the silent
+   * damage a rename must not do.
+   */
+  const labelRows = await db
+    .select({ id: entityLabels.id, label: entityLabels.label })
+    .from(entityLabels)
+    .innerJoin(entities, eq(entities.id, entityLabels.entityId))
+    .where(
+      and(
+        eq(entities.workId, workId),
+        eq(entities.userId, userId),
+        eq(entityLabels.userId, userId),
+        inArray(entities.nodeType, ['event', 'mystery']),
+      ),
+    )
+
+  for (const copy of labelRows) {
+    const next = swap(copy.label)
+    if (next === null) continue
+    await db
+      .update(entityLabels)
+      .set({ label: next, normalizedLabel: normalizeText(next) })
+      .where(eq(entityLabels.id, copy.id))
+  }
+
+  return rewritten
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

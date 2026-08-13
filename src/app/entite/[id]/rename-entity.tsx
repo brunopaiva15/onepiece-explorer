@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { LABEL_KINDS, labelKindLabel, type LabelKind } from '@/domains/knowledge/label-kind.ts'
+import { normalizeText } from '@/domains/knowledge/normalize.ts'
 import type { SheetLabel } from '@/domains/temporal/entity-sheet.ts'
 import { renameEntityAction } from './actions.ts'
 
@@ -54,6 +55,18 @@ export function RenameEntity({
 
   const selected = labels.find((label) => label.id === labelId) ?? labels[0]
 
+  /*
+   * The name the entity already carries under the form being typed.
+   *
+   * A later chapter reproposing « Helmeppo » on a character corrected to
+   * « Hermep » at chapter 1 is the ordinary case, not the exotic one, and the
+   * outcome — the two rows folded into one name — is worth announcing before
+   * the click rather than explaining after it.
+   */
+  const duplicate = labels.find(
+    (label) => label.id !== labelId && normalizeText(label.label) === normalizeText(value),
+  )
+
   if (labels.length === 0) return null
 
   function choose(id: string): void {
@@ -83,8 +96,15 @@ export function RenameEntity({
 
       const result = response.result
       setDone(
-        `« ${result.previousLabel} » est désormais « ${result.label} », ` +
-          `révélé au chapitre ${result.revealedInChapter}.` +
+        (result.folded
+          ? `« ${result.previousLabel} » et « ${result.label} » ne font plus ` +
+            `qu'un seul nom, connu depuis le chapitre ${result.revealedInChapter}.`
+          : `« ${result.previousLabel} » est désormais « ${result.label} », ` +
+            `révélé au chapitre ${result.revealedInChapter}.`) +
+          (result.proseRewritten > 0
+            ? ` ${result.proseRewritten} événement(s) ou mystère(s) qui l’écrivaient` +
+              ` en toutes lettres ont suivi.`
+            : '') +
           (result.keptAsAlias
             ? ` L’ancienne forme reste trouvable par la recherche.`
             : '') +
@@ -128,7 +148,9 @@ export function RenameEntity({
         Pour une traduction que le pipeline a devinée de travers — Helmeppo
         s&apos;appelle Hermep en français — ou une orthographe à reprendre. Le
         chapitre de révélation ne bouge pas&nbsp;: c&apos;est le même nom, mieux
-        écrit.
+        écrit. Les événements et les mystères qui l&apos;écrivent en toutes
+        lettres suivent&nbsp;; le texte du chapitre, lui, n&apos;est jamais
+        retouché — c&apos;est ce que la source dit.
       </p>
 
       {labels.length > 1 && (
@@ -195,6 +217,14 @@ export function RenameEntity({
           conserver pour une traduction&nbsp;: c&apos;est la forme que les
           catalogues d&apos;illustrations et les scans emploient. À décocher pour
           une faute de frappe.
+          {duplicate && (
+            <>
+              {' '}
+              Ici, cette ligne fera doublon avec «&nbsp;{duplicate.label}&nbsp;»
+              que l&apos;entité porte déjà&nbsp;: les deux seront réunies en un
+              seul nom.
+            </>
+          )}
         </span>
       </label>
 

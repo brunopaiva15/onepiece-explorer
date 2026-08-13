@@ -78,7 +78,18 @@ d'illustrations et les scans sont en anglais, et c'est par « Helmeppo » que le
 portrait a été rapproché. Et la correction **entre au glossaire**, pour la
 formulation source du même nœud aussi, qui est ce qu'un chapitre suivant
 contiendra : la question ne se repose pas, et les deux formes ne finissent pas
-en deux entités.
+en deux entités. Enfin la correction **ne s'arrête pas au libellé** : un
+événement est nommé par son propre résumé et un mystère par sa question — de la
+prose où le nom est écrit en toutes lettres —, donc les phrases suivent, mots
+entiers seulement. Le texte du chapitre, lui, n'est jamais retouché : c'est ce
+que la source dit, et c'est ce à quoi les preuves s'ancrent.
+
+Et quand un chapitre ultérieur a reproposé l'ancienne graphie comme second nom,
+la corriger à son tour **réunit les deux lignes** au lieu d'objecter qu'un nom
+identique existe déjà : la survivante garde la plus forte précédence de la paire
+— un affichage que vous avez choisi n'est pas rétrogradé par une fusion — et la
+plus ancienne révélation, parce que l'entité portait bien ce nom à ce
+chapitre-là, mal orthographié.
 
 Le chapitre peut être **récupéré depuis le One Piece Fandom** par son numéro :
 les deux versions arrivent d'un coup, l'anglaise comme texte citable — c'est la
