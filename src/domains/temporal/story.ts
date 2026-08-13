@@ -35,8 +35,22 @@ import { describeStoryTime } from './timeline.ts'
  * so refutations come from a second, deliberately small read at N-1.
  */
 
-/** How many chapters are read at once. Above this, latency stops improving. */
-const CONCURRENCY = 4
+/**
+ * How many chapters are read at once — and, because a chapter never holds two
+ * connections at the same time, how many connections one window can hold.
+ *
+ * That second reading is the one that matters. The reads of a single chapter
+ * used to run as a pair, so a window of six chapters at four at a time asked
+ * the pool for eight connections: one page render nearly emptied an instance's
+ * whole pool, and a handful of renders arriving together emptied the
+ * database's. Sequential inside the chapter, three chapters at a time, this
+ * window holds three — and the extra round trip per chapter is a single
+ * indexed select against a transaction that was going to be opened anyway.
+ *
+ * Above three, latency stops improving anyway: the window is six chapters and
+ * the tail is the slowest one.
+ */
+const CONCURRENCY = 3
 
 /** Chapters per window. Enough that a fast scroll does not outrun the loader. */
 export const STORY_WINDOW = 6
@@ -202,170 +216,176 @@ interface Row {
 
 /** One chapter's beads, in the order they are told. */
 async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> {
-  const [rows, refuted] = await Promise.all([
-    withBoundary({ userId, boundaryChapter: chapter }, async (db) =>
-      db.execute(sql`
-        -- One line, quoted exactly — and only from a French chapter.
-        --
-        -- An excerpt keeps the language of its source, because a citation is a
-        -- copy verified character by character and translating one would make
-        -- it something else. That rule is right and it stays. What follows from
-        -- it is that a library whose citable text is the English wiki has no
-        -- French line to quote, and the thread is read in French: « The Red
-        -- Hair Pirates then raise anchor » on a French page is not a quotation,
-        -- it is a language the reader did not ask for. So the bead appears only
-        -- when the chapter's own language is French, and otherwise not at all.
-        --
-        -- Shape matters too: a capital at the start, a full stop at the end.
-        -- The excerpts are prose, so the longest is often a clause torn out of
-        -- the middle of a paragraph, which is worse than no quote. Dialogue
-        -- wins over narration when both qualify.
-        (SELECT 'citation' AS kind, 0 AS rang, NULL::uuid AS "entityId",
-                ev.excerpt AS texte, NULL::text AS detail,
-                NULL::jsonb AS extra, 0::numeric AS ordre
-           FROM evidence ev
-           JOIN assertions a ON a.id = ev.assertion_id
-           JOIN chapters c ON c.id = ev.chapter_id
-          WHERE a.knowledge_from_chapter = ${chapter}
-            AND c.language = 'fr'
-            AND ev.excerpt IS NOT NULL
-            AND char_length(ev.excerpt) BETWEEN ${QUOTE_MIN} AND ${QUOTE_MAX}
-            AND ev.excerpt ~ '^[[:upper:]«]'
-            AND ev.excerpt ~ '[.!?…»]$'
-          ORDER BY (ev.kind = 'dialogue') DESC, char_length(ev.excerpt) DESC
-          LIMIT 1)
+  const rows = await withBoundary({ userId, boundaryChapter: chapter }, async (db) =>
+    db.execute(sql`
+      -- One line, quoted exactly — and only from a French chapter.
+      --
+      -- An excerpt keeps the language of its source, because a citation is a
+      -- copy verified character by character and translating one would make
+      -- it something else. That rule is right and it stays. What follows from
+      -- it is that a library whose citable text is the English wiki has no
+      -- French line to quote, and the thread is read in French: « The Red
+      -- Hair Pirates then raise anchor » on a French page is not a quotation,
+      -- it is a language the reader did not ask for. So the bead appears only
+      -- when the chapter's own language is French, and otherwise not at all.
+      --
+      -- Shape matters too: a capital at the start, a full stop at the end.
+      -- The excerpts are prose, so the longest is often a clause torn out of
+      -- the middle of a paragraph, which is worse than no quote. Dialogue
+      -- wins over narration when both qualify.
+      (SELECT 'citation' AS kind, 0 AS rang, NULL::uuid AS "entityId",
+              ev.excerpt AS texte, NULL::text AS detail,
+              NULL::jsonb AS extra, 0::numeric AS ordre
+         FROM evidence ev
+         JOIN assertions a ON a.id = ev.assertion_id
+         JOIN chapters c ON c.id = ev.chapter_id
+        WHERE a.knowledge_from_chapter = ${chapter}
+          AND c.language = 'fr'
+          AND ev.excerpt IS NOT NULL
+          AND char_length(ev.excerpt) BETWEEN ${QUOTE_MIN} AND ${QUOTE_MAX}
+          AND ev.excerpt ~ '^[[:upper:]«]'
+          AND ev.excerpt ~ '[.!?…»]$'
+        ORDER BY (ev.kind = 'dialogue') DESC, char_length(ev.excerpt) DESC
+        LIMIT 1)
 
-        UNION ALL
+      UNION ALL
 
-        SELECT CASE WHEN e.is_flashback THEN 'souvenir' ELSE 'evenement' END,
-               CASE WHEN e.is_flashback THEN 3 ELSE 2 END,
-               e.entity_id,
-               (SELECT l.label FROM entity_labels l
-                 WHERE l.entity_id = e.entity_id
-                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-                 LIMIT 1),
-               e.summary, e.story_time,
-               extract(epoch FROM e.created_at)
-          FROM events e
-          JOIN entities en ON en.id = e.entity_id
-         WHERE coalesce(e.told_in_chapter, e.shown_in_chapter, 0) = ${chapter}
+      SELECT CASE WHEN e.is_flashback THEN 'souvenir' ELSE 'evenement' END,
+             CASE WHEN e.is_flashback THEN 3 ELSE 2 END,
+             e.entity_id,
+             (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id = e.entity_id
+               ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+               LIMIT 1),
+             e.summary, e.story_time,
+             extract(epoch FROM e.created_at)
+        FROM events e
+        JOIN entities en ON en.id = e.entity_id
+       WHERE coalesce(e.told_in_chapter, e.shown_in_chapter, 0) = ${chapter}
 
-        UNION ALL
+      UNION ALL
 
-        -- A name landing on someone who *already had one*. Without the EXISTS
-        -- this fires for every label in the chapter, which on chapter 1 is
-        -- every entity in the story — and a first name is not a reveal, it is
-        -- an introduction, which the next arm already makes.
-        SELECT 'nom', 3, l.entity_id, l.label,
-               (SELECT p.label FROM entity_labels p
-                 WHERE p.entity_id = l.entity_id
-                   AND p.revealed_in_chapter < ${chapter}
-                 ORDER BY p.precedence DESC, p.revealed_in_chapter DESC
-                 LIMIT 1),
-               NULL::jsonb, -l.precedence
-          FROM entity_labels l
-          JOIN entities en ON en.id = l.entity_id
-         WHERE l.revealed_in_chapter = ${chapter}
-           AND EXISTS (SELECT 1 FROM entity_labels p
-                        WHERE p.entity_id = l.entity_id
-                          AND p.revealed_in_chapter < ${chapter})
+      -- A name landing on someone who *already had one*. Without the EXISTS
+      -- this fires for every label in the chapter, which on chapter 1 is
+      -- every entity in the story — and a first name is not a reveal, it is
+      -- an introduction, which the next arm already makes.
+      SELECT 'nom', 3, l.entity_id, l.label,
+             (SELECT p.label FROM entity_labels p
+               WHERE p.entity_id = l.entity_id
+                 AND p.revealed_in_chapter < ${chapter}
+               ORDER BY p.precedence DESC, p.revealed_in_chapter DESC
+               LIMIT 1),
+             NULL::jsonb, -l.precedence
+        FROM entity_labels l
+        JOIN entities en ON en.id = l.entity_id
+       WHERE l.revealed_in_chapter = ${chapter}
+         AND EXISTS (SELECT 1 FROM entity_labels p
+                      WHERE p.entity_id = l.entity_id
+                        AND p.revealed_in_chapter < ${chapter})
 
-        UNION ALL
+      UNION ALL
 
-        -- Walking on is for whoever has no beat of their own. An event and a
-        -- mystery are entities too, and without this they arrived twice: once
-        -- as themselves, once as « entre en scène · Événement ».
-        --
-        -- First, before the events. The events *name* these people — « Shanks
-        -- refuse d'emmener Luffy » — and a sentence that names someone the
-        -- reader has not been introduced to, with a face beside the name, is
-        -- an introduction happening after the fact.
-        --
-        -- « entre en scène » or « est mentionné », decided by what the
-        -- extraction stated. Koby telling Luffy about a pirate hunter named
-        -- Zoro is not Zoro walking on: he is spoken of at chapter 2 and seen at
-        -- chapter 3, and the graph used to call both the same thing.
-        --
-        -- The stated flag is what keeps an existing library intact. Occurrences
-        -- written before the field say « mention » about everyone, because they
-        -- were derived from the medium of the evidence and a written chapter
-        -- has no drawings — reading those would demote every character ever
-        -- imported. With no stated row, the answer is the old one: walking on.
-        SELECT CASE WHEN EXISTS (
-                      SELECT 1 FROM occurrences o
-                       WHERE o.entity_id = en.id AND o.stated
-                         AND o.chapter_number = ${chapter}
-                         AND o.kind = 'mention')
-                    AND NOT EXISTS (
-                      SELECT 1 FROM occurrences o
-                       WHERE o.entity_id = en.id AND o.stated
-                         AND o.chapter_number = ${chapter}
-                         AND o.kind = 'appearance')
-               THEN 'mention' ELSE 'entree' END,
-               1, en.id,
-               (SELECT l.label FROM entity_labels l
-                 WHERE l.entity_id = en.id
-                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-                 LIMIT 1),
-               en.node_type, NULL::jsonb,
-               ${ENTRY_ORDER}
-          FROM entities en
-         WHERE en.first_seen_chapter = ${chapter}
-           AND NOT EXISTS (SELECT 1 FROM events e2 WHERE e2.entity_id = en.id)
-           AND NOT EXISTS (SELECT 1 FROM mysteries m2 WHERE m2.entity_id = en.id)
+      -- Walking on is for whoever has no beat of their own. An event and a
+      -- mystery are entities too, and without this they arrived twice: once
+      -- as themselves, once as « entre en scène · Événement ».
+      --
+      -- First, before the events. The events *name* these people — « Shanks
+      -- refuse d'emmener Luffy » — and a sentence that names someone the
+      -- reader has not been introduced to, with a face beside the name, is
+      -- an introduction happening after the fact.
+      --
+      -- « entre en scène » or « est mentionné », decided by what the
+      -- extraction stated. Koby telling Luffy about a pirate hunter named
+      -- Zoro is not Zoro walking on: he is spoken of at chapter 2 and seen at
+      -- chapter 3, and the graph used to call both the same thing.
+      --
+      -- The stated flag is what keeps an existing library intact. Occurrences
+      -- written before the field say « mention » about everyone, because they
+      -- were derived from the medium of the evidence and a written chapter
+      -- has no drawings — reading those would demote every character ever
+      -- imported. With no stated row, the answer is the old one: walking on.
+      SELECT CASE WHEN EXISTS (
+                    SELECT 1 FROM occurrences o
+                     WHERE o.entity_id = en.id AND o.stated
+                       AND o.chapter_number = ${chapter}
+                       AND o.kind = 'mention')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM occurrences o
+                     WHERE o.entity_id = en.id AND o.stated
+                       AND o.chapter_number = ${chapter}
+                       AND o.kind = 'appearance')
+             THEN 'mention' ELSE 'entree' END,
+             1, en.id,
+             (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id = en.id
+               ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+               LIMIT 1),
+             en.node_type, NULL::jsonb,
+             ${ENTRY_ORDER}
+        FROM entities en
+       WHERE en.first_seen_chapter = ${chapter}
+         AND NOT EXISTS (SELECT 1 FROM events e2 WHERE e2.entity_id = en.id)
+         AND NOT EXISTS (SELECT 1 FROM mysteries m2 WHERE m2.entity_id = en.id)
 
-        UNION ALL
+      UNION ALL
 
-        -- Seen at last, having only been spoken of until now.
-        --
-        -- The other half of the same distinction: Zoro was named at chapter 2
-        -- and this is the chapter he walks on. Keyed on the first stated
-        -- appearance rather than on first_seen_chapter, which holds the
-        -- chapter the reader first *heard of* him — the right anchor for the
-        -- boundary, and the wrong one for this.
-        SELECT 'entree', 1, en.id,
-               (SELECT l.label FROM entity_labels l
-                 WHERE l.entity_id = en.id
-                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-                 LIMIT 1),
-               en.node_type, NULL::jsonb,
-               ${ENTRY_ORDER}
-          FROM entities en
-         WHERE en.first_seen_chapter < ${chapter}
-           AND EXISTS (SELECT 1 FROM occurrences o
-                        WHERE o.entity_id = en.id AND o.stated
-                          AND o.chapter_number = ${chapter}
-                          AND o.kind = 'appearance')
-           AND NOT EXISTS (SELECT 1 FROM occurrences o
-                            WHERE o.entity_id = en.id AND o.stated
-                              AND o.chapter_number < ${chapter}
-                              AND o.kind = 'appearance')
-           AND NOT EXISTS (SELECT 1 FROM events e2 WHERE e2.entity_id = en.id)
-           AND NOT EXISTS (SELECT 1 FROM mysteries m2 WHERE m2.entity_id = en.id)
+      -- Seen at last, having only been spoken of until now.
+      --
+      -- The other half of the same distinction: Zoro was named at chapter 2
+      -- and this is the chapter he walks on. Keyed on the first stated
+      -- appearance rather than on first_seen_chapter, which holds the
+      -- chapter the reader first *heard of* him — the right anchor for the
+      -- boundary, and the wrong one for this.
+      SELECT 'entree', 1, en.id,
+             (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id = en.id
+               ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+               LIMIT 1),
+             en.node_type, NULL::jsonb,
+             ${ENTRY_ORDER}
+        FROM entities en
+       WHERE en.first_seen_chapter < ${chapter}
+         AND EXISTS (SELECT 1 FROM occurrences o
+                      WHERE o.entity_id = en.id AND o.stated
+                        AND o.chapter_number = ${chapter}
+                        AND o.kind = 'appearance')
+         AND NOT EXISTS (SELECT 1 FROM occurrences o
+                          WHERE o.entity_id = en.id AND o.stated
+                            AND o.chapter_number < ${chapter}
+                            AND o.kind = 'appearance')
+         AND NOT EXISTS (SELECT 1 FROM events e2 WHERE e2.entity_id = en.id)
+         AND NOT EXISTS (SELECT 1 FROM mysteries m2 WHERE m2.entity_id = en.id)
 
-        UNION ALL
+      UNION ALL
 
-        SELECT 'reponse', 6, m.entity_id, m.question, NULL, NULL::jsonb,
-               extract(epoch FROM m.created_at)
-          FROM mysteries m
-          JOIN entities en ON en.id = m.entity_id
-         WHERE m.resolved_in_chapter = ${chapter}
+      SELECT 'reponse', 6, m.entity_id, m.question, NULL, NULL::jsonb,
+             extract(epoch FROM m.created_at)
+        FROM mysteries m
+        JOIN entities en ON en.id = m.entity_id
+       WHERE m.resolved_in_chapter = ${chapter}
 
-        UNION ALL
+      UNION ALL
 
-        SELECT 'question', 7, m.entity_id, m.question, NULL, NULL::jsonb,
-               extract(epoch FROM m.created_at)
-          FROM mysteries m
-          JOIN entities en ON en.id = m.entity_id
-         WHERE m.opened_in_chapter = ${chapter}
+      SELECT 'question', 7, m.entity_id, m.question, NULL, NULL::jsonb,
+             extract(epoch FROM m.created_at)
+        FROM mysteries m
+        JOIN entities en ON en.id = m.entity_id
+       WHERE m.opened_in_chapter = ${chapter}
 
-        -- Narrative order, never alphabetical: sorting the beads by their text
-        -- turns a chapter into an index of itself.
-        ORDER BY rang, ordre
-      `),
-    ),
-    readRefutations(userId, chapter),
-  ])
+      -- Narrative order, never alphabetical: sorting the beads by their text
+      -- turns a chapter into an index of itself.
+      ORDER BY rang, ordre
+    `),
+  )
+
+  /*
+   * After, not alongside.
+   *
+   * This opens a second transaction, at a second boundary, and running it
+   * beside the one above would double what a window holds — see CONCURRENCY.
+   * The two are independent, so the order is free; the connection is not.
+   */
+  const refuted = await readRefutations(userId, chapter)
 
   /*
    * Deduplicated on what the reader actually sees.
