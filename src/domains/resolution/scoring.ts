@@ -250,7 +250,7 @@ function scoreChapter(signals: ResolutionSignals): ScoredSignal {
  * *find* candidates cheaply, and reusing it here would double-count the same
  * evidence — a candidate is only in this list because its trigrams matched.
  */
-function tokenOverlap(a: string, b: string): number {
+export function tokenOverlap(a: string, b: string): number {
   const setA = new Set(tokens(a))
   const setB = new Set(tokens(b))
   if (setA.size === 0 || setB.size === 0) return 0

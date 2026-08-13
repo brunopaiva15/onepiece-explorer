@@ -34,6 +34,24 @@ export interface TimelineEntry {
   /** For mysteries: whether the reader has seen it resolved yet. */
   state: string | null
   resolvedInChapter: number | null
+  /**
+   * When the row was written. Not shown — it breaks ties, and only ties.
+   *
+   * Everything a chapter reveals shares one revelation number, so a chapter's
+   * own events are all equal on the only axis this list sorts by. With nothing
+   * further to compare, the order was whatever PostgreSQL happened to return
+   * for a query with no ORDER BY: chapter 5 showed Kuina's death before the
+   * duel that precedes it, and the arrangement could change on its own after a
+   * VACUUM.
+   *
+   * Publication order is the closest thing to narrative order that survives
+   * into this table. It follows the review queue, which follows extraction,
+   * which walks the chapter's passages in order — a chain of approximations,
+   * but a stable one, and stable is the property that was missing. The real
+   * fix is an event knowing which passage it came from, which the schema does
+   * not record.
+   */
+  recordedAt: number
 }
 
 export interface StoryTimeView {
@@ -64,6 +82,7 @@ export async function getTimeline(
         isFlashback: events.isFlashback,
         shownInChapter: events.shownInChapter,
         toldInChapter: events.toldInChapter,
+        createdAt: events.createdAt,
       })
       .from(events)
       .innerJoin(entities, eq(entities.id, events.entityId))
@@ -75,6 +94,7 @@ export async function getTimeline(
         openedInChapter: mysteries.openedInChapter,
         state: mysteries.state,
         resolvedInChapter: mysteries.resolvedInChapter,
+        createdAt: mysteries.createdAt,
       })
       .from(mysteries)
       .innerJoin(entities, eq(entities.id, mysteries.entityId))
@@ -118,6 +138,7 @@ export async function getTimeline(
       kind: 'event',
       state: null,
       resolvedInChapter: null,
+      recordedAt: row.createdAt.getTime(),
     })),
     ...entries.mysteryRows.map((row): TimelineEntry => ({
       entityId: row.entityId,
@@ -137,6 +158,7 @@ export async function getTimeline(
         row.resolvedInChapter !== null && row.resolvedInChapter <= boundaryChapter
           ? row.resolvedInChapter
           : null,
+      recordedAt: row.createdAt.getTime(),
     })),
   ]
 
@@ -144,8 +166,12 @@ export async function getTimeline(
 
   return {
     boundaryChapter,
-    byRevelation: [...all].sort((a, b) => a.knownFromChapter - b.knownFromChapter),
-    byStoryTime: dated.sort((a, b) => storyOrder(a) - storyOrder(b)),
+    byRevelation: [...all].sort(
+      (a, b) => a.knownFromChapter - b.knownFromChapter || a.recordedAt - b.recordedAt,
+    ),
+    byStoryTime: dated.sort(
+      (a, b) => storyOrder(a) - storyOrder(b) || a.recordedAt - b.recordedAt,
+    ),
     undated: all.filter((entry) => !dated.includes(entry)),
   }
 }

@@ -23,6 +23,7 @@ import type {
   EvidenceRef,
 } from '@/domains/ai/schemas.ts'
 import { normalizeText } from '@/domains/knowledge/normalize.ts'
+import { ECHO_TOO_CLOSE, findEcho } from '@/domains/review/echoes.ts'
 import { PIPELINE_VERSION } from '@/domains/ingestion/import.ts'
 import { rebuildRefTable } from '@/domains/pipeline/rebuild-refs.ts'
 import { resolveRef, type RefTable } from '@/domains/pipeline/refs.ts'
@@ -732,6 +733,44 @@ export async function publishDecisions(
         label,
         chapterNumber: run.chapterNumber,
       })
+
+      /*
+       * The same scene, written twice.
+       *
+       * `exactTwin` above catches the identical re-proposal. It cannot catch
+       * the one a second processing pass produces, because a model does not
+       * phrase a scene identically twice — and each accepted copy becomes its
+       * own entity, since an event *is* an entity here. Two nodes for one
+       * scene, joined by nothing.
+       *
+       * Refused rather than merged: reusing the existing entity, as the exact
+       * path does, would be deciding that two differently-worded texts are one
+       * memory. Above ECHO_TOO_CLOSE the words are practically the same and
+       * saying so costs nothing; below it, the card carries the resemblance and
+       * the reviewer decides. Rejecting is a real way out, so this is a
+       * question, not a dead end — the message has to say which.
+       */
+      if (twin === null) {
+        const echo = await findEcho(db, {
+          workId: run.workId,
+          userId,
+          nodeType,
+          text: label,
+          chapterNumber: run.chapterNumber,
+        })
+
+        if (echo !== null && echo.overlap >= ECHO_TOO_CLOSE) {
+          result.failures.push({
+            reviewItemId: item.id,
+            reason:
+              `Presque mot pour mot ce qui est déjà enregistré au chapitre ` +
+              `${echo.chapterNumber} : « ${echo.label.slice(0, 120)} ». Publier les deux ` +
+              `créerait deux fiches pour une seule scène. Rejetez celle-ci — ou reportez-la ` +
+              `si les deux scènes sont bien distinctes.`,
+          })
+          continue
+        }
+      }
 
       if (twin !== null) {
         await db.insert(auditLog).values({

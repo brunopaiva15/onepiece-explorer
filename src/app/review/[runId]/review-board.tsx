@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import type { DuplicateInfo } from '@/domains/review/duplicates.ts'
+import type { Echo } from '@/domains/review/echoes.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
 import type { Decision, DecisionKind, PublishResult } from '@/domains/review/publish.ts'
 import { markChapterReviewedAction, publishDecisionsAction } from './actions.ts'
@@ -896,6 +897,7 @@ function ProposalCard({
                 settled={settled}
               />
             )}
+            {item.echo && <EchoNotice echo={item.echo} />}
             {item.typeMismatch && (
               <TypeMismatchNotice
                 mismatch={item.typeMismatch}
@@ -1115,6 +1117,41 @@ function TypeMismatchNotice({
  * case the extraction prompt is written to produce. This states the situation
  * and hands it back.
  */
+/**
+ * Something worded almost like this is already in the graph.
+ *
+ * Distinct from `DuplicateNotice`, which is about the run on screen and is exact
+ * to the word. This one is about what is already published, and it exists
+ * because a chapter processed twice does not produce the same sentence twice:
+ * neither the within-run grouping nor the exact twin check at publication can
+ * see the pair, and each accepted copy becomes its own node.
+ *
+ * It states and does not decide — the same rule the duplicate notice follows.
+ * The stored text is quoted in full rather than summarised, because the whole
+ * question the reviewer has to answer is whether those two sentences are one
+ * scene, and they cannot answer it without reading both.
+ */
+function EchoNotice({ echo }: { echo: Echo }) {
+  return (
+    <div className="mb-3 border-[3px] border-ink bg-[var(--epi-hypothetical)] px-2 py-1.5 text-ink">
+      <p className="font-display text-sm uppercase">
+        Ressemble à ce qui est déjà enregistré
+      </p>
+      <p className="mt-1 text-sm">
+        Chapitre {echo.chapterNumber}, déjà dans le graphe :
+      </p>
+      <p className="mt-1 border-l-2 border-ink pl-2 text-sm italic">{echo.label}</p>
+      <p className="mt-1 text-sm">
+        {echo.overlap >= 0.85
+          ? 'Presque mot pour mot : la publication refusera d’en créer une seconde fiche. ' +
+            'Rejetez celle-ci si c’est la même scène.'
+          : 'Même scène racontée deux fois, ou deux moments distincts ? Accepter les deux ' +
+            'crée deux fiches que rien ne rapprochera ensuite.'}
+      </p>
+    </div>
+  )
+}
+
 function DuplicateNotice({
   duplicate,
   twins,
