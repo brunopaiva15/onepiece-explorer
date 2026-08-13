@@ -2,7 +2,7 @@ import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
 import { normalizeText } from '../knowledge/normalize.ts'
-import type { SearchHit } from './types.ts'
+import { resultKindFor, type SearchHit } from './types.ts'
 
 /**
  * Trigram search over entity names.
@@ -28,6 +28,7 @@ interface Row extends Record<string, unknown> {
   label: string
   revealed_in_chapter: number
   similarity: number
+  node_type: string | null
 }
 
 export async function fuzzySearch(
@@ -42,13 +43,19 @@ export async function fuzzySearch(
   if (normalised.length < 3) return []
 
   return withBoundary({ userId, boundaryChapter }, async (db) => {
+    // The node type comes along for the same reason it does in `lexical.ts`: an
+    // event and a mystery carry a label like everything else, and announcing
+    // one as « entité » presents a sentence as somebody's name. LEFT, so the
+    // join can only add a word and never remove a result.
     const rows = await db.execute<Row>(sql`
       SELECT
         l.entity_id,
         l.label,
         l.revealed_in_chapter,
+        en.node_type,
         similarity(l.normalized_label, ${normalised}) AS similarity
       FROM entity_labels l
+      LEFT JOIN entities en ON en.id = l.entity_id
       WHERE similarity(l.normalized_label, ${normalised}) >= ${FLOOR}
       ORDER BY similarity DESC, l.precedence DESC
       LIMIT ${limit}
@@ -65,7 +72,7 @@ export async function fuzzySearch(
 
       const score = Number(row.similarity)
       hits.push({
-        kind: 'entity',
+        kind: resultKindFor(row.node_type),
         id: row.entity_id,
         entityId: row.entity_id,
         title: row.label,

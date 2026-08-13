@@ -1,7 +1,7 @@
 import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
-import type { SearchHit } from './types.ts'
+import { resultKindFor, type ResultKind, type SearchHit } from './types.ts'
 
 /**
  * Full-text search over everything in the corpus that is prose.
@@ -29,6 +29,8 @@ interface Row extends Record<string, unknown> {
   snippet: string
   chapter_number: number
   rank: number
+  /** Only the label query selects one; it is what tells a scene from a person. */
+  node_type?: string | null
 }
 
 export async function lexicalSearch(
@@ -43,6 +45,20 @@ export async function lexicalSearch(
   return withBoundary({ userId, boundaryChapter }, async (db) => {
     const tsquery = sql`websearch_to_tsquery('fr_unaccent', ${trimmed})`
 
+    /*
+     * The node's type comes along, because a name is not always a name.
+     *
+     * An event and a mystery are entities with a side table and a label of
+     * their own — the summary, the question — so this query returns them beside
+     * the characters, and every one of them was announced as « entité ». The
+     * join answers which is which.
+     *
+     * LEFT, so it can only add. `entity_labels` is bounded by the label's
+     * revelation chapter and `entities` by the node's first appearance *and* by
+     * its review status; an inner join would put a second policy in the way of
+     * a result this query already returns, and a search result disappearing is
+     * a worse outcome than a badge reading « entité ».
+     */
     const labels = await db.execute<Row>(sql`
       SELECT
         l.entity_id                     AS id,
@@ -50,8 +66,10 @@ export async function lexicalSearch(
         l.label                         AS title,
         l.label                         AS snippet,
         l.revealed_in_chapter           AS chapter_number,
+        en.node_type                    AS node_type,
         ts_rank_cd(l.search_vector, ${tsquery}) AS rank
       FROM entity_labels l
+      LEFT JOIN entities en ON en.id = l.entity_id
       WHERE l.search_vector @@ ${tsquery}
       ORDER BY rank DESC, l.precedence DESC
       LIMIT ${limit}
@@ -123,7 +141,7 @@ export async function lexicalSearch(
     `)
 
     return [
-      ...toHits(labels, 'entity', 'Le nom correspond aux mots cherchés.'),
+      ...labelHits(labels),
       ...toHits(blocks, 'text_block', 'Le texte de la page contient ces mots.'),
       ...toHits(eventRows, 'event', "Le résumé de l'événement correspond."),
       ...toHits(mysteryRows, 'mystery', 'La question du mystère correspond.'),
@@ -132,12 +150,12 @@ export async function lexicalSearch(
   })
 }
 
-function toHits(
-  rows: Row[],
-  kind: SearchHit['kind'],
-  reason: string,
-): SearchHit[] {
-  return rows.map((row) => ({
+function toHits(rows: Row[], kind: ResultKind, reason: string): SearchHit[] {
+  return rows.map((row) => toHit(row, kind, reason))
+}
+
+function toHit(row: Row, kind: ResultKind, reason: string): SearchHit {
+  return {
     kind,
     id: String(row.id),
     entityId: row.entity_id === null ? null : String(row.entity_id),
@@ -147,5 +165,35 @@ function toHits(
     score: Number(row.rank),
     mode: 'lexical' as const,
     reason,
-  }))
+  }
+}
+
+/**
+ * A name matched — and the reason has to say what sort of name it was.
+ *
+ * « Le nom correspond aux mots cherchés » under a whole sentence is the
+ * sentence claiming to be somebody's name. For a scene and for a question the
+ * label *is* the text, and saying so is what tells the reader that the result
+ * they are looking at is not a person they have forgotten.
+ *
+ * A scene found this way and found again by the `events` query below is one
+ * result: both now carry the kind `event` and the same entity id, which is the
+ * key the fusion deduplicates on. It used to be two rows for one scene, one of
+ * them mislabelled.
+ */
+function labelHits(rows: Row[]): SearchHit[] {
+  return rows.map((row) => {
+    const kind = resultKindFor(row.node_type)
+    return toHit(row, kind, LABEL_REASON[kind])
+  })
+}
+
+const LABEL_REASON: Record<ResultKind, string> = {
+  entity: 'Le nom correspond aux mots cherchés.',
+  event: 'Le résumé de cette scène contient les mots cherchés.',
+  mystery: 'La question de ce mystère contient les mots cherchés.',
+  // Never reached from a label row; spelled out so the map stays total and a
+  // new kind cannot be added without deciding what it says here.
+  text_block: 'Le texte de la page contient ces mots.',
+  panel: 'La description de la case correspond.',
 }

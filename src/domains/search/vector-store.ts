@@ -24,6 +24,17 @@ export interface VectorHit {
   content: string
   chapterNumber: number
   similarity: number
+  /**
+   * The node type, when the subject is an entity. Null for anything else.
+   *
+   * Carried so this mode can name a result the same way the other three do. An
+   * event is an entity with a side table, so a scene arrives here as
+   * `subject_kind = 'entity'` like a character, and calling both « entité »
+   * puts a whole sentence in the list under somebody's heading — and, worse,
+   * makes the same scene two results when the full-text mode found it too: the
+   * fusion deduplicates on kind and id together.
+   */
+  nodeType: string | null
 }
 
 export interface VectorStore {
@@ -58,6 +69,7 @@ interface Row extends Record<string, unknown> {
   content: string
   chapter_number: number
   similarity: number
+  node_type?: string | null
 }
 
 /** No provider configured. Reports, never guesses. */
@@ -97,12 +109,17 @@ export class PgVectorStore implements VectorStore {
     const literal = `[${vector.join(',')}]`
 
     return withBoundary({ userId, boundaryChapter }, async (db) => {
+      // LEFT JOIN: a row whose subject is an assertion matches no entity, and
+      // an entity the boundary hides must not take its embedding out of the
+      // result — the type is a word on a badge, not a permission.
       const rows = await db.execute<Row>(sql`
-        SELECT subject_kind, subject_id, content, chapter_number,
-               1 - (embedding_v <=> ${literal}::vector) AS similarity
-        FROM embeddings
-        WHERE embedding_v IS NOT NULL
-        ORDER BY embedding_v <=> ${literal}::vector
+        SELECT e.subject_kind, e.subject_id, e.content, e.chapter_number,
+               en.node_type,
+               1 - (e.embedding_v <=> ${literal}::vector) AS similarity
+        FROM embeddings e
+        LEFT JOIN entities en ON en.id = e.subject_id
+        WHERE e.embedding_v IS NOT NULL
+        ORDER BY e.embedding_v <=> ${literal}::vector
         LIMIT ${limit}
       `)
       return rows.map(toHit)
@@ -144,11 +161,15 @@ export class PgArrayVectorStore implements VectorStore {
         WITH probe AS (SELECT ${literal}::real[] AS v)
         SELECT
           e.subject_kind, e.subject_id, e.content, e.chapter_number,
+          en.node_type,
           (
             SELECT sum(a * b) / NULLIF(sqrt(sum(a * a)) * sqrt(sum(b * b)), 0)
             FROM unnest(e.embedding, probe.v) AS t(a, b)
           ) AS similarity
-        FROM embeddings e, probe
+        FROM embeddings e
+        CROSS JOIN probe
+        -- Left, for the reason the pgvector query above states.
+        LEFT JOIN entities en ON en.id = e.subject_id
         WHERE e.dimensions = array_length(probe.v, 1)
         ORDER BY similarity DESC NULLS LAST
         LIMIT ${limit}
@@ -197,6 +218,7 @@ function toHit(row: Row): VectorHit {
   return {
     subjectKind: String(row.subject_kind),
     subjectId: String(row.subject_id),
+    nodeType: typeof row.node_type === 'string' ? row.node_type : null,
     content: String(row.content),
     chapterNumber: Number(row.chapter_number),
     similarity: Number(row.similarity ?? 0),

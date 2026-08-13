@@ -1,6 +1,6 @@
 import 'server-only'
 import { projectGraph, type GraphProjection } from '../temporal/projection.ts'
-import type { SearchHit } from './types.ts'
+import { resultKindFor, type SearchHit } from './types.ts'
 
 /**
  * Graph traversal: neighbourhoods and shortest paths.
@@ -222,7 +222,10 @@ export async function expandNeighbours(
       if (!node) continue
 
       hits.push({
-        kind: 'entity',
+        // A neighbour is whatever it is: the scene someone took part in is a
+        // legitimate result here, and calling it an entity is what let a
+        // sentence sit in the list looking like a person.
+        kind: resultKindFor(node.nodeType),
         id: node.id,
         entityId: node.id,
         title: node.label,

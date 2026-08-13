@@ -3,7 +3,7 @@ import { modelProvider } from '../ai/index.ts'
 import { fuzzySearch } from './fuzzy.ts'
 import { expandNeighbours } from './graph.ts'
 import { lexicalSearch } from './lexical.ts'
-import type { SearchHit, SearchMode, SearchResult } from './types.ts'
+import { resultKindFor, type SearchHit, type SearchMode, type SearchResult } from './types.ts'
 import { vectorStore } from './vector-store.ts'
 
 export * from './types.ts'
@@ -198,7 +198,13 @@ async function semanticSearch(
 
     return {
       hits: found.map((hit) => ({
-        kind: hit.subjectKind === 'assertion' ? ('event' as const) : ('entity' as const),
+        // A scene is announced as a scene here too, or the same event found by
+        // two modes arrives as two results: the fusion below keys on the kind
+        // and the id together.
+        kind:
+          hit.subjectKind === 'assertion'
+            ? ('event' as const)
+            : resultKindFor(hit.nodeType),
         id: hit.subjectId,
         entityId: hit.subjectKind === 'entity' ? hit.subjectId : null,
         title: hit.content.slice(0, 80),

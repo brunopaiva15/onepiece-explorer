@@ -78,6 +78,23 @@ export interface ReviewItemView {
    */
   names: Record<string, string>
   /**
+   * What sort of node each of those identifiers is.
+   *
+   * The names alone are not enough to read a relation. An event is an entity
+   * with a side table and its name *is* its summary, so an end that is a scene
+   * arrives on the card as a bare sentence — « Dix ans plus tard, Luffy quitte
+   * seul le Village de Fuchsia… se trouve à la Base de la Marine » — which
+   * reads as a claim about Luffy and is a claim about the scene that mentions
+   * him. The relation is well typed (`located_at` accepts an occurrence), so
+   * `typeMismatch` has nothing to say and the reviewer is left with a sentence
+   * where a name should be.
+   *
+   * Resolved for both populations, like the names: the `entities` row for an
+   * end already in the graph, the sibling proposal's payload for one proposed
+   * in this run. Only what resolves appears.
+   */
+  nodeTypes: Record<string, string>
+  /**
    * For relations: why this one cannot be written, and what could be.
    *
    * A predicate carries the types it accepts, and the database refuses an edge
@@ -281,6 +298,11 @@ export async function getReviewQueue(
       names: Object.fromEntries(
         referencedIds(row.payload)
           .map((id) => [id, names.get(id)] as const)
+          .filter((pair): pair is readonly [string, string] => pair[1] !== undefined),
+      ),
+      nodeTypes: Object.fromEntries(
+        referencedIds(row.payload)
+          .map((id) => [id, nodeTypes.get(id)] as const)
           .filter((pair): pair is readonly [string, string] => pair[1] !== undefined),
       ),
     })),

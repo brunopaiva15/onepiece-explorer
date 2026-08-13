@@ -8,6 +8,9 @@ import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review
 import type { Decision, DecisionKind, PublishResult } from '@/domains/review/publish.ts'
 import { markChapterReviewedAction, publishDecisionsAction } from './actions.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
+// Values, not types: `predicate-label.ts` already carries the ontology into
+// this bundle, so the occurrence list costs nothing extra here.
+import { OCCURRENCE_TYPES } from '@/domains/knowledge/ontology.ts'
 
 /**
  * The review centre.
@@ -912,6 +915,7 @@ function ProposalCard({
               payload={item.payload}
               relatedLabel={item.relatedLabel}
               names={item.names}
+              nodeTypes={item.nodeTypes}
               rename={rename}
               onRename={onRename}
               chosenPredicate={predicate}
@@ -1300,8 +1304,44 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
  * card is incomplete — which is a decision they can take — instead of reading a
  * hex string as a character.
  */
-function EntityEnd({ id, name }: { id: string; name: string | null }) {
-  if (name !== null) return <span className="font-medium">{name}</span>
+function EntityEnd({
+  id,
+  name,
+  nodeType,
+}: {
+  id: string
+  name: string | null
+  nodeType?: string | undefined
+}) {
+  if (name !== null) {
+    /*
+     * A scene and a question say so, right there in the sentence.
+     *
+     * These are the two node types whose name is prose: an event is named by
+     * its summary, a mystery by its question. Printed bare between a subject
+     * and a predicate, one of them reads as a character — « Dix ans plus tard,
+     * Luffy quitte seul le Village de Fuchsia… se trouve à la Base de la
+     * Marine » is a relation about a *scene*, and every word on the card
+     * invites reading it as one about Luffy. Nothing else flags it: the
+     * ontology accepts an occurrence there, so the relation is well typed and
+     * `typeMismatch` is silent.
+     *
+     * Only for those two. « Personnage » beside every name is a word the
+     * reviewer learns to stop reading, and it is this one that has to be seen.
+     */
+    const prose = nodeType !== undefined && NAMED_BY_PROSE.has(nodeType)
+
+    return (
+      <span className="font-medium">
+        {name}
+        {prose && (
+          <span className="ml-1 whitespace-nowrap text-sm font-normal text-secondary">
+            ({nodeTypeLabel(nodeType)})
+          </span>
+        )}
+      </span>
+    )
+  }
 
   return (
     <span
@@ -1313,11 +1353,15 @@ function EntityEnd({ id, name }: { id: string; name: string | null }) {
   )
 }
 
+/** The node types whose name is a sentence rather than a name. */
+const NAMED_BY_PROSE = new Set<string>([...OCCURRENCE_TYPES, 'mystery'])
+
 function ProposalBody({
   category,
   payload,
   relatedLabel,
   names,
+  nodeTypes,
   rename,
   onRename,
   chosenPredicate,
@@ -1327,6 +1371,7 @@ function ProposalBody({
   payload: unknown
   relatedLabel: string | null
   names: Record<string, string>
+  nodeTypes: Record<string, string>
   rename: string | null
   onRename: (label: string) => void
   chosenPredicate: string | null
@@ -1430,14 +1475,22 @@ function ProposalBody({
     return (
       <div className="mt-2">
         <p className="text-primary">
-          <EntityEnd id={subject} name={end(record.subject)} />{' '}
+          <EntityEnd
+            id={subject}
+            name={end(record.subject)}
+            nodeType={nodeTypes[subject]}
+          />{' '}
           <span
             className={`text-sm ${shown !== written ? 'text-[var(--epi-validated)]' : 'text-accent'}`}
           >
             {predicateLabel(shown)}
           </span>{' '}
           {object !== null ? (
-            <EntityEnd id={object} name={end(record.object)} />
+            <EntityEnd
+              id={object}
+              name={end(record.object)}
+              nodeType={nodeTypes[object]}
+            />
           ) : (
             <span className="font-medium">{String(record.object_value ?? '')}</span>
           )}
