@@ -69,6 +69,7 @@ describe('keeping an extraction inside its budgets', () => {
       textBlocks: [{ ref: 'b1', text: PASSAGE }],
       descriptions: [],
       allowedRefs: ['b1'],
+      tolerateNoise: true,
     })
     expect(checkEvidence(clamped.entities[0]!.evidence[0]!, sources)).toBeNull()
   })

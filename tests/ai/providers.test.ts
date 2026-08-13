@@ -77,6 +77,7 @@ describe('the synthetic provider only rearranges what it was given', () => {
       textBlocks: request.textBlocks.map((b) => ({ ref: b.ref, text: b.text })),
       descriptions: [],
       allowedRefs: request.allowedRefs,
+      tolerateNoise: true,
     })
 
     const filtered = filterExtraction(result.value, sources, ONTOLOGY, new Set())

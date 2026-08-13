@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { anchorMatch, normalizeText } from '../knowledge/normalize.ts'
+import { anchorMatch, isAnchoredIn, normalizeText } from '../knowledge/normalize.ts'
 import type {
   CandidateAssertion,
   CandidateEntity,
@@ -60,14 +60,24 @@ export interface AnchorSources {
   descriptionByRef: Map<string, string>
   /** Every ref the model was allowed to cite. */
   allowedRefs: Set<string>
+  /**
+   * Whether a near-miss counts as a quote.
+   *
+   * True only where a machine read the source. See `matches()` below for why
+   * this is not a tuning knob.
+   */
+  tolerateNoise: boolean
 }
 
 export function buildAnchorSources(input: {
   textBlocks: Array<{ ref: string; text: string }>
   descriptions: PanelDescription[]
   allowedRefs: string[]
+  /** `sourceKind === 'pages'`. Stated by the caller, never defaulted. */
+  tolerateNoise: boolean
 }): AnchorSources {
   return {
+    tolerateNoise: input.tolerateNoise,
     textByRef: new Map(input.textBlocks.map((b) => [b.ref, b.text])),
     descriptionByRef: new Map(
       input.descriptions.map((d) => [
@@ -85,6 +95,39 @@ export function buildAnchorSources(input: {
 export interface AnchorFailure {
   reason: QuarantineReason
   detail: string
+}
+
+/**
+ * Is this excerpt a quote of that source?
+ *
+ * Exact, unless a machine did the reading. The edit-distance budget in
+ * `anchorMatch` exists for OCR confusions — rn/m, l/I, 0/O — on scanned pages,
+ * where the stored text is itself a guess and demanding character equality
+ * would reject quotes that are perfectly faithful to the printed page.
+ *
+ * A chapter you typed has no such excuse (ADR 0008: « un extrait apparaît dans
+ * votre texte ou n'y apparaît pas »), and the tolerance there does active harm
+ * in two ways.
+ *
+ * It admits paraphrase. The budget is capped at four edits, so on a long
+ * sentence it comfortably absorbs a short word swapped for another: « **he**
+ * tells Zoro how Luffy punched Helmeppo » passed against a passage reading
+ * « **Koby** tells Zoro how Luffy punched Helmeppo ». Four edits, budget four.
+ * That is a different claim about who spoke, which is precisely what this
+ * module exists to catch — and `checkEvidence` says so itself, one screen up:
+ * une citation reformulée n'est pas une citation.
+ *
+ * And it disagrees with the database. `app.validate_evidence_anchor` requires
+ * the normalised excerpt to occur in the block, with no tolerance whatsoever
+ * (migration 0006). A near-miss accepted here therefore reaches the review
+ * queue, gets accepted by a reviewer, and fails at publication — inside the
+ * transaction, so it takes the whole batch down with it and the chapter cannot
+ * be published at all. The application must not accept what the database will
+ * refuse; `tests/db/normalize-parity.test.ts` states that contract, and this is
+ * the branch that has to hold up its end.
+ */
+function matches(excerpt: string, source: string, tolerateNoise: boolean): boolean {
+  return tolerateNoise ? anchorMatch(excerpt, source).matched : isAnchoredIn(excerpt, source)
 }
 
 /** Check one evidence citation. Returns null when it holds. */
@@ -117,8 +160,7 @@ export function checkEvidence(
         detail: `« ${ref.ref} » n'est pas un bloc de texte. Une preuve textuelle doit citer un bloc.`,
       }
     }
-    const match = anchorMatch(excerpt, source)
-    if (!match.matched) {
+    if (!matches(excerpt, source, sources.tolerateNoise)) {
       return {
         reason: 'excerpt_not_in_source',
         detail:
