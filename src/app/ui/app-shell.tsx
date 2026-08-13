@@ -80,10 +80,29 @@ export async function AppShell({
     const { listChapters } = await import('@/domains/chapters/queries.ts')
     const session = await getViewerSession()
     const chapters = await listChapters(session.userId, session.workId)
-    const numbers = chapters.map((c) => c.number).sort((a, b) => a - b)
+    /*
+     * Published chapters only, and the session's own ceiling.
+     *
+     * Both used to come from the full list, drafts included, which made the
+     * control disagree with every page under it: the far right of the bar was
+     * a chapter number the boundary refuses to go to — a session stops at the
+     * last *published* chapter — so dragging to the end landed short of the end
+     * and looked like a control that had stopped responding. A tick you cannot
+     * reach is the same lie in smaller print.
+     *
+     * The starting position is the session's boundary rather than the maximum,
+     * for the same reason: it is the one the pages were rendered with.
+     */
+    const numbers = chapters
+      .filter((c) => c.status === 'published' && c.number <= session.maxChapter)
+      .map((c) => c.number)
+      .sort((a, b) => a - b)
     if (numbers.length > 0) {
-      const max = numbers[numbers.length - 1]!
-      boundary = { boundaryChapter: max, maxChapter: max, chapters: numbers }
+      boundary = {
+        boundaryChapter: session.boundaryChapter,
+        maxChapter: session.maxChapter,
+        chapters: numbers,
+      }
     }
   } catch {
     // No session, no database, or nothing imported: the frame still draws.

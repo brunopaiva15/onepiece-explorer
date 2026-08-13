@@ -269,7 +269,19 @@ export async function getNarrativeDelta(
 
   if (!meta) return null
 
-  return withBoundary({ userId, boundaryChapter: chapterNumber }, async (db) => {
+  /*
+   * Two boundaries, one after the other — and never one inside the other.
+   *
+   * This chapter's own reads happen here; what it *refutes* is invisible at its
+   * own boundary and is read below, at the chapter before. Both are needed and
+   * the order between them is free, but nesting the second inside the first is
+   * not: a transaction holds its connection for as long as it runs, so a nested
+   * read asks the pool for a second connection while the code holding the first
+   * waits for it. With a pool sized for a serverless instance that is not a
+   * slow page, it is an instance frozen with its connections checked out —
+   * exactly the failure withIngest() documents, on the other pool.
+   */
+  const current = await withBoundary({ userId, boundaryChapter: chapterNumber }, async (db) => {
     const newEntities = await db
       .select({
         id: entities.id,
@@ -306,31 +318,6 @@ export async function getNarrativeDelta(
       .from(assertions)
       .where(eq(assertions.knowledgeFromChapter, chapterNumber))
 
-    /*
-     * Beliefs this chapter closed.
-     *
-     * Read at the chapter *before*, because a belief refuted at N is invisible
-     * at N — that is the whole point of the window. Reading it here would
-     * return nothing and the delta would silently never mention a refutation.
-     */
-    const refuted = await withBoundary(
-      { userId, boundaryChapter: Math.max(0, chapterNumber - 1) },
-      async (previous) =>
-        previous
-          .select({
-            id: assertions.id,
-            predicate: assertions.predicate,
-            heldSince: assertions.knowledgeFromChapter,
-            subjectLabel: sql<string | null>`(
-              SELECT l.label FROM entity_labels l
-              WHERE l.entity_id = assertions.subject_entity_id
-              ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
-            )`,
-          })
-          .from(assertions)
-          .where(eq(assertions.knowledgeUntilChapter, chapterNumber)),
-    )
-
     const names = await db
       .select({
         entityId: entityLabels.entityId,
@@ -339,34 +326,6 @@ export async function getNarrativeDelta(
       })
       .from(entityLabels)
       .where(eq(entityLabels.revealedInChapter, chapterNumber))
-
-    // What each newly named entity was called before, so the delta can say
-    // "the man in the striped scarf turns out to be Kaelo Renn".
-    const previousNames =
-      names.length === 0
-        ? []
-        : await withBoundary(
-            { userId, boundaryChapter: Math.max(0, chapterNumber - 1) },
-            async (previous) =>
-              previous
-                .select({
-                  entityId: entityLabels.entityId,
-                  label: entityLabels.label,
-                })
-                .from(entityLabels)
-                .where(
-                  inArray(
-                    entityLabels.entityId,
-                    names.map((name) => name.entityId),
-                  ),
-                )
-                .orderBy(sql`${entityLabels.precedence} DESC`),
-          )
-
-    const previousByEntity = new Map<string, string>()
-    for (const row of previousNames) {
-      if (!previousByEntity.has(row.entityId)) previousByEntity.set(row.entityId, row.label)
-    }
 
     /*
      * Mysteries this chapter *opened*.
@@ -382,34 +341,87 @@ export async function getNarrativeDelta(
       .from(mysteries)
       .where(eq(mysteries.openedInChapter, chapterNumber))
 
-    return {
-      chapterNumber,
-      chapterTitle: meta.title,
-      newEntities: newEntities.map((row) => ({
-        id: row.id,
-        label: row.label ?? 'entité sans nom révélé',
-        nodeType: row.nodeType,
-      })),
-      newFacts: facts.map((row) => ({
-        id: row.id,
-        predicate: row.predicate,
-        subjectLabel: row.subjectLabel ?? 'entité sans nom',
-        objectLabel: row.objectLabel,
-        epistemicStatus: row.epistemicStatus,
-      })),
-      refuted: refuted.map((row) => ({
-        id: row.id,
-        predicate: row.predicate,
-        subjectLabel: row.subjectLabel ?? 'entité sans nom',
-        heldSince: row.heldSince,
-      })),
-      newNames: names.map((row) => ({
-        entityId: row.entityId,
-        label: row.label,
-        kind: row.kind,
-        previous: previousByEntity.get(row.entityId) ?? null,
-      })),
-      openedMysteries: opened.map((row) => row.question),
-    }
+    return { newEntities, facts, names, opened }
   })
+
+  /*
+   * The chapter before, in its own transaction.
+   *
+   * Two things live there and only there: the beliefs this chapter closes —
+   * invisible at their own chapter, because that is what refuting one means —
+   * and what each newly named entity was called until now, so the delta can say
+   * "the man in the striped scarf turns out to be Kaelo Renn".
+   */
+  const before = await withBoundary(
+    { userId, boundaryChapter: Math.max(0, chapterNumber - 1) },
+    async (db) => {
+      const refuted = await db
+        .select({
+          id: assertions.id,
+          predicate: assertions.predicate,
+          heldSince: assertions.knowledgeFromChapter,
+          subjectLabel: sql<string | null>`(
+            SELECT l.label FROM entity_labels l
+            WHERE l.entity_id = assertions.subject_entity_id
+            ORDER BY l.precedence DESC, l.revealed_in_chapter DESC LIMIT 1
+          )`,
+        })
+        .from(assertions)
+        .where(eq(assertions.knowledgeUntilChapter, chapterNumber))
+
+      const previousNames =
+        current.names.length === 0
+          ? []
+          : await db
+              .select({
+                entityId: entityLabels.entityId,
+                label: entityLabels.label,
+              })
+              .from(entityLabels)
+              .where(
+                inArray(
+                  entityLabels.entityId,
+                  current.names.map((name) => name.entityId),
+                ),
+              )
+              .orderBy(sql`${entityLabels.precedence} DESC`)
+
+      return { refuted, previousNames }
+    },
+  )
+
+  const previousByEntity = new Map<string, string>()
+  for (const row of before.previousNames) {
+    if (!previousByEntity.has(row.entityId)) previousByEntity.set(row.entityId, row.label)
+  }
+
+  return {
+    chapterNumber,
+    chapterTitle: meta.title,
+    newEntities: current.newEntities.map((row) => ({
+      id: row.id,
+      label: row.label ?? 'entité sans nom révélé',
+      nodeType: row.nodeType,
+    })),
+    newFacts: current.facts.map((row) => ({
+      id: row.id,
+      predicate: row.predicate,
+      subjectLabel: row.subjectLabel ?? 'entité sans nom',
+      objectLabel: row.objectLabel,
+      epistemicStatus: row.epistemicStatus,
+    })),
+    refuted: before.refuted.map((row) => ({
+      id: row.id,
+      predicate: row.predicate,
+      subjectLabel: row.subjectLabel ?? 'entité sans nom',
+      heldSince: row.heldSince,
+    })),
+    newNames: current.names.map((row) => ({
+      entityId: row.entityId,
+      label: row.label,
+      kind: row.kind,
+      previous: previousByEntity.get(row.entityId) ?? null,
+    })),
+    openedMysteries: current.opened.map((row) => row.question),
+  }
 }
