@@ -23,6 +23,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://example.invalid/characters/luffy',
     attribution: 'onepieceapi.com',
     firstAppearanceChapter: 1,
+    era: 'unknown',
   },
   {
     source: 'onepieceapi',
@@ -33,6 +34,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://example.invalid/characters/zoro',
     attribution: 'onepieceapi.com',
     firstAppearanceChapter: 3,
+    era: 'unknown',
   },
   {
     source: 'anilist',
@@ -43,6 +45,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://anilist.co/character/62',
     attribution: 'AniList',
     firstAppearanceChapter: null,
+    era: 'unknown',
   },
   {
     source: 'anilist',
@@ -53,6 +56,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://anilist.co/character/99',
     attribution: 'AniList',
     firstAppearanceChapter: null,
+    era: 'unknown',
   },
   {
     source: 'onepieceapi',
@@ -63,6 +67,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://example.invalid/characters/sanji',
     attribution: 'onepieceapi.com',
     firstAppearanceChapter: 43,
+    era: 'unknown',
   },
   {
     source: 'api-onepiece',
@@ -73,6 +78,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://example.invalid/fruits/1',
     attribution: 'api-onepiece.com',
     firstAppearanceChapter: null,
+    era: 'unknown',
   },
   {
     source: 'onepieceapi',
@@ -83,6 +89,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://example.invalid/ships/merry',
     attribution: 'onepieceapi.com',
     firstAppearanceChapter: 42,
+    era: 'unknown',
   },
   {
     source: 'onepieceapi',
@@ -93,6 +100,7 @@ export const CANDIDATES: ImageCandidate[] = [
     pageUrl: 'https://example.invalid/islands/dawn',
     attribution: 'onepieceapi.com',
     firstAppearanceChapter: 1,
+    era: 'unknown',
   },
 ]
 

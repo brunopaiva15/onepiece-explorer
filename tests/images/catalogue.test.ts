@@ -51,6 +51,7 @@ const catalogue = (count: number): Catalogue => ({
     pageUrl: 'https://example.invalid/x',
     attribution: 'onepieceapi',
     firstAppearanceChapter: 1,
+    era: 'unknown' as const,
   })),
   failures: [],
 })

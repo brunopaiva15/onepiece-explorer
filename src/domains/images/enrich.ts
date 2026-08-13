@@ -2,8 +2,15 @@ import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
 import { loadCatalogue, type LoadOptions } from './catalogue.ts'
-import { buildIndex, matchEntity, type Match, type MatchInput } from './match.ts'
-import { lookupFandomImage } from './sources/fandom.ts'
+import { eraAtChapter, type Era } from './era.ts'
+import {
+  buildIndex,
+  matchEntity,
+  type CandidateIndex,
+  type Match,
+  type MatchInput,
+} from './match.ts'
+import { lookupFandomImages, lookupFandomPortraits } from './sources/fandom.ts'
 import { downloadAndStore } from './store.ts'
 import {
   FANDOM_NODE_TYPES,
@@ -33,6 +40,16 @@ export interface EnrichReport {
   unmatched: number
   /** Of `matched`, how many the wiki fallback found. */
   fromWiki: number
+  /**
+   * Of `stored`, the pictures the wiki dates to one side of the ellipse.
+   *
+   * Worth counting separately because it is the only number that says whether
+   * a reader below chapter 598 is being shown faces from before it. A run with
+   * many characters and no `preTimeskip` at all means the dated portraits were
+   * not found, and the reader is back on undated catalogue artwork.
+   */
+  preTimeskip: number
+  postTimeskip: number
   failures: Array<{ entityId: string; label: string; reason: string }>
   /** Sources that could not be reached while building the catalogue. */
   catalogueFailures: Array<{ source: string; reason: string }>
@@ -65,7 +82,7 @@ export interface EnrichOptions extends LoadOptions {
    */
   fandom?: boolean
   /** Override the wiki lookup. Same reason as `download`. */
-  lookup?: (name: string) => Promise<ImageCandidate | null>
+  lookup?: (name: string) => Promise<ImageCandidate[]>
 }
 
 interface Row extends Record<string, unknown> {
@@ -87,6 +104,8 @@ export async function enrichEntityImages(
     stored: 0,
     unmatched: 0,
     fromWiki: 0,
+    preTimeskip: 0,
+    postTimeskip: 0,
     failures: [],
     catalogueFailures: catalogue.failures,
     catalogueSize: index.size,
@@ -121,62 +140,99 @@ export async function enrichEntityImages(
       })),
     }
 
-    const match = matchEntity(input, index) ?? (await fromWiki(input, options))
-    if (!match) {
+    const matches = await portraitsFor(input, index, options)
+    if (matches.length === 0) {
       report.unmatched += 1
       continue
     }
     report.matched += 1
-    if (match.candidate.source === 'fandom') report.fromWiki += 1
+    if (matches[0]!.candidate.source === 'fandom') report.fromWiki += 1
 
-    try {
-      const fetchAndStore = options.download ?? downloadAndStore
-      const stored = await fetchAndStore(userId, row.entity_id, match.candidate)
+    /*
+     * Every picture found, not merely the best one.
+     *
+     * An entity can now come back with the same subject on both sides of the
+     * ellipse, and choosing between them here would be choosing for a reader
+     * whose position this code does not know — enrichment runs for the whole
+     * library at once, the reader moves afterwards. So all of them are stored
+     * and `imagesFor` picks, per read, per position.
+     */
+    for (const match of matches) {
+      try {
+        const fetchAndStore = options.download ?? downloadAndStore
+        const stored = await fetchAndStore(userId, row.entity_id, match.candidate)
 
-      await withIngest(async (db) => {
-        /*
-         * `is_primary` is decided by what is already there, not by this run.
-         *
-         * A partial unique index allows exactly one primary per entity, so
-         * inserting a second one blindly would fail the whole statement. The
-         * first picture found wins and later ones are alternates — which also
-         * means a re-run never silently swaps the portrait the reader has got
-         * used to.
-         */
-        await db.execute(sql`
-          INSERT INTO entity_images (
-            user_id, entity_id, source, source_ref, source_url, attribution,
-            storage_key, thumb_key, width, height, mime, bytes,
-            matched_label, match_method, match_score, revealed_in_chapter, is_primary
-          )
-          VALUES (
-            ${userId}, ${row.entity_id}, ${match.candidate.source},
-            ${match.candidate.sourceRef}, ${match.candidate.pageUrl},
-            ${match.candidate.attribution},
-            ${stored.storageKey}, ${stored.thumbKey}, ${stored.width}, ${stored.height},
-            ${stored.mime}, ${stored.bytes},
-            ${match.matchedLabel}, ${match.method}, ${match.score},
-            ${match.revealedInChapter},
-            NOT EXISTS (
-              SELECT 1 FROM entity_images
-              WHERE entity_id = ${row.entity_id} AND is_primary
+        await withIngest(async (db) => {
+          /*
+           * `is_primary` is decided by what is already there, not by this run.
+           *
+           * A partial unique index allows exactly one primary per entity, so
+           * inserting a second one blindly would fail the whole statement. The
+           * first picture found wins and later ones are alternates — which also
+           * means a re-run never silently swaps the portrait the reader has got
+           * used to.
+           */
+          await db.execute(sql`
+            INSERT INTO entity_images (
+              user_id, entity_id, source, source_ref, source_url, attribution,
+              storage_key, thumb_key, width, height, mime, bytes,
+              matched_label, match_method, match_score, revealed_in_chapter, era,
+              is_primary
             )
-          )
-          ON CONFLICT (entity_id, source, source_ref) DO NOTHING
-        `)
-      })
+            VALUES (
+              ${userId}, ${row.entity_id}, ${match.candidate.source},
+              ${match.candidate.sourceRef}, ${match.candidate.pageUrl},
+              ${match.candidate.attribution},
+              ${stored.storageKey}, ${stored.thumbKey}, ${stored.width}, ${stored.height},
+              ${stored.mime}, ${stored.bytes},
+              ${match.matchedLabel}, ${match.method}, ${match.score},
+              ${match.revealedInChapter}, ${match.candidate.era},
+              NOT EXISTS (
+                SELECT 1 FROM entity_images
+                WHERE entity_id = ${row.entity_id} AND is_primary
+              )
+            )
+            ON CONFLICT (entity_id, source, source_ref) DO NOTHING
+          `)
+        })
 
-      report.stored += 1
-    } catch (error: unknown) {
-      report.failures.push({
-        entityId: row.entity_id,
-        label: match.matchedLabel,
-        reason: error instanceof Error ? error.message : String(error),
-      })
+        report.stored += 1
+        if (match.candidate.era === 'pre_timeskip') report.preTimeskip += 1
+        if (match.candidate.era === 'post_timeskip') report.postTimeskip += 1
+      } catch (error: unknown) {
+        report.failures.push({
+          entityId: row.entity_id,
+          label: match.matchedLabel,
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
   }
 
   return report
+}
+
+/**
+ * Everything worth storing for one entity.
+ *
+ * The catalogues answer first, as they always have — they are indexed, offline
+ * and free, and one of them carries a chapter of first appearance nothing else
+ * does. What is new is that a *character* they placed is then taken to the
+ * wiki anyway, not to be re-identified but to be dated: the catalogue portrait
+ * says nothing about which side of the ellipse it shows, and for the Straw Hats
+ * that silence is the difference between a reader at chapter 8 seeing Nami as
+ * the chapter draws her and seeing her as she comes back two years later.
+ *
+ * When the catalogues place nothing, the wiki is the fallback it already was.
+ */
+async function portraitsFor(
+  entity: MatchInput,
+  index: CandidateIndex,
+  options: EnrichOptions,
+): Promise<Match[]> {
+  const matched = matchEntity(entity, index)
+  if (!matched) return fromWiki(entity, options)
+  return [matched, ...(await datedPortraits(matched, entity, options))]
 }
 
 /**
@@ -234,32 +290,93 @@ export async function illustrateQuietly(
 async function fromWiki(
   entity: MatchInput,
   options: EnrichOptions,
-): Promise<Match | null> {
-  if (!wikiEnabled(options)) return null
-  if (!FANDOM_NODE_TYPES.includes(entity.nodeType)) return null
+): Promise<Match[]> {
+  if (!wikiEnabled(options)) return []
+  if (!FANDOM_NODE_TYPES.includes(entity.nodeType)) return []
 
-  const lookup = options.lookup ?? lookupFandomImage
+  const lookup = options.lookup ?? lookupFandomImages
 
   for (const label of entity.labels.slice(0, WIKI_LABELS_PER_ENTITY)) {
-    const candidate = await lookup(label.label)
-    if (!candidate) continue
-    return {
+    const candidates = await lookup(label.label)
+    if (candidates.length === 0) continue
+    return candidates.map((candidate) => ({
       candidate,
       // An article exists under exactly this name. That is a stronger signal
       // than anything the trigram matcher produces, and it is still a guess:
       // the caption names the page and links to it so a reader can tell.
-      method: 'exact',
+      method: 'exact' as const,
       score: 1,
       matchedLabel: label.label,
       revealedInChapter: label.revealedInChapter,
-    }
+    }))
   }
 
-  return null
+  return []
 }
 
 /** Labels tried per entity before giving up. Requests are somebody else's. */
 const WIKI_LABELS_PER_ENTITY = 2
+
+/**
+ * The wiki asked to date a character the catalogues already identified.
+ *
+ * Asked with the *catalogue's* names rather than the entity's label, because
+ * the catalogue holds the English name the wiki files its articles under and
+ * the graph holds a French one. « Barbe Blanche » finds nothing on the English
+ * wiki; the onepieceapi row it matched is called « Edward Newgate », which
+ * finds everything.
+ *
+ * Only the dated pictures are kept, and the default lookup knows it: an undated
+ * answer is no answer for a subject that already has a portrait, so it asks the
+ * English wiki once and stops. The lead image would be a second undated
+ * portrait bought at the price of a download, and no reader would ever be shown
+ * it in preference to the catalogue's.
+ *
+ * The provenance is the catalogue match's, unchanged: the chain that reached
+ * this picture is « this label matched that row, which is called that in
+ * English », and it is no stronger than its first link. In particular
+ * `revealedInChapter` stays the one the boundary needs — the chapter that
+ * reveals the label — so a dated portrait is no more visible, and no earlier,
+ * than the undated one it sits beside.
+ */
+async function datedPortraits(
+  match: Match,
+  entity: MatchInput,
+  options: EnrichOptions,
+): Promise<Match[]> {
+  if (!wikiEnabled(options)) return []
+  // Only a person changes across the ellipse. A Devil Fruit, a ship and an
+  // island do not, and asking about them would spend a request per entity on a
+  // question whose answer is known.
+  if (entity.nodeType !== 'character') return []
+
+  const lookup = options.lookup ?? lookupFandomPortraits
+
+  for (const name of askableNames(match.candidate)) {
+    const dated = (await lookup(name)).filter(
+      (candidate) => candidate.era !== 'unknown',
+    )
+    if (dated.length === 0) continue
+    return dated.map((candidate) => ({ ...match, candidate }))
+  }
+
+  return []
+}
+
+/**
+ * The names of a catalogue row worth spelling into a wiki URL.
+ *
+ * Latin script only — the rows carry « モンキー・D・ルフィ » beside « Monkey D.
+ * Luffy », and the English wiki has no article under the Japanese one. Two at
+ * most, for the same reason the label loop above stops at two.
+ */
+function askableNames(candidate: ImageCandidate): string[] {
+  const latin = candidate.names
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+    .filter((name) => /^[\p{Script=Latin}\p{N}\p{P}\p{Zs}]+$/u.test(name))
+  return [...new Set(latin)].slice(0, WIKI_LABELS_PER_ENTITY)
+}
 
 /**
  * `offline` means offline.
@@ -342,6 +459,7 @@ export interface EntityImage {
   revealedInChapter: number
   width: number | null
   height: number | null
+  era: Era
 }
 
 /**
@@ -350,6 +468,14 @@ export interface EntityImage {
  * Read through `withBoundary` like everything else the reader sees, so the
  * revelation rule is the database's and not this function's — a caller that
  * forgets to filter gets an empty list, never an early portrait.
+ *
+ * Two rules, and only one of them is here. *Whether* a picture may be seen is
+ * the policy's: revealed late enough, and not a face from after the ellipse
+ * shown to a reader who has not reached it. *Which* of the survivors to show is
+ * this query's, and it is a preference rather than a rule — the reader's own
+ * period first, then an undated picture, then the other period. The last of
+ * those three is only reachable after chapter 598, where a portrait from before
+ * the ellipse is merely out of date rather than a spoiler.
  */
 export async function imagesFor(
   userId: string,
@@ -371,13 +497,17 @@ export async function imagesFor(
       revealed_in_chapter: number
       width: number | null
       height: number | null
+      era: Era
     }>(sql`
       SELECT DISTINCT ON (entity_id)
         entity_id, storage_key, thumb_key, attribution, source_url,
-        matched_label, match_method, match_score, revealed_in_chapter, width, height
+        matched_label, match_method, match_score, revealed_in_chapter, width, height,
+        era
       FROM entity_images
       WHERE entity_id IN ${entityIds}
-      ORDER BY entity_id, is_primary DESC, match_score DESC, created_at
+      ORDER BY entity_id,
+        CASE era WHEN ${eraAtChapter(boundaryChapter)} THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
+        is_primary DESC, match_score DESC, created_at
     `),
   )
 
@@ -396,6 +526,7 @@ export async function imagesFor(
         revealedInChapter: row.revealed_in_chapter,
         width: row.width,
         height: row.height,
+        era: row.era,
       },
     ]),
   )
