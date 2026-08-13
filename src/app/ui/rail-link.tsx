@@ -15,6 +15,9 @@ const ICONS: Record<string, string> = {
   // Simple, drawn from primitives so they read at 16px and owe nothing to any
   // icon set that would date the interface.
   graph: 'M5 12h4m6 0h4M7 7l5 5-5 5m10-10l-5 5 5 5',
+  // An open book with a page turning: the one entry that is read rather than
+  // queried.
+  story: 'M12 7v13M12 7C10 5 7 4.5 4 5v13c3-.5 6 0 8 2M12 7c2-2 5-2.5 8-2v13c-3-.5-6 0-8 2',
   time: 'M12 6v6l4 2M12 3a9 9 0 100 18 9 9 0 000-18z',
   mystery: 'M9 9a3 3 0 116 0c0 2-3 2.5-3 4.5M12 18h.01',
   search: 'M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4.5-4.5',

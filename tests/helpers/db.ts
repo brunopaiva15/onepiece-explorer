@@ -1,5 +1,6 @@
 import postgres from 'postgres'
 import { randomUUID } from 'node:crypto'
+import type { StoryTime } from '@/db/schema/knowledge.ts'
 
 /**
  * Raw connection to the local test database, used to seed fixtures and to
@@ -146,6 +147,104 @@ export async function addAssertion(
     )
   `
   return id
+}
+
+/**
+ * An event, hung off an entity like the schema hangs it.
+ *
+ * `toldIn` and `shownIn` are kept apart here for the same reason the table
+ * keeps them apart: a chapter that recounts an event is where the reader
+ * learned of it, even when the art shows it three hundred chapters later.
+ */
+export async function addEvent(
+  world: SeededWorld,
+  entityId: string,
+  input: {
+    summary?: string | null
+    isFlashback?: boolean
+    shownIn?: number | null
+    toldIn?: number | null
+    storyTime?: StoryTime
+  },
+): Promise<void> {
+  await raw`
+    INSERT INTO events (entity_id, user_id, work_id, summary, story_time,
+                        is_flashback, shown_in_chapter, told_in_chapter)
+    VALUES (${entityId}, ${world.userId}, ${world.workId},
+            ${input.summary ?? null},
+            /*
+             * raw.json(), not JSON.stringify().
+             *
+             * A JavaScript string handed to a jsonb column is stored as a JSON
+             * *string* — the whole object, escaped, one scalar deep. It inserts
+             * without complaint and reads back as text, so the fixture looks
+             * right and every assertion about its contents fails.
+             */
+            ${input.storyTime === undefined ? null : raw.json(input.storyTime)},
+            ${input.isFlashback ?? false},
+            ${input.shownIn ?? null}, ${input.toldIn ?? null})
+  `
+}
+
+export async function addMystery(
+  world: SeededWorld,
+  entityId: string,
+  input: {
+    question: string
+    openedIn: number
+    state?: 'open' | 'partially_resolved' | 'resolved' | 'abandoned'
+    resolvedIn?: number | null
+  },
+): Promise<void> {
+  await raw`
+    INSERT INTO mysteries (entity_id, user_id, work_id, question,
+                           opened_in_chapter, state, resolved_in_chapter)
+    VALUES (${entityId}, ${world.userId}, ${world.workId}, ${input.question},
+            ${input.openedIn}, ${(input.state ?? 'open')}::mystery_state,
+            ${input.resolvedIn ?? null})
+  `
+}
+
+/**
+ * A quoted line, with the page and the block it is quoted from.
+ *
+ * All three rows are needed and none is ceremony: the anchoring trigger
+ * refuses evidence carrying an excerpt without a text block, and refuses a
+ * text block in which the excerpt does not occur. A helper that skipped them
+ * would be testing against a database less strict than the real one.
+ */
+export async function addQuote(
+  world: SeededWorld,
+  input: { assertionId: string; chapterNumber: number; text: string },
+): Promise<void> {
+  const chapterId = world.chapterIds.get(input.chapterNumber)
+  if (!chapterId) {
+    throw new Error(`Chapitre ${input.chapterNumber} absent du monde de test.`)
+  }
+
+  const pageId = randomUUID()
+  const blockId = randomUUID()
+
+  await raw`
+    INSERT INTO pages (id, chapter_id, user_id, index, width, height,
+                       storage_key_original, chapter_number)
+    VALUES (${pageId}, ${chapterId}, ${world.userId},
+            (SELECT coalesce(max(index), -1) + 1 FROM pages WHERE chapter_id = ${chapterId}),
+            800, 1200, 'key', ${input.chapterNumber})
+  `
+  await raw`
+    INSERT INTO text_blocks (id, page_id, chapter_id, user_id, bbox, text,
+                             normalized_text, source, chapter_number)
+    VALUES (${blockId}, ${pageId}, ${chapterId}, ${world.userId},
+            '{"x":0,"y":0,"w":1,"h":1}'::jsonb, ${input.text},
+            app.normalize_text(${input.text}), 'pdf_text', ${input.chapterNumber})
+  `
+  await raw`
+    INSERT INTO evidence (assertion_id, user_id, chapter_id, page_id,
+                          text_block_id, kind, excerpt)
+    VALUES (${input.assertionId}, ${world.userId}, ${chapterId}, ${pageId},
+            ${blockId}, 'dialogue', ${input.text})
+  `
 }
 
 export async function closeDb(): Promise<void> {

@@ -209,12 +209,32 @@ describe('what a visitor may not do', () => {
      */
     const { glob, readFile } = await import('node:fs/promises')
 
+    /*
+     * A route that only answers GET is a read, and a read is exactly what
+     * `getViewerSession()` is for — /api/histoire serves the public story mode
+     * through it, as the pages around it do.
+     *
+     * So the rule is not "no route may name it" but "nothing that can write may
+     * name it", and that is checkable rather than trusted: a file is exempt only
+     * while it exports no mutating handler. Add a POST to a read route later and
+     * this fails, which is the whole point — an allowlist would have gone stale
+     * the moment somebody did.
+     */
+    // Deliberately loose: `export async function POST`, `export const POST =`
+    // and `export { POST }` all count, and so does a false positive. This
+    // errs towards flagging, which is the safe direction for a guard.
+    const MUTATING = /export[^\n]*\b(?:POST|PUT|PATCH|DELETE)\b/
+
     const files: string[] = []
     const offenders: string[] = []
     for await (const file of glob('src/app/**/{actions,route}.ts')) {
       files.push(file)
       const source = await readFile(file, 'utf8')
-      if (source.includes('getViewerSession')) offenders.push(file)
+      if (!source.includes('getViewerSession')) continue
+
+      // A server action file is a write surface whatever it contains.
+      const isAction = file.endsWith('actions.ts')
+      if (isAction || MUTATING.test(source)) offenders.push(file)
     }
 
     // Assert the search found something. A glob that silently matches nothing

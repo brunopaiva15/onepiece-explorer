@@ -34,6 +34,7 @@ interface Boundary {
 }
 
 const EXPLORER = [
+  { href: '/histoire', label: 'Histoire', icon: 'story' as const },
   { href: '/graph', label: 'Graphe', icon: 'graph' as const },
   { href: '/chronologie', label: 'Chronologie', icon: 'time' as const },
   { href: '/mysteres', label: 'Mystères', icon: 'mystery' as const },

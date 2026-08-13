@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, inArray, lte, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { assertions, entities, entityLabels, events, mysteries } from '@/db/schema/knowledge.ts'
@@ -157,7 +157,7 @@ export async function getTimeline(
  * vingt ans plus tôt" is what the pages support; converting it to a year would
  * be inventing a fact to make a chart easier to draw.
  */
-function describeStoryTime(value: unknown): StoryTimeView | null {
+export function describeStoryTime(value: unknown): StoryTimeView | null {
   if (value === null || typeof value !== 'object') return null
   const time = value as Record<string, unknown>
 
@@ -342,10 +342,19 @@ export async function getNarrativeDelta(
       if (!previousByEntity.has(row.entityId)) previousByEntity.set(row.entityId, row.label)
     }
 
+    /*
+     * Mysteries this chapter *opened*.
+     *
+     * This read every mystery opened at or before the chapter, in a structure
+     * whose every other field answers "what changed here". On the delta page
+     * the difference is a section that grows quietly with the library; told
+     * forward, chapter by chapter, it would restate the entire stack of open
+     * questions under every chapter heading.
+     */
     const opened = await db
       .select({ question: mysteries.question })
       .from(mysteries)
-      .where(lte(mysteries.openedInChapter, chapterNumber))
+      .where(eq(mysteries.openedInChapter, chapterNumber))
 
     return {
       chapterNumber,

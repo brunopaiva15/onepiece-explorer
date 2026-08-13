@@ -269,6 +269,61 @@ une image ne doit pas casser le jour où un projet de fans déplace un bucket.
 
 ---
 
+## Le mode histoire
+
+```
+/histoire   du chapitre 1, en défilant
+```
+
+Le reste de l'application vous demande où vous en êtes et vous montre ce
+moment-là. Le mode histoire part du premier chapitre et avance quand vous
+défilez — ce qui ressemble à une autre fonctionnalité et qui est exactement la
+même : **le défilement est le curseur**, en train d'avancer.
+
+Chaque chapitre y est lu **à sa propre frontière**, pas à la vôtre. Une fenêtre
+qui couvre les chapitres 1 à 6 ouvre six frontières, une par chapitre, parce
+qu'un nom révélé au chapitre 5 n'a rien à faire sur la page du chapitre 1. La
+lire une seule fois au chapitre 6 puis trier en TypeScript coûterait six fois
+moins cher et remettrait la seule garantie que ce produit vend dans du code
+applicatif — l'inversion exacte que l'[ADR 0001](docs/adr/0001-chapter-boundary-in-the-database.md)
+existe pour empêcher. La frontière reste donc dans la base, et le mode histoire
+la paie.
+
+Ce que ça donne, chapitre par chapitre, dans l'ordre où on lit :
+
+| Le temps | Ce qu'il montre |
+|---|---|
+| **la ligne** | une phrase citée de la source, vérifiée par le pipeline — jamais composée |
+| **ce qui arrive** | les événements, avec les souvenirs annoncés comme tels |
+| **un nom** | « l'homme au tablier de cuir » devient Kaelo Renn |
+| **entrent en scène** | les visages, s'il y en a |
+| **ce que ce chapitre dément** | les croyances qu'il ferme, et depuis quand vous les teniez |
+| **ce qui reste sans réponse** | les mystères qu'il ouvre |
+
+Les portraits n'ont besoin d'aucune logique supplémentaire : une illustration
+porte le chapitre de révélation du **nom** qui l'a trouvée, donc elle apparaît
+au chapitre où ce nom tombe et pas avant. La galerie se remplit en défilant
+parce que la base refuse de la remplir plus tôt.
+
+Un chapitre publié qui n'a rien produit est marqué **muet** et tient sur une
+ligne. Certains chapitres sont des transitions ; leur donner la même place
+qu'au chapitre où un nom tombe serait un mode histoire qui n'a pas lu
+l'histoire.
+
+**Rien n'est caché par défaut.** Les animations d'entrée vivent toutes dans un
+`@supports (animation-timeline: view())`, et l'état non animé est l'état fini.
+Un navigateur sans animations pilotées par le défilement, une feuille de style
+qui ne charge pas, un lecteur qui a désactivé les animations : tous obtiennent
+toute l'histoire, tout de suite. Un contenu qui commence à `opacity: 0` en
+attendant un script est un contenu qui disparaît le jour où le script
+disparaît.
+
+Le curseur de la barre reste actif et veut dire ici quelque chose d'un peu
+différent d'ailleurs : c'est là où le récit **s'arrête**. Posez-le sur 45 et
+l'histoire court de 1 à 45.
+
+---
+
 ## Ouvrir la lecture au public
 
 Par défaut le site est privé : chaque page exige une connexion. Vous pouvez
@@ -279,9 +334,9 @@ bibliothèque (affiché dans `/reglages`) :
 PUBLIC_LIBRARY_OWNER_ID=<votre identifiant>
 ```
 
-Ce qui devient public : le graphe, la chronologie, les fiches d'entité, la
-recherche, les mystères, les extraits de dialogue cités et leurs références de
-chapitre, page et case. Un visiteur dispose du **curseur**, librement — c'est
+Ce qui devient public : le graphe, la chronologie, le mode histoire, les fiches
+d'entité, la recherche, les mystères, les extraits de dialogue cités et leurs
+références de chapitre, page et case. Un visiteur dispose du **curseur**, librement — c'est
 tout l'intérêt de rendre ça public plutôt que de renvoyer vers un wiki : il le
 pose où il en est de sa lecture et explore sans se faire gâcher la suite.
 

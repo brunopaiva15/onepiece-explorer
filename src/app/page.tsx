@@ -232,8 +232,13 @@ export default async function HomePage() {
       )}
 
       {!isOwner && (
-        <section className="mt-8 grid gap-4 md:grid-cols-3">
+        <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
+            [
+              "L'histoire",
+              '/histoire',
+              'Depuis le chapitre 1, en défilant : ce qui arrive, qui entre en scène, ce qui tombe.',
+            ],
             ['Le graphe', '/graph', 'Tout le réseau : personnages, équipages, îles, fruits, promesses.'],
             ['La chronologie', '/chronologie', "Dates exactes, ordres relatifs, flashbacks, et l'incertitude assumée."],
             ['Les mystères', '/mysteres', 'Ce qui est ouvert, ce qui a été résolu, et au bout de combien de chapitres.'],
