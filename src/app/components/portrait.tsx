@@ -61,7 +61,7 @@ export function Portrait({
         loading="lazy"
         width={40}
         height={40}
-        className="h-10 w-10 shrink-0 rounded-sm border border-line object-cover"
+        className="h-10 w-10 shrink-0 rounded-sm border border-line object-cover object-top"
       />
     )
   }

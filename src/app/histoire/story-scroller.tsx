@@ -94,9 +94,25 @@ export function StoryScroller({
   return (
     <>
       <ol className="fil">
-        {beats.map((beat) => (
-          <Beat key={beat.id} beat={beat} />
-        ))}
+        {fold(beats).map((run) =>
+          Array.isArray(run) ? (
+            <li key={run[0]!.id} className="perle-repli">
+              <details>
+                <summary>
+                  Voir les {run.length} autre{run.length > 1 ? 's' : ''} événement
+                  {run.length > 1 ? 's' : ''} de ce chapitre
+                </summary>
+                <ol>
+                  {run.map((beat) => (
+                    <Beat key={beat.id} beat={beat} />
+                  ))}
+                </ol>
+              </details>
+            </li>
+          ) : (
+            <Beat key={run.id} beat={run} />
+          ),
+        )}
       </ol>
 
       <div ref={sentinel} className="fil-bout" aria-live="polite">
@@ -129,4 +145,26 @@ export function StoryScroller({
       </div>
     </>
   )
+}
+
+/**
+ * Consecutive folded beads, gathered into one run.
+ *
+ * A chapter of fifteen events shows five and offers the rest; the thread stays
+ * readable and the chapter keeps everything it had. A `<details>` rather than a
+ * state flag: it opens without JavaScript, a browser's find-in-page can already
+ * reach inside it, and there is no third state to get wrong.
+ */
+function fold(beats: StoryBeat[]): Array<StoryBeat | StoryBeat[]> {
+  const out: Array<StoryBeat | StoryBeat[]> = []
+  for (const beat of beats) {
+    if (!beat.collapsed) {
+      out.push(beat)
+      continue
+    }
+    const last = out.at(-1)
+    if (Array.isArray(last)) last.push(beat)
+    else out.push([beat])
+  }
+  return out
 }

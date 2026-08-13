@@ -202,6 +202,55 @@ export function splitSlice(slice: Slice): Slice[] {
  * the same panels; sensitive because re-detecting panels renumbers them, so a
  * genuine reprocessing gets new keys and redoes the work.
  */
+/**
+ * Local ids, made unique across the slices of one run.
+ *
+ * A local id is « scoped to this response », and the prompt says so — which was
+ * exactly right when a chapter was one call. Sliced, a chapter is a dozen
+ * responses, and every one of them starts counting at `e1`. They are then
+ * merged into a single list of proposals and published against a single map
+ * from local id to entity row, where `e1` can only mean one thing.
+ *
+ * What that did, quietly: the second slice's `e1` overwrote the first's, and
+ * every relation the first slice had proposed about *its* `e1` landed on a
+ * different character. Not a missing edge — a wrong one, drawn between two
+ * entities the chapter never connected, indistinguishable from a real one.
+ *
+ * Prefixing with the slice's own key rather than a counter is deliberate: the
+ * key is derived from the slice's refs, so a resumed run rebuilds the same
+ * prefix for the same slice and its replayed checkpoint still lines up.
+ *
+ * References to *existing* entities are left alone. Those are database uuids
+ * handed to the model in the prompt, they are already unique, and prefixing one
+ * would turn a valid reference into a dangling one.
+ */
+export function namespaceLocalIds(extraction: Extraction, prefix: string): Extraction {
+  // Mysteries carry no local id — nothing may reference one — so they pass
+  // through untouched.
+  const mine = new Set<string>([
+    ...extraction.entities.map((entity) => entity.local_id),
+    ...extraction.events.map((event) => event.local_id),
+  ])
+  const scoped = (ref: string): string => (mine.has(ref) ? `${prefix}:${ref}` : ref)
+
+  return {
+    entities: extraction.entities.map((entity) => ({
+      ...entity,
+      local_id: scoped(entity.local_id),
+    })),
+    assertions: extraction.assertions.map((assertion) => ({
+      ...assertion,
+      subject: scoped(assertion.subject),
+      object: assertion.object === null ? null : scoped(assertion.object),
+    })),
+    events: extraction.events.map((event) => ({
+      ...event,
+      local_id: scoped(event.local_id),
+    })),
+    mysteries: extraction.mysteries,
+  }
+}
+
 function sliceKey(slice: Slice): string {
   const refs = [
     ...slice.descriptions.map((d) => d.panel_ref),
@@ -695,11 +744,24 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       new Set(knownEntities.map((e) => e.id)),
     )
 
-    accepted.entities.push(...sliceFiltered.accepted.entities)
-    accepted.assertions.push(...sliceFiltered.accepted.assertions)
-    accepted.events.push(...sliceFiltered.accepted.events)
-    accepted.mysteries.push(...sliceFiltered.accepted.mysteries)
-    quarantined.push(...sliceFiltered.quarantined)
+    /*
+     * Namespaced before anything else sees it, including the checkpoint.
+     *
+     * The resume path replays a recorded unit straight into `accepted`, so
+     * recording the raw ids would put un-namespaced proposals back into a run
+     * whose other slices are namespaced — the collision, restored from disk.
+     */
+    const key = sliceKey(slice)
+    const scoped: FilterResult = {
+      accepted: namespaceLocalIds(sliceFiltered.accepted, key.slice(0, 8)),
+      quarantined: sliceFiltered.quarantined,
+    }
+
+    accepted.entities.push(...scoped.accepted.entities)
+    accepted.assertions.push(...scoped.accepted.assertions)
+    accepted.events.push(...scoped.accepted.events)
+    accepted.mysteries.push(...scoped.accepted.mysteries)
+    quarantined.push(...scoped.quarantined)
 
     /*
      * Written down the moment it lands.
@@ -713,8 +775,8 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       runId,
       userId,
       'extract_candidates',
-      sliceKey(slice),
-      JSON.stringify(sliceFiltered),
+      key,
+      JSON.stringify(scoped),
     )
    }
   }

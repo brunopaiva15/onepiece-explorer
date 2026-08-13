@@ -129,13 +129,42 @@ export async function lookupFandomImage(
     return toCandidate(en, 'en', title)
   }
 
-  await pause(PACE_MS)
-  const fr = await ask(title, 'fr')
-  if (fr.found && !fr.fragmentRedirect && fr.imageUrl) {
-    return toCandidate(fr, 'fr', title)
+  for (const variant of frenchTitles(title)) {
+    await pause(PACE_MS)
+    const fr = await ask(variant, 'fr')
+    if (fr.found && !fr.fragmentRedirect && fr.imageUrl) {
+      return toCandidate(fr, 'fr', variant)
+    }
   }
 
   return null
+}
+
+/**
+ * The same name, with the article the wiki files it under.
+ *
+ * The graph holds « Équipage du Roux »; the article is « L'Équipage du Roux ».
+ * That is a determiner, not a different subject, and refusing it costs a
+ * picture that plainly exists. Crews, ships and organisations are where French
+ * titles carry the article and our labels do not.
+ *
+ * Still an exact-title match, which is the whole guarantee: a determiner cannot
+ * make « Équipage du Roux » resolve to something else. Two variants, not five —
+ * these are requests to somebody's free wiki, and the elision rule picks the
+ * only one that could be right.
+ */
+export function frenchTitles(title: string): string[] {
+  const bare = title.trim()
+  if (bare === '') return []
+
+  // Already carries one: asking again with a second article would be nonsense.
+  if (/^(l'|le |la |les )/i.test(bare)) return [bare]
+
+  const first =
+    bare.normalize('NFD').replace(/\p{Diacritic}/gu, '')[0]?.toLowerCase() ?? ''
+  const elides = 'aeiouyh'.includes(first)
+
+  return [bare, elides ? `L'${bare}` : `Le ${bare}`, `Les ${bare}`]
 }
 
 function toCandidate(answer: Answer, lang: Lang, asked: string): ImageCandidate {
