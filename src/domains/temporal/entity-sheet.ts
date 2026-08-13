@@ -27,6 +27,14 @@ import { identityComponent } from './projection.ts'
  */
 
 export interface SheetLabel {
+  /**
+   * The row's own id, so a correction names the name it corrects.
+   *
+   * A fiche is read across an identity component and a name can hang off either
+   * half of a merge, so « the displayed label » is not addressable by entity id
+   * and wording alone. Renaming needs one row.
+   */
+  id: string
   label: string
   kind: string
   revealedInChapter: number
@@ -103,6 +111,7 @@ export async function getEntitySheet(
 
     const labelRows = await db
       .select({
+        id: entityLabels.id,
         label: entityLabels.label,
         kind: entityLabels.kind,
         revealedInChapter: entityLabels.revealedInChapter,
@@ -235,6 +244,7 @@ export async function getEntitySheet(
   )
 
   const labels: SheetLabel[] = data.labelRows.map((row) => ({
+    id: row.id,
     label: row.label,
     kind: row.kind,
     revealedInChapter: row.revealedInChapter,
