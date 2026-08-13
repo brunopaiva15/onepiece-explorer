@@ -318,6 +318,8 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
   ],
 
   place: [
+    section('situation', 'Situation', ['part_of_place:out']),
+    section('contient', 'Ce qu’il contient', ['part_of_place:in']),
     section('presents', 'Qui s’y trouve', [
       'located_at:in:character|group',
       'located_at:in:object',
@@ -345,6 +347,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
 
   object: [
     section('detenteurs', 'Détenteurs', ['owns:in', 'uses:in', 'captures:in']),
+    section('confere', 'Ce qu’il confère', ['grants_power:out']),
     section('situation', 'Où il se trouve', [
       'located_at:out',
       'travels_from:out',
@@ -360,7 +363,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
 
   power: [
     section('porteurs', 'Qui l’utilise', ['uses:in']),
-    section('origine', 'Origine', ['creates:in']),
+    section('origine', 'Origine', ['grants_power:in', 'creates:in']),
     MYSTERES,
     IDENTITE,
     RECIT,
@@ -424,6 +427,9 @@ const ROLES: Record<string, readonly [outgoing: string, incoming: string]> = {
 
   travels_from: ['part de', 'départ de'],
   travels_to: ['se rend à', 'arrivée de'],
+
+  part_of_place: ['fait partie de', 'comprend'],
+  grants_power: ['confère', 'conféré par'],
 
   member_of: ['membre de', 'membre'],
   leads: ['dirige', 'chef'],

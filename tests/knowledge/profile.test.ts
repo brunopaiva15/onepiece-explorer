@@ -96,6 +96,30 @@ describe('a group’s sheet', () => {
 })
 
 describe('a place’s sheet', () => {
+  it('opens on where in the world it is, and what it holds', () => {
+    // The question a place's sheet could not answer at all: an island had no
+    // relation to the sea it sits in, because the ontology had no place-to-
+    // place edge. It could say who was standing on it and nothing about it.
+    const sections = buildEntityProfile('place', [
+      fact({
+        predicate: 'part_of_place',
+        direction: 'incoming',
+        otherId: 'fuchsia',
+        otherType: 'place',
+      }),
+      fact({
+        predicate: 'part_of_place',
+        direction: 'outgoing',
+        otherId: 'east-blue',
+        otherType: 'place',
+      }),
+    ])
+
+    expect(titles(sections)).toEqual(['situation', 'contient'])
+    expect(sections[0]!.entries[0]!.role).toBe('fait partie de')
+    expect(sections[1]!.entries[0]!.role).toBe('comprend')
+  })
+
   it('separates who stands there from what happens there', () => {
     // Both are an incoming `located_at`; only the type at the other end says
     // whether it is a person or a battle.
@@ -105,6 +129,30 @@ describe('a place’s sheet', () => {
     ])
 
     expect(titles(sections)).toEqual(['presents', 'evenements'])
+  })
+})
+
+describe('a fruit and the capacity it gives', () => {
+  it('are two nodes the ontology can finally join', () => {
+    // The type distinction was already made — a fruit is an object, what it
+    // grants is a power — and nothing could express the link between them, so
+    // a power's sheet knew its users and not where it came from.
+    const fruit = buildEntityProfile('object', [
+      fact({ predicate: 'grants_power', otherId: 'bara-bara', otherType: 'power' }),
+    ])
+    const power = buildEntityProfile('power', [
+      fact({
+        predicate: 'grants_power',
+        direction: 'incoming',
+        otherId: 'bara-bara-no-mi',
+        otherType: 'object',
+      }),
+    ])
+
+    expect(titles(fruit)).toEqual(['confere'])
+    expect(fruit[0]!.entries[0]!.role).toBe('confère')
+    expect(titles(power)).toEqual(['origine'])
+    expect(power[0]!.entries[0]!.role).toBe('conféré par')
   })
 })
 
