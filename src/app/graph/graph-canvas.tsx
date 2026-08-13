@@ -338,7 +338,7 @@ function HoverCard({
           alt=""
           width={48}
           height={48}
-          className="h-12 w-12 shrink-0 rounded-sm border border-line object-cover"
+          className="h-12 w-12 shrink-0 rounded-sm border border-line object-cover object-top"
         />
       )}
       <div className="min-w-0">

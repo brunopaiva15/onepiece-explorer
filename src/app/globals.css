@@ -868,3 +868,8 @@ hr.regle {
   margin: 0;
   padding: 0;
 }
+
+/* The in-world moment, on the beat's own label rather than under its sentence. */
+.perle-moment {
+  color: var(--text-muted);
+}

@@ -28,6 +28,9 @@ const MOT: Record<StoryBeat['kind'], string> = {
   question: 'question',
 }
 
+/** Beads whose second line is a moment, not a sentence. */
+const EVENT_KINDS = new Set<StoryBeat['kind']>(['evenement', 'souvenir'])
+
 export function Beat({ beat }: { beat: StoryBeat }) {
   if (beat.kind === 'chapitre') {
     return (
@@ -59,9 +62,19 @@ export function Beat({ beat }: { beat: StoryBeat }) {
     ? `/entite/${beat.entityId}?ch=${beat.chapter}`
     : null
 
+  /*
+   * An event carries its moment on the small label rather than under the
+   * sentence: « souvenir · environ dix ans plus tôt ». It is what kind of beat
+   * this is, not a second thing it says.
+   */
+  const moment = EVENT_KINDS.has(beat.kind) ? beat.detail : null
+
   return (
     <li className="perle" data-perle data-genre={beat.kind}>
-      <p className="perle-mot">{MOT[beat.kind]}</p>
+      <p className="perle-mot">
+        {MOT[beat.kind]}
+        {moment && <span className="perle-moment"> · {moment}</span>}
+      </p>
 
       <div className="perle-corps">
         {beat.portrait && (
@@ -95,7 +108,7 @@ export function Beat({ beat }: { beat: StoryBeat }) {
             )}
           </p>
 
-          {beat.kind !== 'nom' && beat.detail && (
+          {beat.kind !== 'nom' && !moment && beat.detail && (
             <p className="perle-detail">
               <Ligne parts={beat.detailParts} fallback={beat.detail} />
             </p>

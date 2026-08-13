@@ -58,7 +58,7 @@ export default async function EntityPage({
                   src={portrait.url}
                   alt={`Illustration de ${sheet.displayLabel}`}
                   loading="eager"
-                  className="h-44 w-36 object-cover"
+                  className="h-44 w-36 object-cover object-top"
                 />
               </div>
             ) : (

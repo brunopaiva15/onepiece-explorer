@@ -71,7 +71,9 @@ describe('no bead borrows a later chapter’s knowledge', () => {
     const battle = await createEntity(world, 'event', 2)
     await addLabel(world, battle, 'l’incident du village', 'alias', 2, 10)
     await addLabel(world, battle, 'le Massacre de Fuchsia', 'true_name', 4, 100)
-    await addEvent(world, battle, { summary: 'Quelque chose arrive.', toldIn: 2 })
+    // No summary, so the label is what the bead shows — which is the point:
+    // an event names itself with the name it had at the chapter that told it.
+    await addEvent(world, battle, { summary: null, toldIn: 2 })
 
     const page = await read(1, 5, 5)
 
@@ -156,5 +158,39 @@ describe('no bead borrows a later chapter’s knowledge', () => {
     // belongs to this reader.
     expect(page.beats.every((beat) => beat.kind === 'chapitre')).toBe(true)
     expect(page.beats).toHaveLength(3)
+  })
+})
+
+/**
+ * The same rule, one page over.
+ *
+ * `/mysteres` decides open-or-closed by reading `resolvedInChapter`, never
+ * `state`. A row saying `resolved` was resolved *somewhere* — possibly three
+ * hundred chapters past the reader. The projection nulls a resolution chapter
+ * beyond the boundary, which is what makes that field mean « résolu pour vous ».
+ * Pinned here because the page is three lines of filtering over it, and those
+ * three lines are the whole guarantee.
+ */
+describe('a question is open until the reader has read its answer', () => {
+  it('reports no resolution chapter for an answer beyond the boundary', async () => {
+    const mystery = await createEntity(world, 'mystery', 1)
+    await addLabel(world, mystery, 'Le trésor', 'true_name', 1, 100)
+    await addMystery(world, mystery, {
+      question: 'Où est le trésor ?',
+      openedIn: 1,
+      state: 'resolved',
+      resolvedIn: 5,
+    })
+
+    const { getTimeline } = await import('@/domains/temporal/timeline.ts')
+
+    const early = await getTimeline(world.userId, 3)
+    const late = await getTimeline(world.userId, 5)
+
+    const at = (timeline: Awaited<ReturnType<typeof getTimeline>>) =>
+      timeline.byRevelation.find((entry) => entry.kind === 'mystery')
+
+    expect(at(early)?.resolvedInChapter).toBeNull()
+    expect(at(late)?.resolvedInChapter).toBe(5)
   })
 })

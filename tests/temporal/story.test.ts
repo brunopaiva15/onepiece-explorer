@@ -102,8 +102,10 @@ describe('the beads', () => {
 
     expect(at(page, 1, 'evenement')).toHaveLength(0)
     const [beat] = at(page, 2, 'evenement')
-    expect(beat!.text).toBe('Le départ de Luffy')
-    expect(beat!.detail).toBe('Luffy quitte Fuchsia dans un tonneau.')
+    // The sentence, once. An event has no subtitle: the summary is the beat,
+    // and the label is the same sentence with a title's job.
+    expect(beat!.text).toBe('Luffy quitte Fuchsia dans un tonneau.')
+    expect(beat!.detail).toBeNull()
   })
 
   it('marks a flashback as a memory and keeps its in-world moment', async () => {
@@ -119,8 +121,9 @@ describe('the beads', () => {
     const page = await read(3, 1, 4)
     const [beat] = at(page, 3, 'souvenir')
 
-    expect(beat!.text).toBe('Le sacrifice de Shanks')
-    expect(beat!.detail).toBe('Shanks perd un bras. — environ dix ans plus tôt')
+    expect(beat!.text).toBe('Shanks perd un bras.')
+    // The moment is not a second sentence; the page puts it on the small label.
+    expect(beat!.detail).toBe('environ dix ans plus tôt')
   })
 
   it('writes a name landing as the change, not just the new name', async () => {
@@ -269,6 +272,27 @@ describe('what the first real chapter showed', () => {
     expect(at(page, 1, 'entree')[0]!.text).toBe('Monkey D. Luffy')
   })
 
+  it('does not print a truncated copy of the sentence above it', async () => {
+    /*
+     * The label is capped at 200 characters and the summary at 400, so a long
+     * event is named by its own summary cut off mid-word. Equality did not see
+     * that as a repetition; the reader did.
+     */
+    const event = await createEntity(world, 'event', 1)
+    const complet =
+      'Une fois libéré, Zoro bloque les épées de tous les Marines chargeant ' +
+      'avec ses trois sabres et les menace de mort s’ils bougent, avant ' +
+      'd’annoncer sa décision de rejoindre Luffy tout en posant ses conditions ' +
+      'liées à son rêve de devenir le meilleur sabreur du monde.'
+    await addLabel(world, event, complet.slice(0, 200), 'true_name', 1, 100)
+    await addEvent(world, event, { summary: complet, toldIn: 1 })
+
+    const [beat] = at(await read(1, 1, 4), 1, 'evenement')
+
+    expect(beat!.text).toBe(complet)
+    expect(beat!.detail).toBeNull()
+  })
+
   it('does not print an event’s sentence twice when it is also its name', async () => {
     const event = await createEntity(world, 'event', 1)
     const phrase = 'Shanks sauve Luffy et perd son bras gauche.'
@@ -286,15 +310,17 @@ describe('what the first real chapter showed', () => {
     for (const name of ['Zéphyr lève l’ancre', 'Un canot dérive', 'Alba tombe']) {
       const event = await createEntity(world, 'event', 1)
       await addLabel(world, event, name, 'true_name', 1, 100)
-      await addEvent(world, event, { summary: `${name} vraiment.`, toldIn: 1 })
+      // A summary that is not a prefix of the label: this test is about order,
+      // and a label the summary echoes would now be replaced by it.
+      await addEvent(world, event, { summary: `Quelque chose arrive : ${name}.`, toldIn: 1 })
     }
 
     const page = await read(1, 1, 4)
 
     expect(at(page, 1, 'evenement').map((beat) => beat.text)).toEqual([
-      'Zéphyr lève l’ancre',
-      'Un canot dérive',
-      'Alba tombe',
+      'Quelque chose arrive : Zéphyr lève l’ancre.',
+      'Quelque chose arrive : Un canot dérive.',
+      'Quelque chose arrive : Alba tombe.',
     ])
   })
 

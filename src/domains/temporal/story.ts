@@ -383,22 +383,32 @@ function compose(row: Row, chapter: number, index: number): StoryBeat {
     case 'souvenir': {
       const when = describeStoryTime(row.extra)
       /*
-       * An event is usually named by its own summary — the pipeline has no
-       * better title for « Shanks sauve Luffy et perd son bras gauche » than
-       * that sentence. Printing both lines gave every event bead the same
-       * sentence twice.
+       * One line, never two.
+       *
+       * An event is named by its own summary — the pipeline has no better title
+       * for « Shanks sauve Luffy et perd son bras gauche » than that sentence.
+       * So the label and the summary are the same thing said twice, and the
+       * label is the copy that got cut: it is capped at two hundred characters
+       * against the summary's four hundred, which is how a bead came to show a
+       * sentence broken mid-word above the whole one.
+       *
+       * Comparing them was the wrong fix, because they do not have to be equal
+       * to be redundant. An event simply has no subtitle: the sentence is the
+       * beat. The summary wins when there is one, being the complete form; the
+       * label serves when there is not.
+       *
+       * The in-world moment is not a subtitle either — it goes on the small
+       * label above, beside « souvenir », where the page shows what kind of
+       * beat this is rather than what it says.
        */
-      const summary =
-        row.detail !== null && row.detail.trim() === text.trim() ? null : row.detail
+      const summary = (row.detail ?? '').trim()
+      const line = summary !== '' ? summary : text.trim()
+
       return {
         ...base,
         kind: row.kind,
-        text: text === '' ? 'événement sans nom' : text,
-        // The in-world moment is appended only when the pages give one.
-        detail:
-          when && when.kind !== 'unknown'
-            ? [summary, when.description].filter(Boolean).join(' — ')
-            : summary,
+        text: line === '' ? 'événement sans nom' : line,
+        detail: when && when.kind !== 'unknown' ? when.description : null,
       }
     }
     case 'nom':

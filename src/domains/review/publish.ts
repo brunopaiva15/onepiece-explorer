@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, eq, lte, ne, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
@@ -75,6 +75,14 @@ export interface PublishResult {
    * operation is that it did not.
    */
   entitiesMerged: number
+  /**
+   * Proposals joined to an entity of the same name, without being asked.
+   *
+   * Counted apart from `entitiesMerged` because the reader decided that one and
+   * did not decide this one. A number nobody can see is a silent behaviour, and
+   * this behaviour changes which row a chapter's facts land on.
+   */
+  entitiesReused: number
   assertionsCreated: number
   eventsCreated: number
   mysteriesCreated: number
@@ -104,6 +112,7 @@ export function mergePublishResults(a: PublishResult, b: PublishResult): Publish
   return {
     entitiesCreated: a.entitiesCreated + b.entitiesCreated,
     entitiesMerged: a.entitiesMerged + b.entitiesMerged,
+    entitiesReused: a.entitiesReused + b.entitiesReused,
     assertionsCreated: a.assertionsCreated + b.assertionsCreated,
     eventsCreated: a.eventsCreated + b.eventsCreated,
     mysteriesCreated: a.mysteriesCreated + b.mysteriesCreated,
@@ -125,6 +134,7 @@ export async function publishDecisions(
   const result: PublishResult = {
     entitiesCreated: 0,
     entitiesMerged: 0,
+    entitiesReused: 0,
     assertionsCreated: 0,
     eventsCreated: 0,
     mysteriesCreated: 0,
@@ -298,6 +308,75 @@ export async function publishDecisions(
       }
 
       const candidate = (decision.correctedPayload ?? item.payload) as CandidateEntity
+
+      /*
+       * The same name, already in the graph.
+       *
+       * Publication used to insert unconditionally, and the only thing that
+       * ever stopped a duplicate was the resolution step — which runs at
+       * *import* and compares against what was accepted *then*. Import three
+       * chapters before reviewing any of them and that comparison sees nothing:
+       * each chapter re-proposes the same characters, no rapprochement is ever
+       * offered, and publishing them creates three Shanks that nothing will
+       * join. At a thousand chapters, "publish between each import" is not an
+       * instruction anyone can follow.
+       *
+       * So the check moves to the moment it can be right: here, where the
+       * accepted set is current. Exact normalised label, same node type, same
+       * work, first seen at this chapter or before — the strongest signal there
+       * is, and the one the trigram matcher approximates with a threshold.
+       *
+       * What it buys is not only the absence of a duplicate. The chapter's
+       * relations name this proposal by its local id; pointing that id at the
+       * existing row is what makes them land on the character the reader
+       * already knows, which is the whole reason links were missing.
+       *
+       * What it costs: two genuinely different characters with the same name
+       * become one entity to separate. That is a real case in a long fiction,
+       * and it is the reason this is counted, audited and reported rather than
+       * done quietly.
+       */
+      const twin = await exactTwin(db, {
+        workId: run.workId,
+        userId,
+        nodeType: candidate.node_type,
+        label: candidate.label,
+        chapterNumber: run.chapterNumber,
+      })
+
+      if (twin !== null) {
+        localToEntity.set(candidate.local_id, twin)
+
+        const added = await addMergedLabel(db, {
+          userId,
+          entityId: twin,
+          label: candidate.label,
+          kind: candidate.label_kind,
+          chapterNumber: run.chapterNumber,
+        })
+        if (added) result.labelsCreated++
+
+        await db.insert(auditLog).values({
+          userId,
+          action: 'entity_reused',
+          subjectKind: 'entity',
+          subjectId: twin,
+          detail: {
+            label: candidate.label,
+            nodeType: candidate.node_type,
+            chapterNumber: run.chapterNumber,
+            reviewItemId: item.id,
+          },
+        })
+
+        await recordDecision(db, userId, run.workId, item, decision)
+        await db
+          .update(reviewItems)
+          .set({ status: 'accepted' })
+          .where(eq(reviewItems.id, item.id))
+        result.entitiesReused++
+        continue
+      }
 
       const [entity] = await db
         .insert(entities)
@@ -945,6 +1024,51 @@ async function insertEvidence(
  * Returns whether a row was written — a name already on the entity is not a
  * failure, it is the ordinary case of a character named twice.
  */
+/**
+ * An accepted entity of the same type carrying exactly this name.
+ *
+ * Exact on the *normalised* label, which is the same normalisation the graph
+ * indexes and searches by — « Monkey D. Luffy » and « monkey d luffy » are the
+ * same name, « Luffy » is not. Fuzzy resemblance is deliberately not handled
+ * here: that is what the resolution step asks a human about, and answering it
+ * without asking is the one thing this must not start doing.
+ *
+ * Bounded by the chapter like everything else. An entity first seen later than
+ * the chapter being published cannot be what this chapter is naming.
+ */
+async function exactTwin(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    workId: string
+    userId: string
+    nodeType: string
+    label: string
+    chapterNumber: number
+  },
+): Promise<string | null> {
+  const normalized = normalizeText(input.label)
+  if (normalized.length === 0) return null
+
+  const [row] = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .innerJoin(entityLabels, eq(entityLabels.entityId, entities.id))
+    .where(
+      and(
+        eq(entities.workId, input.workId),
+        eq(entities.userId, input.userId),
+        eq(entities.nodeType, input.nodeType),
+        eq(entities.reviewStatus, 'accepted'),
+        lte(entities.firstSeenChapter, input.chapterNumber),
+        eq(entityLabels.normalizedLabel, normalized),
+        lte(entityLabels.revealedInChapter, input.chapterNumber),
+      ),
+    )
+    .limit(1)
+
+  return row?.id ?? null
+}
+
 async function addMergedLabel(
   db: Parameters<Parameters<typeof withIngest>[0]>[0],
   input: {

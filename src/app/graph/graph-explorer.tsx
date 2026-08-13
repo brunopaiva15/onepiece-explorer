@@ -176,7 +176,7 @@ export function GraphExplorer({
                   <img
                     src={portraits[selected.id]!.thumbUrl}
                     alt=""
-                    className="h-20 w-20 shrink-0 border-[3px] border-ink object-cover"
+                    className="h-20 w-20 shrink-0 border-[3px] border-ink object-cover object-top"
                   />
                 ) : (
                   <div className="flex h-20 w-20 shrink-0 items-center justify-center border-[3px] border-ink bg-surface-sunken">
