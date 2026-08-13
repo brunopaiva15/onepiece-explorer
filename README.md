@@ -109,6 +109,26 @@ confirmés, ils sont rejetés plutôt que supprimés, lignes et preuves intactes
 un nœud qui porte un résumé d'événement ou la question d'un mystère est refusé
 plutôt que cascadé — personne n'a demandé la suppression d'une phrase.
 
+**Et une fiche se lit par ce qu'elle est.** Elle ouvrait sur « Ce que l'on
+sait » : tous les faits, dans l'ordre des chapitres, la famille entre un
+déplacement et une mention. Personne ne lit un personnage comme ça — on demande
+sa famille, son équipage, qui il a affronté, où il est passé. Les mêmes faits
+sont donc rangés en sections **qui dépendent du type du nœud** : un équipage
+ouvre sur ses membres et son capitaine, un lieu sur la mer dont il fait partie
+et sur qui s'y trouve, un fruit sur le pouvoir qu'il confère, un mystère sur ce
+qui l'a ouvert. Une section vide n'a pas de titre, et un fait qu'aucune section
+ne réclame tombe dans « Autres faits » plutôt que de disparaître — un test
+énumère toutes les relations que l'ontologie autorise, type par type, pour
+qu'aucune n'y échoue par oubli.
+
+Ce n'est qu'un résumé, et il ne se permet d'être court que parce que le relevé
+est sur la même page, replié dessous : chaque fait, son chapitre, son statut et
+la case qui le prouve, exactement comme avant. Le numéro de chapitre au bout de
+chaque ligne y renvoie, et le déplie au passage. Deux relations manquaient pour
+que tout cela ait un sens : un lieu **fait partie d'un lieu** — un village dans
+une île, une île dans une mer — et un objet **confère un pouvoir**, ce que
+l'ontologie distinguait déjà sans pouvoir le relier.
+
 Le chapitre peut être **récupéré depuis le One Piece Fandom** par son numéro :
 les deux versions arrivent d'un coup, l'anglaise comme texte citable — c'est la
 plus détaillée, et un graphe ne contient que ce que sa source affirme — et la
