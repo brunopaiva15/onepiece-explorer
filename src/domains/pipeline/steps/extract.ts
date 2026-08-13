@@ -1,6 +1,6 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
-import { and, asc, eq, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, lte, notInArray } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
@@ -23,7 +23,7 @@ import {
 } from '@/domains/ai/anchoring.ts'
 import type { Extraction, PanelDescription } from '@/domains/ai/schemas.ts'
 import { splitPassages } from '@/domains/ingestion/passages.ts'
-import { PREDICATES } from '@/domains/knowledge/ontology.ts'
+import { OCCURRENCE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { quarantineItems } from '../quarantine.ts'
 import { completedUnits, recordUnit } from '../runs.ts'
 import { reanchorOrphans } from '../reanchor.ts'
@@ -391,37 +391,11 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       .where(and(eq(textBlocks.chapterId, chapterId), eq(textBlocks.userId, userId)))
       .orderBy(asc(textBlocks.readingOrder))
 
-    /*
-     * Entities the reader could already know about, and nothing more.
-     *
-     * `firstSeenChapter <= chapterNumber` is the boundary applied to the
-     * prompt. Without it the model would receive the whole cast — including
-     * figures introduced two hundred chapters later — and would connect them.
-     * The row-level security policies protect what the *reader* sees; this
-     * protects what the *model* sees, and they are different leaks.
-     */
-    const known = await db
-      .select({
-        id: entities.id,
-        nodeType: entities.nodeType,
-        label: entityLabels.label,
-      })
-      .from(entities)
-      .leftJoin(
-        entityLabels,
-        and(
-          eq(entityLabels.entityId, entities.id),
-          lte(entityLabels.revealedInChapter, chapterNumber),
-        ),
-      )
-      .where(
-        and(
-          eq(entities.workId, chapter.workId),
-          eq(entities.userId, userId),
-          eq(entities.reviewStatus, 'accepted'),
-          lte(entities.firstSeenChapter, chapterNumber),
-        ),
-      )
+    const known = await knownEntitiesFor(db, {
+      workId: chapter.workId,
+      userId,
+      chapterNumber,
+    })
 
     /*
      * Naming decisions the reader has already made, and no later ones.
@@ -1177,6 +1151,79 @@ export function renderOntology(
  * one designation each. Taking the first non-null keeps whichever the index
  * ordered first rather than fabricating a choice.
  */
+/**
+ * The nodes the extraction may name, and nothing more.
+ *
+ * Two filters, and both are about what a list handed to a model becomes.
+ *
+ * `firstSeenChapter <= chapterNumber` is the boundary applied to the prompt.
+ * Without it the model would receive the whole cast — including figures
+ * introduced two hundred chapters later — and would connect them. The row-level
+ * security policies protect what the *reader* sees; this protects what the
+ * *model* sees, and they are different leaks.
+ *
+ * And no scenes. An event is a node a relation can point at, which is why it is
+ * in the ontology — but its *name is its summary*, so in this list it is a
+ * sentence with three characters in it, sitting among the people and the places
+ * under « utilisez leur identifiant tel quel ». « Dix ans plus tard, Luffy
+ * quitte seul le Village de Fuchsia pour prendre la mer, sous le regard de
+ * Makino, Hoop Slap et des villageois. » was picked twice from this list: once
+ * to say where Luffy was, once to say what Kuro used. It is the only line in
+ * the prompt that reads like a person and is not one, and a model asked for a
+ * subject reaches for the words it recognises.
+ *
+ * What that costs is a relation between a scene of this chapter and a scene of
+ * an earlier one — « précède », « cause » across chapters. What it buys is that
+ * a sentence can no longer stand in for someone. The scenes of the chapter being
+ * read are unaffected: an event proposed in the same response carries a
+ * `local_id`, and `participe à` reaches it exactly as before.
+ *
+ * Mysteries stay. A question is not mistakable for a character, and a chapter
+ * answering one opened three hundred chapters earlier is the whole point of
+ * keeping them — it is what `résout le mystère` is for.
+ */
+export async function knownEntitiesFor(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  scope: { workId: string; userId: string; chapterNumber: number },
+): Promise<Array<{ id: string; label: string; nodeType: string }>> {
+  const rows = await db
+    .select({
+      id: entities.id,
+      nodeType: entities.nodeType,
+      label: entityLabels.label,
+    })
+    .from(entities)
+    .leftJoin(
+      entityLabels,
+      and(
+        eq(entityLabels.entityId, entities.id),
+        lte(entityLabels.revealedInChapter, scope.chapterNumber),
+      ),
+    )
+    .where(
+      and(
+        eq(entities.workId, scope.workId),
+        eq(entities.userId, scope.userId),
+        eq(entities.reviewStatus, 'accepted'),
+        lte(entities.firstSeenChapter, scope.chapterNumber),
+        notInArray(entities.nodeType, [...OCCURRENCE_TYPES]),
+      ),
+    )
+    /*
+     * Highest-precedence label first, then the earliest revealed.
+     *
+     * `dedupeById` keeps one row per entity, and with no ordering that row was
+     * whichever the planner returned first — so a character could be offered to
+     * the model under the English wording kept for searching, or under the
+     * placeholder it had before it was named, while the graph displays it under
+     * its true name. The prompt has to hand over the name the chapter is going
+     * to use, which is the one the fiche shows.
+     */
+    .orderBy(desc(entityLabels.precedence), asc(entityLabels.revealedInChapter))
+
+  return dedupeById(rows)
+}
+
 function dedupeById(
   rows: Array<{ id: string; nodeType: string; label: string | null }>,
 ): Array<{ id: string; label: string; nodeType: string }> {

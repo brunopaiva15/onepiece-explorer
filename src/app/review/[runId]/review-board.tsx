@@ -1304,44 +1304,8 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
  * card is incomplete — which is a decision they can take — instead of reading a
  * hex string as a character.
  */
-function EntityEnd({
-  id,
-  name,
-  nodeType,
-}: {
-  id: string
-  name: string | null
-  nodeType?: string | undefined
-}) {
-  if (name !== null) {
-    /*
-     * A scene and a question say so, right there in the sentence.
-     *
-     * These are the two node types whose name is prose: an event is named by
-     * its summary, a mystery by its question. Printed bare between a subject
-     * and a predicate, one of them reads as a character — « Dix ans plus tard,
-     * Luffy quitte seul le Village de Fuchsia… se trouve à la Base de la
-     * Marine » is a relation about a *scene*, and every word on the card
-     * invites reading it as one about Luffy. Nothing else flags it: the
-     * ontology accepts an occurrence there, so the relation is well typed and
-     * `typeMismatch` is silent.
-     *
-     * Only for those two. « Personnage » beside every name is a word the
-     * reviewer learns to stop reading, and it is this one that has to be seen.
-     */
-    const prose = nodeType !== undefined && NAMED_BY_PROSE.has(nodeType)
-
-    return (
-      <span className="font-medium">
-        {name}
-        {prose && (
-          <span className="ml-1 whitespace-nowrap text-sm font-normal text-secondary">
-            ({nodeTypeLabel(nodeType)})
-          </span>
-        )}
-      </span>
-    )
-  }
+function EntityEnd({ id, name }: { id: string; name: string | null }) {
+  if (name !== null) return <span className="font-medium">{name}</span>
 
   return (
     <span
@@ -1355,6 +1319,48 @@ function EntityEnd({
 
 /** The node types whose name is a sentence rather than a name. */
 const NAMED_BY_PROSE = new Set<string>([...OCCURRENCE_TYPES, 'mystery'])
+
+const isProse = (nodeType: string | undefined): boolean =>
+  nodeType !== undefined && NAMED_BY_PROSE.has(nodeType)
+
+/**
+ * One end of a relation, on its own line, under the word for what it is.
+ *
+ * The layout a scene forces. An event is named by its summary and a mystery by
+ * its question, so one end of the relation is a hundred and forty characters
+ * ending in a full stop — and « sujet prédicat objet » on one line stops being
+ * a sentence: « … sous le regard de Makino, Hoop Slap et des villageois. se
+ * trouve à Base de la Marine ». Naming the type inline does not save it either,
+ * it makes it worse. The marker wraps onto the next line, lands in front of the
+ * predicate, and now reads as if it typed *that*: « (Événement) se trouve à
+ * Base de la Marine », which is a caption on the wrong thing.
+ *
+ * Above the text rather than beside it, so it cannot come apart from what it
+ * types, and both ends carry theirs — once the card is stacked, the symmetry
+ * costs one line and answers « et l'autre bout, c'est quoi » before it is asked.
+ */
+function EntityEndBlock({
+  id,
+  name,
+  nodeType,
+}: {
+  id: string
+  name: string | null
+  nodeType?: string | undefined
+}) {
+  return (
+    <div>
+      {nodeType !== undefined && (
+        <p className="font-mono text-xs uppercase tracking-wide text-muted">
+          {nodeTypeLabel(nodeType)}
+        </p>
+      )}
+      <p className="text-primary">
+        <EntityEnd id={id} name={name} />
+      </p>
+    </div>
+  )
+}
 
 function ProposalBody({
   category,
@@ -1472,29 +1478,60 @@ function ProposalBody({
     const written = String(record.predicate ?? '')
     const shown = chosenPredicate ?? written
 
+    const predicateClass = `text-sm ${
+      shown !== written ? 'text-[var(--epi-validated)]' : 'text-accent'
+    }`
+
+    /*
+     * One line while both ends are names; three the moment one is a sentence.
+     *
+     * An event is named by its summary, so « le sujet » can be a hundred and
+     * forty characters ending in a full stop, and read in a row the card stops
+     * being a sentence: « … sous le regard de Makino, Hoop Slap et des
+     * villageois. se trouve à Base de la Marine ». Where the relation ends and
+     * where the scene begins is left to the reader, on the one screen whose
+     * whole job is to make a claim checkable at a glance.
+     *
+     * Stacked, each end sits under the word for what it is, and the sentence is
+     * plainly one block rather than the first half of a phrase. The inline form
+     * stays for « Higuma capture Luffy », which is most of the queue and which
+     * three lines would only slow down.
+     */
+    const stacked = isProse(nodeTypes[subject]) || isProse(nodeTypes[object ?? ''])
+
     return (
       <div className="mt-2">
-        <p className="text-primary">
-          <EntityEnd
-            id={subject}
-            name={end(record.subject)}
-            nodeType={nodeTypes[subject]}
-          />{' '}
-          <span
-            className={`text-sm ${shown !== written ? 'text-[var(--epi-validated)]' : 'text-accent'}`}
-          >
-            {predicateLabel(shown)}
-          </span>{' '}
-          {object !== null ? (
-            <EntityEnd
-              id={object}
-              name={end(record.object)}
-              nodeType={nodeTypes[object]}
+        {stacked ? (
+          <div className="space-y-2 border-l-2 border-line-strong pl-3">
+            <EntityEndBlock
+              id={subject}
+              name={end(record.subject)}
+              nodeType={nodeTypes[subject]}
             />
-          ) : (
-            <span className="font-medium">{String(record.object_value ?? '')}</span>
-          )}
-        </p>
+            <p className={predicateClass}>{predicateLabel(shown)}</p>
+            {object !== null ? (
+              <EntityEndBlock
+                id={object}
+                name={end(record.object)}
+                nodeType={nodeTypes[object]}
+              />
+            ) : (
+              <p className="font-medium text-primary">
+                {String(record.object_value ?? '')}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-primary">
+            <EntityEnd id={subject} name={end(record.subject)} />{' '}
+            <span className={predicateClass}>{predicateLabel(shown)}</span>{' '}
+            {object !== null ? (
+              <EntityEnd id={object} name={end(record.object)} />
+            ) : (
+              <span className="font-medium">{String(record.object_value ?? '')}</span>
+            )}
+          </p>
+        )}
         <p className="mt-1 text-sm text-secondary">
           {epistemicLabel(String(record.epistemic_status ?? ''))}
         </p>
