@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { getStoryPage } from '@/domains/temporal/story.ts'
+import { getStoryPage, type BeatKind, type StoryPage } from '@/domains/temporal/story.ts'
 import {
   addAssertion,
   addEvent,
@@ -14,13 +14,12 @@ import {
 } from '../helpers/db.ts'
 
 /**
- * The story read forward, a window at a time.
+ * The thread, one stretch at a time.
  *
- * These pin the shape of one page of story mode: which beats land on which
- * chapter, what a silent chapter looks like, and where the window stops. The
- * property that a chapter never borrows a later chapter's knowledge is pinned
- * separately, in the anti-spoiler suite, because it is the one that must stay
- * blocking.
+ * These pin which beads land on which chapter, what a chapter with nothing in
+ * it looks like, and where the thread stops. That a bead never borrows a later
+ * chapter's knowledge is pinned separately, in the anti-spoiler suite, because
+ * it is the one that must stay blocking.
  */
 
 let world: SeededWorld
@@ -34,48 +33,61 @@ afterAll(async () => {
   await closeDb()
 })
 
-describe('a window of the story', () => {
-  it('returns the chapters in reading order, from the first', async () => {
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 3,
-      ceiling: 4,
-    })
+/** The beads of one chapter, minus its notch. */
+function at(page: StoryPage, chapter: number, kind?: BeatKind) {
+  return page.beats.filter(
+    (beat) =>
+      beat.chapter === chapter &&
+      beat.kind !== 'chapitre' &&
+      (kind === undefined || beat.kind === kind),
+  )
+}
 
-    expect(page.chapters.map((chapter) => chapter.number)).toEqual([1, 2, 3])
+async function read(from: number, count: number, ceiling: number) {
+  return getStoryPage(world.userId, world.workId, { from, count, ceiling })
+}
+
+describe('a stretch of thread', () => {
+  it('notches every published chapter, in reading order', async () => {
+    const page = await read(1, 3, 4)
+
+    expect(
+      page.beats.filter((beat) => beat.kind === 'chapitre').map((b) => b.chapter),
+    ).toEqual([1, 2, 3])
   })
 
   it('hands back the next chapter as a cursor, and null at the end', async () => {
-    const first = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 3,
-      ceiling: 4,
-    })
+    const first = await read(1, 3, 4)
     expect(first.nextCursor).toBe(4)
 
-    const second = await getStoryPage(world.userId, world.workId, {
-      from: first.nextCursor!,
-      count: 3,
-      ceiling: 4,
-    })
-    expect(second.chapters.map((chapter) => chapter.number)).toEqual([4])
+    const second = await read(first.nextCursor!, 3, 4)
+    expect(second.beats.map((beat) => beat.chapter)).toEqual([4])
     expect(second.nextCursor).toBeNull()
   })
 
   it('stops at the reader’s own boundary, whatever the window asks for', async () => {
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 12,
-      ceiling: 2,
-    })
+    const page = await read(1, 12, 2)
 
-    expect(page.chapters.map((chapter) => chapter.number)).toEqual([1, 2])
+    expect([...new Set(page.beats.map((beat) => beat.chapter))]).toEqual([1, 2])
     expect(page.nextCursor).toBeNull()
     expect(page.lastChapter).toBe(2)
   })
+
+  it('gives a chapter with nothing in it a notch and no beads', async () => {
+    const entity = await createEntity(world, 'character', 1)
+    await addLabel(world, entity, 'Luffy', 'true_name', 1, 100)
+
+    const page = await read(1, 2, 4)
+
+    expect(at(page, 1).length).toBeGreaterThan(0)
+    expect(at(page, 2)).toHaveLength(0)
+    expect(
+      page.beats.some((beat) => beat.chapter === 2 && beat.kind === 'chapitre'),
+    ).toBe(true)
+  })
 })
 
-describe('what lands on a chapter', () => {
+describe('the beads', () => {
   it('puts an event on the chapter that told it', async () => {
     const event = await createEntity(world, 'event', 2)
     await addLabel(world, event, 'Le départ de Luffy', 'true_name', 2, 100)
@@ -84,21 +96,15 @@ describe('what lands on a chapter', () => {
       toldIn: 2,
     })
 
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 3,
-      ceiling: 4,
-    })
+    const page = await read(1, 3, 4)
 
-    expect(page.chapters[0]!.events).toHaveLength(0)
-    expect(page.chapters[1]!.events).toHaveLength(1)
-    expect(page.chapters[1]!.events[0]!.label).toBe('Le départ de Luffy')
-    expect(page.chapters[1]!.events[0]!.summary).toBe(
-      'Luffy quitte Fuchsia dans un tonneau.',
-    )
+    expect(at(page, 1, 'evenement')).toHaveLength(0)
+    const [beat] = at(page, 2, 'evenement')
+    expect(beat!.text).toBe('Le départ de Luffy')
+    expect(beat!.detail).toBe('Luffy quitte Fuchsia dans un tonneau.')
   })
 
-  it('keeps a flashback on the chapter that recounts it, and says so', async () => {
+  it('marks a flashback as a memory and keeps its in-world moment', async () => {
     const event = await createEntity(world, 'event', 3)
     await addLabel(world, event, 'Le sacrifice de Shanks', 'true_name', 3, 100)
     await addEvent(world, event, {
@@ -108,18 +114,26 @@ describe('what lands on a chapter', () => {
       storyTime: { kind: 'approximate', description: 'environ dix ans plus tôt' },
     })
 
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 3,
-      count: 1,
-      ceiling: 4,
-    })
+    const page = await read(3, 1, 4)
+    const [beat] = at(page, 3, 'souvenir')
 
-    const [beat] = page.chapters[0]!.events
-    expect(beat!.isFlashback).toBe(true)
-    expect(beat!.storyTime?.description).toBe('environ dix ans plus tôt')
+    expect(beat!.text).toBe('Le sacrifice de Shanks')
+    expect(beat!.detail).toBe('Shanks perd un bras. — environ dix ans plus tôt')
   })
 
-  it('puts a refutation on the chapter that closes the belief', async () => {
+  it('writes a name landing as the change, not just the new name', async () => {
+    const stranger = await createEntity(world, 'character', 1)
+    await addLabel(world, stranger, 'l’homme au tablier de cuir', 'alias', 1, 10)
+    await addLabel(world, stranger, 'Kaelo Renn', 'true_name', 3, 100)
+
+    const page = await read(1, 4, 4)
+    const [beat] = at(page, 3, 'nom')
+
+    expect(beat!.text).toBe('Kaelo Renn')
+    expect(beat!.detail).toBe('l’homme au tablier de cuir')
+  })
+
+  it('says what a refuted belief cost to hold', async () => {
     const subject = await createEntity(world, 'character', 1)
     const village = await createEntity(world, 'place', 1)
     await addLabel(world, subject, 'Higuma', 'true_name', 1, 100)
@@ -132,17 +146,12 @@ describe('what lands on a chapter', () => {
       knowledgeUntil: 3,
     })
 
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 4,
-      ceiling: 4,
-    })
+    const page = await read(1, 4, 4)
 
-    expect(page.chapters[0]!.refutations).toHaveLength(0)
-    const closed = page.chapters[2]!.refutations
-    expect(closed).toHaveLength(1)
-    expect(closed[0]!.subjectLabel).toBe('Higuma')
-    expect(closed[0]!.heldSince).toBe(1)
+    expect(at(page, 1, 'dementi')).toHaveLength(0)
+    const [beat] = at(page, 3, 'dementi')
+    expect(beat!.text).toBe('Higuma se trouve à Fuchsia')
+    expect(beat!.detail).toBe('cru depuis le chapitre 1')
   })
 
   it('opens a mystery once, on its own chapter, and never again', async () => {
@@ -153,21 +162,17 @@ describe('what lands on a chapter', () => {
       openedIn: 1,
     })
 
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 4,
-      ceiling: 4,
-    })
+    const page = await read(1, 4, 4)
 
-    expect(page.chapters[0]!.mysteriesOpened).toHaveLength(1)
-    expect(page.chapters[1]!.mysteriesOpened).toHaveLength(0)
-    expect(page.chapters[2]!.mysteriesOpened).toHaveLength(0)
-    expect(page.chapters[3]!.mysteriesOpened).toHaveLength(0)
+    expect(at(page, 1, 'question')).toHaveLength(1)
+    for (const chapter of [2, 3, 4]) {
+      expect(at(page, chapter, 'question')).toHaveLength(0)
+    }
   })
 
   it('closes a mystery on the chapter that resolves it', async () => {
     const mystery = await createEntity(world, 'mystery', 1)
-    await addLabel(world, mystery, 'Le trésor de Higuma', 'true_name', 1, 100)
+    await addLabel(world, mystery, 'Le trésor', 'true_name', 1, 100)
     await addMystery(world, mystery, {
       question: 'Où est le trésor ?',
       openedIn: 1,
@@ -175,15 +180,10 @@ describe('what lands on a chapter', () => {
       resolvedIn: 3,
     })
 
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 4,
-      ceiling: 4,
-    })
+    const page = await read(1, 4, 4)
 
-    expect(page.chapters[0]!.mysteriesOpened).toHaveLength(1)
-    expect(page.chapters[2]!.mysteriesResolved).toHaveLength(1)
-    expect(page.chapters[2]!.mysteriesResolved[0]!.question).toBe('Où est le trésor ?')
+    expect(at(page, 1, 'question')).toHaveLength(1)
+    expect(at(page, 3, 'reponse')[0]!.text).toBe('Où est le trésor ?')
   })
 
   it('quotes a line the pipeline anchored, never one it composed', async () => {
@@ -195,74 +195,54 @@ describe('what lands on a chapter', () => {
       knowledgeFrom: 1,
       objectValue: { text: 'rendre le chapeau' },
     })
-    const line =
-      'Rends-moi ce chapeau quand tu seras devenu un grand pirate, Luffy.'
+    const line = 'Rends-moi ce chapeau quand tu seras devenu un grand pirate.'
     await addQuote(world, { assertionId, chapterNumber: 1, text: line })
 
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 1,
-      ceiling: 4,
-    })
+    const page = await read(1, 1, 4)
 
-    expect(page.chapters[0]!.quote?.excerpt).toBe(line)
-  })
-})
-
-describe('a chapter with nothing to stage', () => {
-  it('is marked silent rather than dressed up', async () => {
-    const entity = await createEntity(world, 'character', 1)
-    await addLabel(world, entity, 'Luffy', 'true_name', 1, 100)
-
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 2,
-      ceiling: 4,
-    })
-
-    expect(page.chapters[0]!.isSilent).toBe(false)
-    expect(page.chapters[1]!.isSilent).toBe(true)
+    expect(at(page, 1, 'citation')[0]!.text).toBe(line)
   })
 
-  it('counts the facts a chapter added even when it shows none of them', async () => {
-    const subject = await createEntity(world, 'character', 1)
-    const object = await createEntity(world, 'character', 1)
-    await addAssertion(world, {
-      subject,
-      predicate: 'fights',
-      object,
-      knowledgeFrom: 2,
-    })
+  it('tells the chapter in the order it is read', async () => {
+    const stranger = await createEntity(world, 'character', 2)
+    await addLabel(world, stranger, 'le passeur', 'alias', 2, 10)
+    const event = await createEntity(world, 'event', 2)
+    await addLabel(world, event, 'La traversée', 'true_name', 2, 100)
+    await addEvent(world, event, { summary: 'Ils passent.', toldIn: 2 })
+    const mystery = await createEntity(world, 'mystery', 2)
+    await addLabel(world, mystery, 'La marque', 'true_name', 2, 100)
+    await addMystery(world, mystery, { question: 'Qui a laissé la marque ?', openedIn: 2 })
 
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 2,
-      count: 1,
-      ceiling: 4,
-    })
+    const page = await read(2, 1, 4)
 
-    expect(page.chapters[0]!.factCount).toBe(1)
+    // Who walks on, then what happens, then the names, then what it leaves open.
+    expect(at(page, 2).map((beat) => beat.kind)).toEqual([
+      'entree',
+      'entree',
+      'entree',
+      'evenement',
+      'nom',
+      'nom',
+      'nom',
+      'question',
+    ])
   })
 })
 
 describe('a library with nothing in it', () => {
-  it('returns an empty window rather than failing', async () => {
+  it('returns an empty thread rather than failing', async () => {
     const page = await getStoryPage(world.userId, '', {
       from: 1,
       count: 5,
       ceiling: 4,
     })
 
-    expect(page.chapters).toEqual([])
+    expect(page.beats).toEqual([])
     expect(page.nextCursor).toBeNull()
   })
 
   it('returns nothing when the reader has read nothing', async () => {
-    const page = await getStoryPage(world.userId, world.workId, {
-      from: 1,
-      count: 5,
-      ceiling: 0,
-    })
-
-    expect(page.chapters).toEqual([])
+    const page = await read(1, 5, 0)
+    expect(page.beats).toEqual([])
   })
 })

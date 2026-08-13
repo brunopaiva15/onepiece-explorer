@@ -272,7 +272,7 @@ une image ne doit pas casser le jour où un projet de fans déplace un bucket.
 ## Le mode histoire
 
 ```
-/histoire   du chapitre 1, en défilant
+/histoire   un fil, du chapitre 1 à celui où vous en êtes
 ```
 
 Le reste de l'application vous demande où vous en êtes et vous montre ce
@@ -280,37 +280,52 @@ moment-là. Le mode histoire part du premier chapitre et avance quand vous
 défilez — ce qui ressemble à une autre fonctionnalité et qui est exactement la
 même : **le défilement est le curseur**, en train d'avancer.
 
+C'est un fil, pas une suite de pages. Une ligne descend l'écran et se dessine
+au fil du défilement ; dessus, une **perle** par chose qui arrive et une
+**encoche** par chapitre :
+
+```
+│
+●  ENTRE EN SCÈNE    l'homme au tablier de cuir · Personnage
+│
+●  SOUVENIR          La promesse du chapeau — environ dix ans plus tôt
+│
+├─ 3 ── LE CORBEAU
+│
+◉  UN NOM            l'homme au tablier de cuir → Kaelo Renn
+│
+●  ON NE CROIT PLUS  Kaelo Renn se trouve à Fuchsia · cru depuis le chapitre 1
+│
+◌  QUESTION          Qui a laissé la marque sur la coque ?
+│
+```
+
+Un chapitre publié qui n'a rien produit est **une encoche et aucune perle**.
+Aucun cas particulier n'a été écrit pour ça : c'est exactement ce que ça fait
+de lire un chapitre de transition. Et il n'y a pas d'indicateur de progression,
+parce que le fil en est un — la partie dessinée dit où vous en êtes.
+
 Chaque chapitre y est lu **à sa propre frontière**, pas à la vôtre. Une fenêtre
 qui couvre les chapitres 1 à 6 ouvre six frontières, une par chapitre, parce
-qu'un nom révélé au chapitre 5 n'a rien à faire sur la page du chapitre 1. La
-lire une seule fois au chapitre 6 puis trier en TypeScript coûterait six fois
-moins cher et remettrait la seule garantie que ce produit vend dans du code
-applicatif — l'inversion exacte que l'[ADR 0001](docs/adr/0001-chapter-boundary-in-the-database.md)
+qu'un nom révélé au chapitre 5 n'a rien à faire à côté du chapitre 1. La lire
+une seule fois au chapitre 6 puis trier les perles en TypeScript coûterait six
+fois moins cher et remettrait la seule garantie que ce produit vend dans du
+code applicatif — l'inversion exacte que l'[ADR 0001](docs/adr/0001-chapter-boundary-in-the-database.md)
 existe pour empêcher. La frontière reste donc dans la base, et le mode histoire
-la paie.
+la paie : un aller-retour par chapitre, les chapitres d'une fenêtre étant lus
+en parallèle puisqu'ils ne dépendent pas les uns des autres.
 
-Ce que ça donne, chapitre par chapitre, dans l'ordre où on lit :
-
-| Le temps | Ce qu'il montre |
-|---|---|
-| **la ligne** | une phrase citée de la source, vérifiée par le pipeline — jamais composée |
-| **ce qui arrive** | les événements, avec les souvenirs annoncés comme tels |
-| **un nom** | « l'homme au tablier de cuir » devient Kaelo Renn |
-| **entrent en scène** | les visages, s'il y en a |
-| **ce que ce chapitre dément** | les croyances qu'il ferme, et depuis quand vous les teniez |
-| **ce qui reste sans réponse** | les mystères qu'il ouvre |
+La seule chose qu'on ne peut pas lire au chapitre N, c'est ce que N **dément** :
+une croyance fermée à N est invisible à N — c'est ce que la frontière veut dire
+— donc les démentis viennent d'une seconde lecture, volontairement minuscule,
+à N-1.
 
 Les portraits n'ont besoin d'aucune logique supplémentaire : une illustration
 porte le chapitre de révélation du **nom** qui l'a trouvée, donc elle apparaît
-au chapitre où ce nom tombe et pas avant. La galerie se remplit en défilant
-parce que la base refuse de la remplir plus tôt.
+sur la perle où ce nom tombe et pas avant. Les visages arrivent en défilant
+parce que la base refuse de les donner plus tôt.
 
-Un chapitre publié qui n'a rien produit est marqué **muet** et tient sur une
-ligne. Certains chapitres sont des transitions ; leur donner la même place
-qu'au chapitre où un nom tombe serait un mode histoire qui n'a pas lu
-l'histoire.
-
-**Rien n'est caché par défaut.** Les animations d'entrée vivent toutes dans un
+**Rien n'est caché par défaut.** L'animation d'entrée vit dans un
 `@supports (animation-timeline: view())`, et l'état non animé est l'état fini.
 Un navigateur sans animations pilotées par le défilement, une feuille de style
 qui ne charge pas, un lecteur qui a désactivé les animations : tous obtiennent
@@ -319,7 +334,7 @@ attendant un script est un contenu qui disparaît le jour où le script
 disparaît.
 
 Le curseur de la barre reste actif et veut dire ici quelque chose d'un peu
-différent d'ailleurs : c'est là où le récit **s'arrête**. Posez-le sur 45 et
+différent d'ailleurs : c'est là où le fil **s'arrête**. Posez-le sur 45 et
 l'histoire court de 1 à 45.
 
 ---

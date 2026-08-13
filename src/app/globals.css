@@ -521,546 +521,288 @@ hr.regle {
   border: 3px solid var(--ink);
 }
 
+
 /* --------------------------------------------------------------------------
-   Story mode.
+   Story mode — the thread.
 
-   Everywhere else in this application the chapter boundary is a control. Here
-   it is the scroll, and the page is built to be read rather than operated: one
-   column, wide margins, type that changes size when the thing it names changes
-   importance.
+   One line down the page, drawn as the reader scrolls, with a bead for every
+   thing that happens and a notch for every chapter. That is the whole design:
+   a tale is continuous, and the earlier version of this file cut it into
+   full-screen chapter posters, which is a magazine.
 
-   Two rules held throughout, and they are what keep it from becoming the kind
-   of scroll-driven page that looks impressive and cannot be read:
+   Two rules, and they are what keep a scroll-driven page readable:
 
-     1. **Nothing is hidden by default.** Every entrance animation lives inside
+     1. **Nothing is hidden by default.** The entrance animation lives inside
         `@supports (animation-timeline: view())`, and the un-animated state is
         the finished state. A browser without scroll-driven animations, a
-        stylesheet that fails to load, a reader who turned motion off — all get
-        the whole story, immediately. Content that starts at `opacity: 0` and
-        waits for a script is content that disappears the day the script does.
-
-     2. **The scroll belongs to the reader.** No snap points, no hijacked
-        wheel, no forced pacing. The page reacts to scrolling; it never
-        performs it.
+        stylesheet that fails, a reader who turned motion off — all get the
+        whole story immediately.
+     2. **No progress widget.** The drawn part of the line is the gauge. A
+        second indicator would be the same fact, twice.
    -------------------------------------------------------------------------- */
 
 .histoire {
-  --histoire-mesure: 44rem;
-  --histoire-marge: clamp(1.25rem, 5vw, 2rem);
-  padding-bottom: 6rem;
-}
-
-/*
- * One column, everywhere.
- *
- * The cover, every chapter card and every beat share a measure and a left
- * edge. A title card that centres itself while the prose under it sits in a
- * column is two designs on one page, and the eye finds the seam immediately —
- * it reads as a header that belongs to a different site.
- */
-.histoire-couverture > *,
-.histoire-carte-titre > * {
-  width: 100%;
-  max-width: var(--histoire-mesure);
+  --fil-x: 1.1rem;
+  --fil-pad: 3rem;
+  --perle-d: 1rem;
+  max-width: 46rem;
   margin-inline: auto;
+  padding: 0 clamp(1.25rem, 5vw, 2rem) 6rem;
 }
 
-/* --- The cover ----------------------------------------------------------- */
-
-.histoire-couverture {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 1.1rem;
-  min-height: min(86vh, 46rem);
-  padding: 3rem var(--histoire-marge);
-  border-bottom: 4px solid var(--ink);
-  background: var(--surface-raised);
+.fil-tete {
+  padding: clamp(2.5rem, 10vh, 5rem) 0 2rem;
 }
 
-.histoire-couverture-titre {
-  font-size: clamp(3rem, 1.5rem + 9vw, 8rem);
-  line-height: 0.86;
+.fil-titre {
+  font-size: clamp(2.4rem, 1.6rem + 4vw, 4.5rem);
   color: var(--text-primary);
-  text-wrap: balance;
+  margin-top: 0.4rem;
 }
 
-.histoire-couverture-texte {
+.fil-texte {
+  margin-top: 1rem;
+  max-width: 36rem;
   color: var(--text-secondary);
-  font-size: 1.05rem;
   line-height: 1.55;
 }
 
-.histoire-couverture-jusqua {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
+/* --- The line ------------------------------------------------------------ */
 
-.histoire-couverture-invite {
-  margin-top: auto;
-  padding-top: 2rem;
-  font-family: var(--font-display);
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-/* --- A chapter ----------------------------------------------------------- */
-
-.histoire-chapitre {
-  border-bottom: 3px solid var(--ink);
-}
-
-/*
- * The number, at the size the number deserves.
- *
- * A chapter card is the one place in this interface where the most important
- * thing is a single integer, so it is set as a poster: filled in straw,
- * outlined in ink, and large enough that scrolling past it reads as turning a
- * page rather than as passing a heading.
- */
-.histoire-carte-titre {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: min(56vh, 30rem);
-  padding: 3rem var(--histoire-marge) 2.5rem;
-  background: var(--surface-sunken);
-  border-bottom: 3px solid var(--ink);
-}
-
-.histoire-volume {
-  color: var(--text-secondary);
-}
-
-.histoire-numero {
-  font-size: clamp(5rem, 2rem + 18vw, 14rem);
-  line-height: 0.78;
-  color: var(--accent);
-  -webkit-text-stroke: clamp(2px, 0.4vw, 5px) var(--ink);
-  paint-order: stroke fill;
-  /* margin-block, never the shorthand: `margin: a 0 b` would reset the
-     inline margins that put this on the page's one column. */
-  margin-block: 1.5rem 0.75rem;
-}
-
-.histoire-titre {
-  font-size: clamp(1.6rem, 1.1rem + 2.2vw, 3rem);
-  color: var(--text-primary);
-  text-wrap: balance;
-}
-
-/* --- The body of a chapter ----------------------------------------------- */
-
-.histoire-corps {
-  max-width: calc(var(--histoire-mesure) + 2 * var(--histoire-marge));
-  margin-inline: auto;
-  padding: 2.5rem var(--histoire-marge) 3.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 2.75rem;
-}
-
-.histoire-temps-titre {
-  font-family: var(--font-display);
-  font-size: 0.82rem;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--text-muted);
-  padding-bottom: 0.4rem;
-  margin-bottom: 1rem;
-  border-bottom: 3px solid var(--ink);
-}
-
-/*
- * The epistemic tokens rather than the raw palette.
- *
- * `--coral` is one value in both themes and sits at about 4.3:1 on the dark
- * surface; `--epi-contradicted` is the same red in light mode and a lighter
- * one in dark, which is exactly the drift these tokens exist to carry.
- */
-.histoire-temps[data-ton='rouge'] .histoire-temps-titre {
-  color: var(--epi-contradicted);
-  border-bottom-color: var(--epi-contradicted);
-}
-
-.histoire-temps[data-ton='vert'] .histoire-temps-titre {
-  color: var(--epi-validated);
-  border-bottom-color: var(--epi-validated);
-}
-
-/* --- The quoted line ----------------------------------------------------- */
-
-.histoire-citation {
+.fil {
   position: relative;
-  padding: 1.75rem 1.5rem 1.25rem 3.25rem;
-  border: 3px solid var(--ink);
-  background: var(--accent-soft);
-  box-shadow: var(--shadow-hard);
-  color: var(--text-primary);
-  font-size: clamp(1.15rem, 1rem + 0.7vw, 1.5rem);
-  line-height: 1.4;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--fil-pad);
 }
 
-/* `.cartouche` is muted by default, which is right on a page surface and too
-   faint on the quote's own ground. */
-.histoire-citation .cartouche {
-  color: var(--text-secondary);
-}
-
-.histoire-citation::before {
-  content: '«';
+/* The rail: where the thread will go. */
+.fil::before {
+  content: '';
   position: absolute;
-  left: 0.75rem;
-  top: 0.35rem;
-  font-family: var(--font-display);
-  font-size: 3.5rem;
-  line-height: 1;
-  color: var(--ink);
-  opacity: 0.35;
+  left: var(--fil-x);
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
 }
 
-/* --- Events -------------------------------------------------------------- */
-
-.histoire-evenement {
-  border-left: 4px solid var(--ink);
-  padding-left: 1rem;
+/* The thread itself, drawn from the top as the page scrolls. Fully drawn by
+   default so that a browser without scroll timelines shows a finished line
+   rather than none. */
+.fil::after {
+  content: '';
+  position: absolute;
+  left: var(--fil-x);
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent-strong);
+  transform-origin: top;
+  scale: 1 1;
 }
 
-/* --- A name landing ------------------------------------------------------ */
+/* --- Beads --------------------------------------------------------------- */
 
-.histoire-revelation {
+.perle {
+  position: relative;
+  padding: 0.85rem 0;
+}
+
+.perle::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--fil-x) - var(--fil-pad) + 1.5px - var(--perle-d) / 2);
+  top: 1.15rem;
+  width: var(--perle-d);
+  height: var(--perle-d);
   border: 3px solid var(--ink);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-hard-sm);
-  padding: 0.85rem 1rem;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
-.histoire-ancien-nom {
+/* A name landing is the beat the whole mode exists for, so its bead is the
+   one that is bigger than the others. */
+.perle[data-genre='nom']::before {
+  --perle-d: 1.15rem;
+  top: 1rem;
+}
+
+.perle[data-genre='question']::before {
+  background: var(--surface-base);
+  border-style: dashed;
+  border-color: var(--sea);
+}
+
+.perle[data-genre='reponse']::before {
+  background: var(--epi-validated);
+}
+
+.perle[data-genre='dementi']::before {
+  background: var(--epi-contradicted);
+}
+
+.perle[data-genre='souvenir']::before {
+  background: var(--surface-base);
+}
+
+.perle-mot {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.perle-corps {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.perle-texte {
+  min-width: 0;
+}
+
+.perle-ligne {
+  font-size: 1.05rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.perle-nom {
+  color: var(--text-primary);
+  text-decoration-color: var(--accent-strong);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.perle-avant {
   color: var(--text-muted);
   text-decoration: line-through;
   text-decoration-thickness: 2px;
 }
 
-.histoire-fleche {
-  display: inline-block;
-  margin: 0 0.6rem;
-  color: var(--text-muted);
-}
-
-/*
- * Ink on straw, always — never `--text-primary`.
- *
- * The straw ground does not flip between themes, so the text on it must not
- * either: in dark mode `--text-primary` is cream, and cream on #F5C542 is the
- * kind of pairing that survives a screenshot and fails a reader.
- */
-.histoire-nouveau-nom {
-  font-family: var(--font-display);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--ink);
-  background: var(--accent);
-  border: 2px solid var(--ink);
-  padding: 0.1rem 0.5rem;
-  text-decoration: none;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-
-.histoire-nouveau-nom:hover {
-  background: var(--accent-strong);
-}
-
-/* --- Who walks on -------------------------------------------------------- */
-
-.histoire-distribution {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-  gap: 1.25rem;
-  list-style: none;
-  padding: 0;
-}
-
-.histoire-figurant {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  text-decoration: none;
-  color: inherit;
-}
-
-.histoire-figurant:hover .histoire-figurant-nom {
-  background: var(--accent);
-  color: var(--ink);
-}
-
-.histoire-figurant-nom {
-  font-family: var(--font-display);
-  font-size: 1rem;
-  text-transform: uppercase;
-  line-height: 1.15;
-  color: var(--text-primary);
-  align-self: flex-start;
-}
-
-/*
- * An entity with no portrait.
- *
- * A hatched rectangle rather than a silhouette or a question mark: both of
- * those read as "this person is unknown", and the truth is narrower — no
- * catalogue had a picture matching the name. The grid keeps its rhythm and
- * nothing claims a fact.
- */
-.histoire-sans-visage {
-  display: block;
-  width: 10rem;
-  height: 7rem;
-  border: 3px solid var(--ink);
-  background:
-    repeating-linear-gradient(
-      45deg,
-      transparent 0 6px,
-      var(--halftone) 6px 12px
-    ),
-    var(--surface-sunken);
-}
-
-/* --- What this chapter kills --------------------------------------------- */
-
-.histoire-dementi {
-  border: 3px solid var(--epi-contradicted);
-  background: var(--surface-raised);
-  padding: 0.6rem 0.85rem;
-}
-
-.histoire-raye {
+.perle-raye {
   text-decoration: line-through;
   text-decoration-color: var(--epi-contradicted);
   text-decoration-thickness: 2px;
   color: var(--text-secondary);
 }
 
-/* --- Open questions ------------------------------------------------------ */
-
-.histoire-mysteres {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.9rem;
-  list-style: none;
-  padding: 0;
+.perle-detail {
+  margin-top: 0.15rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
 }
 
-/*
- * A seal. Dashed, tilted, and stamped on the page rather than laid out on it —
- * an open question is the one thing here that is deliberately not resolved,
- * and it should not look like the facts around it.
- */
-.histoire-sceau {
-  display: inline-block;
-  max-width: 22rem;
-  padding: 0.7rem 1rem;
-  /* The colour is in the border and the wash; the words stay on the text
-     token, which is the only one guaranteed to be readable in both themes. */
-  border: 3px dashed var(--sea);
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--sea) 12%, transparent);
-  text-decoration: none;
-  line-height: 1.3;
-  rotate: -1.2deg;
-}
-
-.histoire-mysteres li:nth-child(even) .histoire-sceau {
-  rotate: 1deg;
-}
-
-.histoire-sceau:hover {
-  background: color-mix(in srgb, var(--sea) 24%, transparent);
-}
-
-.histoire-sceau-ouvert {
-  border-style: solid;
-  border-color: var(--epi-validated);
-  background: color-mix(in srgb, var(--epi-validated) 14%, transparent);
-  rotate: none;
-}
-
-/* --- The foot of a chapter ----------------------------------------------- */
-
-.histoire-pied {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  border-top: 3px solid var(--ink);
-  padding-top: 0.9rem;
-}
-
-.histoire-pied-liens {
-  display: flex;
-  gap: 1rem;
-}
-
-.histoire-pied-liens a {
+/* The quoted line: no bead, an oversized quotation mark on the thread. */
+.perle-citation::before {
+  content: '«';
+  border: 0;
+  background: none;
+  border-radius: 0;
+  width: auto;
+  height: auto;
+  top: 0.35rem;
+  left: calc(var(--fil-x) - var(--fil-pad) - 0.25rem);
   font-family: var(--font-display);
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 2.2rem;
+  line-height: 1;
+  color: var(--accent-strong);
+}
+
+.perle-citation blockquote {
+  font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem);
+  line-height: 1.35;
   color: var(--text-primary);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
 }
 
-/* --- A chapter with nothing in it ---------------------------------------- */
+/* --- The chapter notch --------------------------------------------------- */
 
-.histoire-chapitre-muet {
-  background: color-mix(in srgb, var(--surface-sunken) 45%, transparent);
-}
-
-.histoire-muet-ligne {
+.encoche {
+  position: relative;
   display: flex;
   align-items: baseline;
-  gap: 1rem;
-  max-width: calc(var(--histoire-mesure) + 2 * var(--histoire-marge));
-  margin-inline: auto;
-  padding: 1rem var(--histoire-marge);
+  gap: 0.8rem;
+  margin: 2.6rem 0 0.6rem;
 }
 
-.histoire-muet-numero {
-  font-size: 1.75rem;
-  color: var(--text-muted);
-  min-width: 3ch;
+.encoche::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--fil-x) - var(--fil-pad) - 0.45rem);
+  top: 1.1rem;
+  width: 1.7rem;
+  height: 3px;
+  background: var(--ink);
 }
 
-.histoire-muet-lien {
-  margin-left: auto;
-  color: var(--text-muted);
-}
-
-/* --- The log book, in the margin ----------------------------------------- */
-
-.histoire-carnet {
-  position: fixed;
-  right: 1rem;
-  top: 50%;
-  translate: 0 -50%;
-  z-index: 10;
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 0.5rem;
-  border: 3px solid var(--ink);
-  background: var(--surface-overlay);
-  box-shadow: var(--shadow-hard-sm);
-}
-
-@media (min-width: 90rem) {
-  .histoire-carnet {
-    display: flex;
-  }
-}
-
-.histoire-carnet-numero {
-  font-size: 1.6rem;
+.encoche-numero {
+  font-size: 2.1rem;
   color: var(--text-primary);
 }
 
-.histoire-carnet-rail {
-  position: relative;
-  width: 5px;
-  height: 8rem;
-  background: var(--surface-sunken);
-  border: 2px solid var(--ink);
-  overflow: hidden;
+.encoche-titre {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
 }
 
-.histoire-carnet-jauge {
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  background: var(--accent);
-  transition: height 180ms linear;
-}
+/* --- The end of the thread ----------------------------------------------- */
 
-.histoire-carnet-fin {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-/* --- The end of the window ----------------------------------------------- */
-
-.histoire-sentinelle {
+.fil-bout {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-  padding: 3rem 1.5rem;
+  padding: 3rem 0;
   text-align: center;
 }
 
-.histoire-echec {
-  max-width: 28rem;
-}
-
-.histoire-fin {
+.fil-fin {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  max-width: 30rem;
+  gap: 0.3rem;
 }
 
-/* --------------------------------------------------------------------------
-   Motion, and only where it is supported.
-
-   `view()` gives each beat its own timeline driven by its position in the
-   viewport — no scroll listener, no observer, no work on the main thread. The
-   declarations sit inside @supports so that the default, everywhere else, is
-   the finished state rather than a hidden one.
-   -------------------------------------------------------------------------- */
+/* --- Motion, and only where it is supported ------------------------------ */
 
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .histoire [data-beat],
-    .histoire .histoire-revelation,
-    .histoire .histoire-evenement {
-      animation: histoire-entree linear both;
-      animation-timeline: view();
-      animation-range: entry 4% cover 26%;
+    .fil::after {
+      animation: fil-trace linear both;
+      animation-timeline: scroll();
     }
 
-    /* The number rises as its card comes up, and settles before it is read. */
-    .histoire-numero {
-      animation: histoire-numero linear both;
+    .perle {
+      animation: perle-pose linear both;
       animation-timeline: view();
-      animation-range: entry 0% cover 30%;
+      animation-range: entry 5% cover 22%;
     }
   }
 }
 
-@keyframes histoire-entree {
+@keyframes fil-trace {
+  from {
+    scale: 1 0;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+
+@keyframes perle-pose {
   from {
     opacity: 0;
-    translate: 0 1.75rem;
+    translate: 0.8rem 0;
   }
   to {
     opacity: 1;
     translate: 0 0;
-  }
-}
-
-@keyframes histoire-numero {
-  from {
-    opacity: 0.15;
-    scale: 0.88;
-  }
-  to {
-    opacity: 1;
-    scale: 1;
   }
 }

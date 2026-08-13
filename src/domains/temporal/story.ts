@@ -3,27 +3,31 @@ import { and, asc, eq, gte, lte, sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
-import { describeStoryTime, type StoryTimeView } from './timeline.ts'
+import {
+  nodeTypeLabel,
+  predicateLabel,
+} from '@/domains/knowledge/predicate-label.ts'
+import { describeStoryTime } from './timeline.ts'
 
 /**
- * The story, told forward.
+ * The story as one thread.
  *
- * Every other read in this application answers "what do I know at chapter N".
- * This one answers a different question — "what happened, in order" — and the
- * difference is the whole design.
+ * Not a page per chapter — a single ordered list of things that happen, with
+ * the chapter numbers as notches along it. A chapter that added nothing is a
+ * notch and no beads, which is exactly what a transition chapter feels like to
+ * read, and it costs no special case to say so.
  *
  * **Each chapter is read at its own boundary.** Not at the reader's. A window
  * covering chapters 1 to 6 opens six boundaries, one per chapter, because a
- * name revealed in chapter 5 must not appear on chapter 1's page. Reading the
+ * name revealed in chapter 5 must not appear beside chapter 1. Reading the
  * window once at chapter 6 and narrowing afterwards in TypeScript would be
- * cheaper by a factor of six and would put the one guarantee this product sells
- * back into application code — the exact inversion ADR 0001 exists to prevent.
- * So the boundary stays in the database and story mode pays for it.
+ * cheaper by a factor of six and would put the one guarantee this product
+ * sells back into application code — the exact inversion ADR 0001 exists to
+ * prevent. So the boundary stays in the database and story mode pays for it.
  *
- * What it pays is bounded: one round trip per chapter rather than the seven
- * `getNarrativeDelta()` needs, because everything a chapter's page shows is
- * aggregated into a single row of JSON, and because chapters in a window have
- * no dependency on each other and so are read concurrently.
+ * What it pays is bounded: one round trip per chapter, because every kind of
+ * bead is one arm of a single union, and chapters in a window have no
+ * dependency on each other and so are read concurrently.
  *
  * The one thing that cannot be read at chapter N is what chapter N *refutes*:
  * a belief closed at N is invisible at N — that is what the boundary means —
@@ -33,121 +37,56 @@ import { describeStoryTime, type StoryTimeView } from './timeline.ts'
 /** How many chapters are read at once. Above this, latency stops improving. */
 const CONCURRENCY = 4
 
-/**
- * Chapters per window.
- *
- * Small enough that the first screen is not held up by chapters nobody has
- * scrolled to, large enough that a fast scroll does not outrun the loader.
- */
+/** Chapters per window. Enough that a fast scroll does not outrun the loader. */
 export const STORY_WINDOW = 6
 
 /** Excerpts outside this range read as a fragment or as a paragraph. */
 const QUOTE_MIN = 40
 const QUOTE_MAX = 240
 
-/**
- * Faces per chapter.
- *
- * Each one is a signed URL, which is a round trip to the storage driver. A
- * chapter that introduces forty entities does not need forty portraits to read
- * as a chapter that introduces a crowd — it needs a few faces and a count.
- */
-const PORTRAITS_PER_CHAPTER = 8
+/** Signed URLs are a round trip each; a thread needs a few faces, not a crowd. */
+const PORTRAITS_PER_CHAPTER = 6
 
-export interface StoryQuote {
+export type BeatKind =
+  | 'chapitre'
+  | 'citation'
+  | 'entree'
+  | 'evenement'
+  | 'souvenir'
+  | 'nom'
+  | 'dementi'
+  | 'reponse'
+  | 'question'
+
+export interface StoryBeat {
+  id: string
+  chapter: number
+  kind: BeatKind
+  /** The line itself. Already French, already resolved — the page renders it. */
+  text: string
   /**
-   * Quoted exactly, in the language of the source. A citation is a copy
-   * verified character by character, so it is the one thing on the page that
-   * is not necessarily French.
+   * The second line, when there is one. Its meaning follows the kind: the
+   * name held until now, an event's summary, what a belief cost to hold.
    */
-  excerpt: string
-}
-
-export interface StoryEvent {
-  entityId: string
-  label: string
-  summary: string | null
-  /** The chapter presents it as a memory or a recounting. */
-  isFlashback: boolean
-  /** Null when the pages place it nowhere. Not a zero — an absence. */
-  storyTime: StoryTimeView | null
-}
-
-/** A name landing on someone who already had one. The best beat in the schema. */
-export interface StoryReveal {
-  entityId: string
-  label: string
-  kind: string
-  /** What they were called until this chapter, if anything. */
-  previous: string | null
-}
-
-export interface StoryCast {
-  entityId: string
-  label: string | null
-  nodeType: string
-}
-
-export interface StoryRefutation {
-  assertionId: string
-  subjectLabel: string | null
-  /** Null when the belief was about a value rather than another entity. */
-  objectLabel: string | null
-  predicate: string
-  heldSince: number
-}
-
-export interface StoryMystery {
-  entityId: string
-  question: string
-}
-
-export interface StoryChapter {
-  number: number
-  title: string | null
-  volume: number | null
-  events: StoryEvent[]
-  reveals: StoryReveal[]
-  cast: StoryCast[]
-  refutations: StoryRefutation[]
-  mysteriesOpened: StoryMystery[]
-  mysteriesResolved: StoryMystery[]
-  /** Everything this chapter added, including what has no page of its own. */
-  factCount: number
-  quote: StoryQuote | null
-  /**
-   * Faces, by entity id, signed at this chapter's boundary.
-   *
-   * Which is what makes the gallery fill in as the reader scrolls rather than
-   * all at once: a portrait was found by a name, and it appears in the chapter
-   * that reveals that name — never in the chapter where the character was
-   * still a silhouette. The database applies it; nothing here has to remember.
-   */
-  portraits: Record<string, DisplayImage>
-  /**
-   * Published, but with nothing to stage.
-   *
-   * A chapter that produced no event, no name and no new face is not a failure
-   * — some chapters are transitions. It gets a line rather than a spread, which
-   * is the difference between a story mode and a list of empty frames.
-   */
-  isSilent: boolean
+  detail: string | null
+  entityId: string | null
+  portrait: DisplayImage | null
 }
 
 export interface StoryPage {
-  chapters: StoryChapter[]
+  beats: StoryBeat[]
   /** The next chapter to ask for, or null at the end of what is readable. */
   nextCursor: number | null
-  /** The reader's own ceiling. Story mode never goes past it. */
+  /** The reader's own ceiling. The thread never runs past it. */
   lastChapter: number
 }
 
 /**
- * A window of the story, from `from` forward.
+ * A stretch of thread, from `from` forward.
  *
- * `ceiling` is the reader's boundary, and it is a hard stop rather than a
- * suggestion: a window asked for chapters 40 to 46 by someone who has read to
- * 42 returns three chapters and a null cursor.
+ * `ceiling` is the reader's boundary and a hard stop: a window asked for
+ * chapters 40 to 46 by someone who has read to 42 returns three chapters'
+ * worth of beads and a null cursor.
  */
 export async function getStoryPage(
   userId: string,
@@ -159,24 +98,20 @@ export async function getStoryPage(
   const ceiling = Math.max(0, Math.floor(options.ceiling))
 
   if (workId.length === 0 || ceiling < from) {
-    return { chapters: [], nextCursor: null, lastChapter: ceiling }
+    return { beats: [], nextCursor: null, lastChapter: ceiling }
   }
 
   /*
    * Which chapters exist, read through the ingest role.
    *
-   * The same split every other list in this application makes: that chapter 42
-   * exists, is called something and is published is a fact about the library,
-   * not about the story. Filtering it by the boundary would make the page
-   * unable to tell "nothing happened here" from "you have not read this yet".
+   * That chapter 42 exists, is called something and is published is a fact
+   * about the library, not about the story. Filtering it by the boundary would
+   * make the thread unable to tell "nothing happened here" from "you have not
+   * read this yet".
    */
-  const numbers = await withIngest(async (db) => {
-    const rows = await db
-      .select({
-        number: chapters.number,
-        title: chapters.title,
-        volume: chapters.volume,
-      })
+  const window = await withIngest(async (db) =>
+    db
+      .select({ number: chapters.number, title: chapters.title })
       .from(chapters)
       .where(
         and(
@@ -188,217 +123,162 @@ export async function getStoryPage(
         ),
       )
       .orderBy(asc(chapters.number))
-      .limit(count + 1)
-    return rows
-  })
-
-  const window = numbers.slice(0, count)
-  const nextCursor =
-    numbers.length > count ? (numbers[count]?.number ?? null) : null
-
-  const staged = await mapWithLimit(window, CONCURRENCY, async (meta) =>
-    readChapter(userId, meta.number, meta.title, meta.volume),
+      .limit(count + 1),
   )
 
-  return { chapters: staged, nextCursor, lastChapter: ceiling }
-}
+  const shown = window.slice(0, count)
+  const nextCursor = window.length > count ? (window[count]?.number ?? null) : null
 
-/** One chapter, staged at its own boundary. */
-async function readChapter(
-  userId: string,
-  number: number,
-  title: string | null,
-  volume: number | null,
-): Promise<StoryChapter> {
-  const [present, refutations] = await Promise.all([
-    readPresent(userId, number),
-    readRefutations(userId, number),
+  const perChapter = await mapWithLimit(shown, CONCURRENCY, async (meta) => [
+    {
+      id: `ch-${meta.number}`,
+      chapter: meta.number,
+      kind: 'chapitre' as const,
+      text: meta.title ?? '',
+      detail: null,
+      entityId: null,
+      portrait: null,
+    },
+    ...(await readBeats(userId, meta.number)),
   ])
 
-  const isSilent =
-    present.events.length === 0 &&
-    present.reveals.length === 0 &&
-    present.cast.length === 0 &&
-    present.mysteriesOpened.length === 0 &&
-    present.mysteriesResolved.length === 0 &&
-    refutations.length === 0
-
-  return {
-    number,
-    title,
-    volume,
-    ...present,
-    refutations,
-    portraits: isSilent ? {} : await readPortraits(userId, number, present),
-    isSilent,
-  }
+  return { beats: perChapter.flat(), nextCursor, lastChapter: ceiling }
 }
 
-/**
- * The faces this chapter can show, signed at this chapter.
- *
- * Newly named entities come first: a name landing is the moment a face becomes
- * showable, and it is the beat the page is built around. Whoever merely walked
- * on fills the rest.
- */
-async function readPortraits(
-  userId: string,
-  number: number,
-  present: { reveals: StoryReveal[]; cast: StoryCast[] },
-): Promise<Record<string, DisplayImage>> {
-  const ids: string[] = []
-  for (const reveal of present.reveals) {
-    if (!ids.includes(reveal.entityId)) ids.push(reveal.entityId)
-  }
-  for (const member of present.cast) {
-    if (!ids.includes(member.entityId)) ids.push(member.entityId)
-  }
-  if (ids.length === 0) return {}
-
-  const found = await displayImages(
-    userId,
-    number,
-    ids.slice(0, PORTRAITS_PER_CHAPTER),
-  )
-  return Object.fromEntries(found)
+interface Row {
+  kind: Exclude<BeatKind, 'chapitre' | 'dementi'>
+  entityId: string | null
+  texte: string | null
+  detail: string | null
+  extra: unknown
 }
 
-interface PresentRow {
-  events: Array<{
-    entityId: string
-    label: string | null
-    summary: string | null
-    isFlashback: boolean
-    storyTime: unknown
-  }> | null
-  reveals: StoryReveal[] | null
-  cast: StoryCast[] | null
-  mysteriesOpened: StoryMystery[] | null
-  mysteriesResolved: StoryMystery[] | null
-  factCount: number | string | null
-  quote: string | null
-}
-
-/**
- * Everything chapter `number` brought, read at chapter `number`.
- *
- * One statement, because it is one page. The sub-selects are independent and
- * the planner runs them off the boundary indexes; splitting them into six
- * queries would cost six round trips per chapter, and a story mode loads
- * chapters by the handful.
- *
- * Labels are resolved inside this transaction, which is what makes the whole
- * mode honest: at chapter 1 the man in the leather apron has no name, and the
- * subquery cannot find one, because row-level security has already removed
- * every label revealed later.
- */
-async function readPresent(
-  userId: string,
-  number: number,
-): Promise<
-  Omit<
-    StoryChapter,
-    'number' | 'title' | 'volume' | 'refutations' | 'portraits' | 'isSilent'
-  >
-> {
-  const rows = await withBoundary({ userId, boundaryChapter: number }, async (db) =>
-    db.execute(sql`
-      SELECT
-        (SELECT coalesce(json_agg(t), '[]'::json) FROM (
-          SELECT
-            e.entity_id AS "entityId",
-            e.summary,
-            e.is_flashback AS "isFlashback",
-            e.story_time AS "storyTime",
-            (SELECT l.label FROM entity_labels l
-              WHERE l.entity_id = e.entity_id
-              ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-              LIMIT 1) AS label
-          FROM events e
-          JOIN entities en ON en.id = e.entity_id
-          WHERE coalesce(e.told_in_chapter, e.shown_in_chapter, 0) = ${number}
-          ORDER BY e.is_flashback, e.created_at
-        ) t) AS events,
-
-        (SELECT coalesce(json_agg(t), '[]'::json) FROM (
-          SELECT
-            l.entity_id AS "entityId",
-            l.label,
-            l.kind,
-            (SELECT p.label FROM entity_labels p
-              WHERE p.entity_id = l.entity_id
-                AND p.revealed_in_chapter < ${number}
-              ORDER BY p.precedence DESC, p.revealed_in_chapter DESC
-              LIMIT 1) AS previous
-          FROM entity_labels l
-          JOIN entities en ON en.id = l.entity_id
-          WHERE l.revealed_in_chapter = ${number}
-          ORDER BY l.precedence DESC, l.label
-        ) t) AS reveals,
-
-        (SELECT coalesce(json_agg(t), '[]'::json) FROM (
-          SELECT
-            en.id AS "entityId",
-            en.node_type AS "nodeType",
-            (SELECT l.label FROM entity_labels l
-              WHERE l.entity_id = en.id
-              ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-              LIMIT 1) AS label
-          FROM entities en
-          WHERE en.first_seen_chapter = ${number}
-          ORDER BY en.node_type, en.created_at
-        ) t) AS cast,
-
-        (SELECT coalesce(json_agg(t), '[]'::json) FROM (
-          SELECT m.entity_id AS "entityId", m.question
-          FROM mysteries m
-          JOIN entities en ON en.id = m.entity_id
-          WHERE m.opened_in_chapter = ${number}
-          ORDER BY m.created_at
-        ) t) AS "mysteriesOpened",
-
-        (SELECT coalesce(json_agg(t), '[]'::json) FROM (
-          SELECT m.entity_id AS "entityId", m.question
-          FROM mysteries m
-          JOIN entities en ON en.id = m.entity_id
-          WHERE m.resolved_in_chapter = ${number}
-          ORDER BY m.created_at
-        ) t) AS "mysteriesResolved",
-
-        (SELECT count(*) FROM assertions a
-          WHERE a.knowledge_from_chapter = ${number}) AS "factCount",
-
-        -- One line from the chapter, quoted exactly: the longest excerpt that
-        -- still reads as a line rather than a paragraph. It comes from the
-        -- evidence table, so it is text the pipeline already verified occurs
-        -- in the source. A story mode composing its own prose is the one thing
-        -- this repository has refused since its first line.
-        (SELECT ev.excerpt FROM evidence ev
-          JOIN assertions a ON a.id = ev.assertion_id
-          WHERE a.knowledge_from_chapter = ${number}
+/** One chapter's beads, in the order they are told. */
+async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> {
+  const [rows, refuted] = await Promise.all([
+    withBoundary({ userId, boundaryChapter: chapter }, async (db) =>
+      db.execute(sql`
+        (SELECT 'citation' AS kind, 0 AS rang, NULL::uuid AS "entityId",
+                ev.excerpt AS texte, NULL::text AS detail,
+                NULL::jsonb AS extra, 0 AS ordre
+           FROM evidence ev
+           JOIN assertions a ON a.id = ev.assertion_id
+          WHERE a.knowledge_from_chapter = ${chapter}
             AND ev.excerpt IS NOT NULL
             AND char_length(ev.excerpt) BETWEEN ${QUOTE_MIN} AND ${QUOTE_MAX}
           ORDER BY char_length(ev.excerpt) DESC
-          LIMIT 1) AS quote
-    `),
+          LIMIT 1)
+
+        UNION ALL
+
+        SELECT 'entree', 1, en.id,
+               (SELECT l.label FROM entity_labels l
+                 WHERE l.entity_id = en.id
+                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+                 LIMIT 1),
+               en.node_type, NULL::jsonb, 0
+          FROM entities en
+         WHERE en.first_seen_chapter = ${chapter}
+
+        UNION ALL
+
+        SELECT CASE WHEN e.is_flashback THEN 'souvenir' ELSE 'evenement' END,
+               CASE WHEN e.is_flashback THEN 3 ELSE 2 END,
+               e.entity_id,
+               (SELECT l.label FROM entity_labels l
+                 WHERE l.entity_id = e.entity_id
+                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+                 LIMIT 1),
+               e.summary, e.story_time, 0
+          FROM events e
+          JOIN entities en ON en.id = e.entity_id
+         WHERE coalesce(e.told_in_chapter, e.shown_in_chapter, 0) = ${chapter}
+
+        UNION ALL
+
+        -- A name landing on someone who already had one: the best beat the
+        -- schema holds, and the reason a bead carries a second line at all.
+        SELECT 'nom', 4, l.entity_id, l.label,
+               (SELECT p.label FROM entity_labels p
+                 WHERE p.entity_id = l.entity_id
+                   AND p.revealed_in_chapter < ${chapter}
+                 ORDER BY p.precedence DESC, p.revealed_in_chapter DESC
+                 LIMIT 1),
+               NULL::jsonb, l.precedence
+          FROM entity_labels l
+          JOIN entities en ON en.id = l.entity_id
+         WHERE l.revealed_in_chapter = ${chapter}
+
+        UNION ALL
+
+        SELECT 'reponse', 6, m.entity_id, m.question, NULL, NULL::jsonb, 0
+          FROM mysteries m
+          JOIN entities en ON en.id = m.entity_id
+         WHERE m.resolved_in_chapter = ${chapter}
+
+        UNION ALL
+
+        SELECT 'question', 7, m.entity_id, m.question, NULL, NULL::jsonb, 0
+          FROM mysteries m
+          JOIN entities en ON en.id = m.entity_id
+         WHERE m.opened_in_chapter = ${chapter}
+
+        ORDER BY rang, ordre DESC, texte
+      `),
+    ),
+    readRefutations(userId, chapter),
+  ])
+
+  const beats: StoryBeat[] = (rows as unknown as Row[]).map((row, index) =>
+    compose(row, chapter, index),
   )
 
-  const row = (rows as unknown as PresentRow[])[0]
+  // Rank 5: what falls, after what happened and before what it leaves open.
+  const opened = beats.findIndex((beat) => beat.kind === 'reponse' || beat.kind === 'question')
+  const at = opened === -1 ? beats.length : opened
+  beats.splice(at, 0, ...refuted)
 
-  return {
-    events: (row?.events ?? []).map((event) => ({
-      entityId: event.entityId,
-      label: event.label ?? 'événement sans nom',
-      summary: event.summary,
-      isFlashback: event.isFlashback,
-      storyTime: describeStoryTime(event.storyTime),
-    })),
-    reveals: row?.reveals ?? [],
-    cast: row?.cast ?? [],
-    mysteriesOpened: row?.mysteriesOpened ?? [],
-    mysteriesResolved: row?.mysteriesResolved ?? [],
-    factCount: Number(row?.factCount ?? 0),
-    quote: row?.quote ? { excerpt: row.quote } : null,
+  return withPortraits(userId, chapter, beats)
+}
+
+/** A row of the union, turned into the line the page shows. */
+function compose(row: Row, chapter: number, index: number): StoryBeat {
+  const id = `${chapter}-${row.kind}-${row.entityId ?? index}`
+  const base = { id, chapter, entityId: row.entityId, portrait: null }
+  const text = row.texte ?? ''
+
+  switch (row.kind) {
+    case 'entree':
+      return {
+        ...base,
+        kind: 'entree',
+        text: text === '' ? 'entité sans nom révélé' : text,
+        detail: row.detail ? nodeTypeLabel(row.detail) : null,
+      }
+    case 'evenement':
+    case 'souvenir': {
+      const when = describeStoryTime(row.extra)
+      return {
+        ...base,
+        kind: row.kind,
+        text: text === '' ? 'événement sans nom' : text,
+        // The summary carries the telling; the in-world moment is appended
+        // only when the pages actually give one.
+        detail:
+          when && when.kind !== 'unknown'
+            ? [row.detail, when.description].filter(Boolean).join(' — ')
+            : row.detail,
+      }
+    }
+    case 'nom':
+      return {
+        ...base,
+        kind: 'nom',
+        text,
+        detail: row.detail === text ? null : row.detail,
+      }
+    default:
+      return { ...base, kind: row.kind, text, detail: row.detail }
   }
 }
 
@@ -406,45 +286,87 @@ async function readPresent(
  * What this chapter closes, read one chapter earlier.
  *
  * A belief refuted at N is not visible at N — the policy hides it the moment
- * the reader reaches the chapter that kills it. Read here at N-1, where the
- * reader still held it, which is also the only place it can be described
- * truthfully: « vous l'avez cru depuis le chapitre 12 ».
+ * the reader reaches the chapter that kills it. Read here at N-1, where they
+ * still held it, which is also the only place it can be described truthfully:
+ * « cru depuis le chapitre 12 ».
  */
 async function readRefutations(
   userId: string,
-  number: number,
-): Promise<StoryRefutation[]> {
-  if (number <= 1) return []
+  chapter: number,
+): Promise<StoryBeat[]> {
+  if (chapter <= 1) return []
 
   const rows = await withBoundary(
-    { userId, boundaryChapter: number - 1 },
+    { userId, boundaryChapter: chapter - 1 },
     async (db) =>
       db.execute(sql`
-        SELECT
-          a.id AS "assertionId",
-          a.predicate,
-          a.knowledge_from_chapter AS "heldSince",
-          (SELECT l.label FROM entity_labels l
-            WHERE l.entity_id = a.subject_entity_id
-            ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-            LIMIT 1) AS "subjectLabel",
-          (SELECT l.label FROM entity_labels l
-            WHERE l.entity_id = a.object_entity_id
-            ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-            LIMIT 1) AS "objectLabel"
-        FROM assertions a
-        WHERE a.knowledge_until_chapter = ${number}
-        ORDER BY a.knowledge_from_chapter
+        SELECT a.id AS "assertionId", a.predicate,
+               a.knowledge_from_chapter AS "heldSince",
+               (SELECT l.label FROM entity_labels l
+                 WHERE l.entity_id = a.subject_entity_id
+                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+                 LIMIT 1) AS sujet,
+               (SELECT l.label FROM entity_labels l
+                 WHERE l.entity_id = a.object_entity_id
+                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+                 LIMIT 1) AS objet
+          FROM assertions a
+         WHERE a.knowledge_until_chapter = ${chapter}
+         ORDER BY a.knowledge_from_chapter
       `),
   )
 
-  return (rows as unknown as StoryRefutation[]).map((row) => ({
-    assertionId: row.assertionId,
-    predicate: row.predicate,
-    heldSince: Number(row.heldSince),
-    subjectLabel: row.subjectLabel,
-    objectLabel: row.objectLabel,
+  return (
+    rows as unknown as Array<{
+      assertionId: string
+      predicate: string
+      heldSince: number
+      sujet: string | null
+      objet: string | null
+    }>
+  ).map((row) => ({
+    id: `${chapter}-dementi-${row.assertionId}`,
+    chapter,
+    kind: 'dementi' as const,
+    text: [row.sujet ?? 'entité sans nom', predicateLabel(row.predicate), row.objet]
+      .filter(Boolean)
+      .join(' '),
+    detail: `cru depuis le chapitre ${Number(row.heldSince)}`,
+    entityId: null,
+    portrait: null,
   }))
+}
+
+/**
+ * Faces, signed at this chapter.
+ *
+ * Only on the two beats where a face is the point — someone walking on, and a
+ * name landing. A portrait was found *by* a name, so it appears in the chapter
+ * that reveals that name and never in the one where the character was still a
+ * silhouette. The database applies that; nothing here has to remember.
+ */
+async function withPortraits(
+  userId: string,
+  chapter: number,
+  beats: StoryBeat[],
+): Promise<StoryBeat[]> {
+  const ids = [
+    ...new Set(
+      beats
+        .filter((beat) => beat.kind === 'entree' || beat.kind === 'nom')
+        .map((beat) => beat.entityId)
+        .filter((id): id is string => id !== null),
+    ),
+  ].slice(0, PORTRAITS_PER_CHAPTER)
+
+  if (ids.length === 0) return beats
+
+  const found = await displayImages(userId, chapter, ids)
+  return beats.map((beat) =>
+    beat.entityId && found.has(beat.entityId)
+      ? { ...beat, portrait: found.get(beat.entityId) ?? null }
+      : beat,
+  )
 }
 
 /**
