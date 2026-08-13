@@ -317,21 +317,57 @@ describe('renaming an entity', () => {
     expect(again.glossaryTerms).toBe(0)
   })
 
-  it('refuses a name the entity already carries', async () => {
-    const zoro = await createEntity(world, 'character', 1)
-    await addLabel(world, zoro, 'Roronoa Zoro', 'true_name', 1, 100)
-    await addLabel(world, zoro, 'Zoro', 'alias', 1, 50)
+  it('folds a duplicate into the name the entity already carries', async () => {
+    /*
+     * The ordinary case, not the exotic one. The character was corrected to
+     * « Hermep » at chapter 1; chapter 3 reproposed « Helmeppo » and it was
+     * published as a second name. Asking for the same correction again used to
+     * be refused — « corrigez plutôt celui-là », about a row already right,
+     * with nothing to do to it and the duplicate left where it was.
+     */
+    const helmeppo = await createEntity(world, 'character', 1)
+    await addLabel(world, helmeppo, 'Hermep', 'true_name', 1, 100)
+    await addLabel(world, helmeppo, 'Helmeppo', 'alias', 3, 50)
 
-    await expect(
-      renameEntityLabel(world.userId, {
-        labelId: await labelIdOf(zoro, 'Zoro'),
-        label: 'Roronoa Zoro',
-      }),
-    ).rejects.toThrow(/porte déjà le nom/)
+    const result = await renameEntityLabel(world.userId, {
+      labelId: await labelIdOf(helmeppo, 'Helmeppo'),
+      label: 'Hermep',
+    })
 
-    expect((await labelsOf(zoro)).map((row) => row.label)).toEqual([
-      'Roronoa Zoro',
-      'Zoro',
+    expect(result.folded).toBe(true)
+    // The strongest of the pair survives, so a fold never demotes a display the
+    // reader chose, and the earliest revelation with it: the entity really was
+    // named this at chapter 1.
+    expect(result.kind).toBe('true_name')
+    expect(result.revealedInChapter).toBe(1)
+
+    expect(await labelsOf(helmeppo)).toEqual([
+      { label: 'Hermep', kind: 'true_name', precedence: 100, revealed: 1 },
+      { label: 'Helmeppo', kind: 'alias', precedence: 5, revealed: 3 },
+    ])
+
+    const sheet = await getEntitySheet(world.userId, 3, helmeppo)
+    expect(sheet!.displayLabel).toBe('Hermep')
+    expect(sheet!.labels).toHaveLength(2)
+  })
+
+  it('keeps the earlier revelation when the duplicate is the older name', async () => {
+    const koby = await createEntity(world, 'character', 1)
+    await addLabel(world, koby, 'Kobi', 'alias', 1, 50)
+    await addLabel(world, koby, 'Koby', 'true_name', 3, 100)
+
+    const result = await renameEntityLabel(world.userId, {
+      labelId: await labelIdOf(koby, 'Kobi'),
+      label: 'Koby',
+      keepPrevious: false,
+    })
+
+    expect(result.folded).toBe(true)
+    // The name was given at chapter 1, misspelt. Dating it from 3 would hide a
+    // name the reader had.
+    expect(result.revealedInChapter).toBe(1)
+    expect(await labelsOf(koby)).toEqual([
+      { label: 'Koby', kind: 'true_name', precedence: 100, revealed: 1 },
     ])
   })
 

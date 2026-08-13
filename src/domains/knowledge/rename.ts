@@ -76,7 +76,10 @@ export interface RenameResult {
   previousLabel: string
   label: string
   kind: LabelKind
+  /** The surviving name's own revelation — the earlier of the two on a fold. */
   revealedInChapter: number
+  /** The entity already carried this name: the two rows became one. */
+  folded: boolean
   keptAsAlias: boolean
   /** Source wordings now mapped to this name for later extractions. */
   glossaryTerms: number
@@ -181,7 +184,9 @@ export async function renameEntityLabel(
         id: entityLabels.id,
         label: entityLabels.label,
         normalizedLabel: entityLabels.normalizedLabel,
+        kind: entityLabels.kind,
         precedence: entityLabels.precedence,
+        revealedInChapter: entityLabels.revealedInChapter,
       })
       .from(entityLabels)
       .where(
@@ -192,37 +197,62 @@ export async function renameEntityLabel(
         ),
       )
 
-    /*
-     * A name the entity already carries is not a rename.
-     *
-     * Turning « Helmeppo » into a second « Hermep » would leave two rows saying
-     * the same word, one of which the display would pick arbitrarily. What the
-     * reader means by that gesture is either « drop this one » or « show that
-     * one instead », and both are operations this function does not perform —
-     * so it says which name is in the way rather than quietly making a
-     * duplicate.
-     */
-    const clash = siblings.find((sibling) => sibling.normalizedLabel === normalized)
-    if (clash) {
-      throw new Error(
-        `Cette entité porte déjà le nom « ${clash.label} ». ` +
-          'Corrigez celui-là plutôt que d’en créer un second identique.',
-      )
-    }
-
     // A rename must not renumber a precedence publication or a merge chose
     // deliberately; a change of kind is exactly the case where it should.
-    const precedence = kind === row.kind ? row.precedence : LABEL_PRECEDENCE[kind]
+    const wanted = kind === row.kind ? row.precedence : LABEL_PRECEDENCE[kind]
 
-    await db
-      .update(entityLabels)
-      .set({
-        label,
-        normalizedLabel: normalized,
-        kind,
-        ...(precedence === row.precedence ? {} : { precedence }),
-      })
-      .where(eq(entityLabels.id, row.id))
+    /*
+     * The entity already carries this name — so the two are one name.
+     *
+     * This used to be a refusal, and the refusal was useless in the case that
+     * produces it. Chapter 3 reproposes « Helmeppo » as a second label of a
+     * character already corrected to « Hermep » at chapter 1: the reader asks
+     * for the same correction again and is told « corrigez plutôt celui-là » —
+     * about a row that is already right, with nothing to do to it. The message
+     * was accurate and left the duplicate exactly where it was.
+     *
+     * Saying « this row and that row are the same name » *is* the answer, so it
+     * is applied rather than argued with. The two fold into one: the surviving
+     * row keeps the strongest precedence of the pair, so a display the reader
+     * chose is never demoted by a fold, and the **earliest** revelation of the
+     * pair, because the entity really was named this at that chapter — in a
+     * spelling now corrected. Anything later would hide a name the reader had.
+     */
+    const clash = siblings.find((sibling) => sibling.normalizedLabel === normalized)
+    const precedence = clash ? Math.max(clash.precedence, wanted) : wanted
+    const differs = normalized !== row.normalizedLabel
+
+    /** What the surviving row says once the two have folded into one. */
+    const survivingKind = clash && clash.precedence >= wanted ? clash.kind : kind
+    const revealedInChapter = clash
+      ? Math.min(clash.revealedInChapter, row.revealedInChapter)
+      : row.revealedInChapter
+
+    if (clash) {
+      await db
+        .update(entityLabels)
+        .set({
+          // The wording as it was just typed: the reader retyped the name they
+          // want to see, and « hermep » corrected to « Hermep » is the whole
+          // point of some of these corrections.
+          label,
+          normalizedLabel: normalized,
+          kind: survivingKind,
+          precedence,
+          revealedInChapter,
+        })
+        .where(eq(entityLabels.id, clash.id))
+    } else {
+      await db
+        .update(entityLabels)
+        .set({
+          label,
+          normalizedLabel: normalized,
+          kind,
+          ...(precedence === row.precedence ? {} : { precedence }),
+        })
+        .where(eq(entityLabels.id, row.id))
+    }
 
     /*
      * The previous wording, kept as a name nothing displays.
@@ -230,10 +260,23 @@ export async function renameEntityLabel(
      * Skipped when the correction is an accent or a capital — « hermep » and
      * « Hermep » normalise to the same string, so the row would be a duplicate
      * of the one just rewritten and would add nothing to find it by.
+     *
+     * On a fold there is no row to insert: the one being folded already carries
+     * that wording, so it is demoted in place rather than duplicated — and
+     * dropped outright when the reader unticked the box, which is the only way
+     * this function ever deletes a name.
      */
-    const differs = normalized !== row.normalizedLabel
     const keptAsAlias = keepPrevious && differs
-    if (keptAsAlias) {
+    if (clash) {
+      if (keptAsAlias) {
+        await db
+          .update(entityLabels)
+          .set({ kind: 'alias', precedence: SEARCH_ONLY_PRECEDENCE })
+          .where(eq(entityLabels.id, row.id))
+      } else {
+        await db.delete(entityLabels).where(eq(entityLabels.id, row.id))
+      }
+    } else if (keptAsAlias) {
       await db.insert(entityLabels).values({
         entityId: row.entityId,
         userId,
@@ -295,7 +338,7 @@ export async function renameEntityLabel(
             sourceTerm: wording.label,
             normalizedSource: wording.normalizedLabel,
             frenchTerm: label,
-            decidedInChapter: row.revealedInChapter,
+            decidedInChapter: revealedInChapter,
           })
           .onConflictDoUpdate({
             target: [glossaryTerms.workId, glossaryTerms.normalizedSource],
@@ -326,8 +369,9 @@ export async function renameEntityLabel(
         from: row.label,
         to: label,
         fromKind: row.kind,
-        kind,
-        revealedInChapter: row.revealedInChapter,
+        kind: survivingKind,
+        revealedInChapter,
+        folded: clash !== undefined,
         keptAsAlias,
         glossaryTerms: recorded,
         proseRewritten,
@@ -338,8 +382,9 @@ export async function renameEntityLabel(
       entityId: row.entityId,
       previousLabel: row.label,
       label,
-      kind,
-      revealedInChapter: row.revealedInChapter,
+      kind: survivingKind,
+      revealedInChapter,
+      folded: clash !== undefined,
       keptAsAlias,
       glossaryTerms: recorded,
       proseRewritten,
