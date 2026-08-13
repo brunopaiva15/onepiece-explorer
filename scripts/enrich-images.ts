@@ -89,6 +89,10 @@ async function main(): Promise<void> {
     console.log(`  rapprochées  ${report.matched}`)
     console.log(`  dont wiki    ${report.fromWiki}`)
     console.log(`  stockées     ${report.stored}`)
+    console.log(
+      `  datées       ${report.preTimeskip} avant l'ellipse, ` +
+        `${report.postTimeskip} après`,
+    )
     console.log(`  sans image   ${report.unmatched}`)
 
     for (const failure of report.failures.slice(0, 10)) {

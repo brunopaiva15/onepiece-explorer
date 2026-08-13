@@ -73,22 +73,45 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
 
       {coverage.length > 0 && (
         <>
-          <button
-            type="button"
-            disabled={pending || missing === 0}
-            onClick={() =>
-              start(async () => {
-                setResult(await enrichImagesAction())
-              })
-            }
-            className="mt-4 rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong disabled:opacity-40"
-          >
-            {pending
-              ? 'Recherche des illustrations…'
-              : missing === 0
-                ? 'Tout est illustré'
-                : `Chercher une image pour ${missing} entité(s)`}
-          </button>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={pending || missing === 0}
+              onClick={() =>
+                start(async () => {
+                  setResult(await enrichImagesAction())
+                })
+              }
+              className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong disabled:opacity-40"
+            >
+              {pending
+                ? 'Recherche des illustrations…'
+                : missing === 0
+                  ? 'Tout est illustré'
+                  : `Chercher une image pour ${missing} entité(s)`}
+            </button>
+
+            {/*
+              The same run, on entities that already have a picture.
+              A library illustrated before portraits carried a date holds only
+              undated ones, and no amount of ordinary enrichment will look at
+              them again — the pass skips whatever already has a face. Nothing
+              is replaced: what this finds is added beside what is there, and
+              the reader's position decides which one is shown.
+            */}
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                start(async () => {
+                  setResult(await enrichImagesAction(true))
+                })
+              }
+              className="rounded-sm border border-line px-3 py-2 text-sm text-secondary hover:text-primary disabled:opacity-40"
+            >
+              Redater les portraits déjà trouvés
+            </button>
+          </div>
 
           {pending ? (
             <p className="mt-2 text-sm text-muted" role="status">
@@ -121,6 +144,14 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
             {result.stored} image(s) récupérée(s) sur {result.considered} entité(s)
             examinée(s).
           </p>
+          {result.preTimeskip ? (
+            <p className="mt-1 text-secondary">
+              Dont {result.preTimeskip} portrait(s) d&apos;avant l&apos;ellipse :
+              le wiki date ses fichiers, et ce sont ceux-là qui s&apos;affichent
+              tant que vous n&apos;avez pas atteint le chapitre 598. Les autres
+              personnages gardent une illustration sans date, faute de mieux.
+            </p>
+          ) : null}
           {result.fromWiki ? (
             <p className="mt-1 text-secondary">
               Dont {result.fromWiki} trouvée(s) sur le wiki, faute de

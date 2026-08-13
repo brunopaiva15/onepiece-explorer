@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, lte, sql } from 'drizzle-orm'
+import { and, eq, inArray, lte, sql } from 'drizzle-orm'
 import type { withIngest } from '@/db/boundary.ts'
 import { entities, entityLabels } from '@/db/schema/knowledge.ts'
 import { normalizeText } from '@/domains/knowledge/normalize.ts'
@@ -96,8 +96,16 @@ export async function findEcho(
   input: {
     workId: string
     userId: string
-    /** 'event' or 'mystery' — the two categories whose label is their text. */
-    nodeType: string
+    /**
+     * The node types whose label is their text: the three occurrence types for
+     * an event, `mystery` for a mystery.
+     *
+     * A list rather than one, because a scene told twice may be stored under a
+     * different occurrence type each time — as an `event` before the extraction
+     * could classify one and as a `battle` after. Asking about a single type
+     * would let exactly those two copies past.
+     */
+    nodeTypes: readonly string[]
     text: string
     chapterNumber: number
     /** Already matched exactly and handled elsewhere; never echoes of itself. */
@@ -121,7 +129,7 @@ export async function findEcho(
       and(
         eq(entities.workId, input.workId),
         eq(entities.userId, input.userId),
-        eq(entities.nodeType, input.nodeType),
+        inArray(entities.nodeType, [...input.nodeTypes]),
         eq(entities.reviewStatus, 'accepted'),
         lte(entities.firstSeenChapter, input.chapterNumber),
         lte(entityLabels.revealedInChapter, input.chapterNumber),

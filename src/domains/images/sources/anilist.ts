@@ -130,5 +130,7 @@ function toCandidate(node: Node): ImageCandidate | null {
     pageUrl: node.siteUrl ?? `https://anilist.co/character/${node.id}`,
     attribution: 'AniList',
     firstAppearanceChapter: null,
+    // One portrait per character, with nothing said about when it depicts them.
+    era: 'unknown',
   }
 }

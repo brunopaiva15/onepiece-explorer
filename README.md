@@ -91,6 +91,24 @@ identique existe déjà : la survivante garde la plus forte précédence de la p
 plus ancienne révélation, parce que l'entité portait bien ce nom à ce
 chapitre-là, mal orthographié.
 
+**Et un type se corrige aussi.** Le Bara Bara no Mi est un fruit : il se mange,
+il se vole, il se transporte — et le graphe le rangeait en « Pouvoir », juste à
+côté du Bara Bara no Hou, qui est la technique qu'il donne. L'ontologie le
+disait elle-même, dans la description remise au modèle ; elle dit désormais
+qu'un fruit du démon est un objet et qu'un pouvoir est ce qu'il confère. Pour ce
+qui est déjà publié, la fiche porte un bouton « Changer le type », et les
+réglages reclassent d'un coup toutes les entités dont le nom finit par « no Mi ».
+Le type est une propriété de la chose, donc le changement suit toute la
+composante d'identité quel que soit le curseur : deux moitiés d'une même entité
+ne peuvent pas être en désaccord sur ce qu'elle est. Ce qu'il ne fait jamais,
+c'est trancher à votre place. L'ontologie type les deux bouts de chaque relation
+et la base ne le vérifie qu'à l'insertion, donc un changement de type peut
+laisser derrière lui des faits qu'elle n'aurait jamais acceptés : ils sont
+cherchés, montrés, et **rien n'est écrit tant que vous ne les avez pas lus** ;
+confirmés, ils sont rejetés plutôt que supprimés, lignes et preuves intactes. Et
+un nœud qui porte un résumé d'événement ou la question d'un mystère est refusé
+plutôt que cascadé — personne n'a demandé la suppression d'une phrase.
+
 Le chapitre peut être **récupéré depuis le One Piece Fandom** par son numéro :
 les deux versions arrivent d'un coup, l'anglaise comme texte citable — c'est la
 plus détaillée, et un graphe ne contient que ce que sa source affirme — et la
@@ -317,6 +335,18 @@ que vous n'avez pas encore. C'est la base qui l'applique, comme le reste.
 « pas trouvé » ; une erreur se lit « trouvé », et personne ne revérifie un visage
 qu'il a accepté. Le rapprochement refuse donc tout signal faible, et la légende
 dit toujours quel nom a trouvé l'image et dans quel catalogue.
+
+**Et pas un visage d'après l'ellipse.** Entre la fin du chapitre 597 et le début
+du 598 il se passe deux ans, et ce qui revient n'est pas un relookage : c'est la
+conséquence de l'arc précédent. Or l'image en haut d'une fiche de wiki est
+toujours la plus récente — pour Nami, Luffy, Zoro, Vivi ou Koby, c'est celle
+d'après. Une image porte donc désormais la période qu'elle montre, lue dans le
+nom de fichier du wiki (`Nami_Manga_Pre_Timeskip_Infobox.png`), et la base
+refuse un visage d'après l'ellipse tant que vous n'avez pas atteint le
+chapitre 598. Une image sans date — c'est le cas de tout ce qui vient des trois
+catalogues — reste servie des deux côtés : « inconnu » n'est pas « après », et
+masquer par précaution viderait le graphe de ses visages sur une supposition.
+Voir `docs/adr/0011-a-portrait-carries-the-period-it-shows.md`.
 
 Les fichiers sont recopiés dans votre bucket privé plutôt que chargés depuis
 chez eux : trois tiers n'ont pas à savoir quels personnages vous consultez, et
@@ -614,6 +644,8 @@ const graphe = await withBoundary(
   une image n'est jamais une source, et pourquoi elle attend son nom
 - [Un lot est une file](docs/adr/0010-a-batch-is-a-queue.md) — pourquoi dix
   chapitres s'importent ensemble et se traitent un par un
+- [Une illustration porte sa période](docs/adr/0011-a-portrait-carries-the-period-it-shows.md)
+  — pourquoi le visage d'après l'ellipse attend le chapitre 598
 - [Importer depuis votre machine](docs/importer-en-local.md) — la marche à
   suivre complète quand l'application est hébergée ailleurs
 - [Exploitation](docs/operations.md) — déployer, surveiller, sauvegarder,

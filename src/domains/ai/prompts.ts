@@ -34,9 +34,11 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  * '5' says that a relation's object is an entity and that a sentence is an
  *     event — the rule that used to be implicit in the ontology's object types
  *     and produced « meurt à "elle tombe dans un escalier" » when it was not.
- * '6' names the node types, which the ontology block never listed, and says
- *     which envelope an event and a mystery go in — the omission that had a
- *     chapter's events arrive as entities of type `event`.
+ * '6' lists the node types, which the prompt demanded and never supplied, and
+ *     asks an event which of the three occurrence types it is. It also says
+ *     which envelope an event and a mystery go in — listing the types answers
+ *     « lequel », and a chapter whose events arrived as entities of type
+ *     `event` shows that « dans quel tableau » was a second question.
  */
 export const PROMPT_VERSION = '6'
 
@@ -348,19 +350,37 @@ ne se retrouve pas depuis l'autre bout, et sera mise en quarantaine.
 CHAQUE CHOSE DANS SON TABLEAU. Un fait qui se produit va dans « events », une
 question laissée ouverte va dans « mysteries » — jamais dans « entities ».
 
-Les types « event » et « mystery » figurent dans l'ontologie pour qu'une
-relation puisse les désigner (« participe à », « résout le mystère »), pas pour
-être proposés comme entités. Une entité de type « event » n'est pas un
-événement : elle n'a ni participants, ni statut de souvenir, elle n'entre pas
-dans la chronologie, et le lecteur la voit « entrer en scène » comme un
-personnage dont le nom serait une phrase entière. Un événement proposé sous la
-mauvaise rubrique est donc perdu comme événement, sans que rien ne le signale.
+Les types « event », « battle », « voyage » et « mystery » figurent dans
+l'ontologie pour qu'une relation puisse les désigner (« participe à », « résout
+le mystère »), pas pour être proposés comme entités. Une entité de type
+« event » n'est pas un événement : elle n'a ni participants, ni sorte, ni
+statut de souvenir, elle n'entre pas dans la chronologie, et le lecteur la voit
+« entrer en scène » comme un personnage dont le nom serait une phrase entière.
+Un événement proposé sous la mauvaise rubrique est donc perdu comme événement,
+sans que rien ne le signale.
 
 Un événement porte un « local_id » comme une entité, et il s'utilise pareil :
 déclarez la scène dans « events », puis nommez ses acteurs dans
 « participants » et écrivez « participe à » vers ce même identifiant. C'est ce
 qui relie une scène aux personnages qui la vivent ; sans cela l'événement est
 une phrase que rien ne rattache à personne.
+
+Chaque événement dit ce qu'il est, dans son champ « kind » :
+
+  • « battle » — un affrontement : on se bat, on s'attaque, on se défend, un
+    camp l'emporte sur l'autre. Le combat n'a pas besoin d'être équilibré ni
+    long : un coup unique qui met quelqu'un hors d'état en est un.
+  • « voyage » — un déplacement d'un lieu vers un autre : on embarque, on prend
+    la mer, on arrive quelque part.
+  • « event » — tout le reste, et c'est le cas courant. Dans le doute, mettez
+    « event » : une scène mal classée en combat est plus gênante qu'une scène
+    laissée en événement.
+
+Ce champ ne change rien à ce que vous racontez dans « summary » — écrivez le
+résumé comme vous l'auriez écrit sans lui. Il ne fait que nommer la sorte de
+scène, parce que rien dans la proposition ne permet de la deviner après coup :
+un combat et un départ sont l'un comme l'autre « quelque chose qui arrive », et
+seul celui qui lit le passage peut les distinguer.
 
 Une identité (« même personne que »), une mort, une filiation, une affiliation
 cachée ou la résolution d'un mystère demandent une preuve directe. En cas de

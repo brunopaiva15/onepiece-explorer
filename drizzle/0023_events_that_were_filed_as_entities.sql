@@ -34,6 +34,17 @@
 -- story axis — which is the one thing the two-axis timeline exists to get
 -- right. A memory imported this way is on the chronology at its chapter, and
 -- can be corrected there.
+--
+-- ET LES COMBATS PARMI EUX
+--
+-- La 0022 relit le résumé de chaque événement pour retrouver les combats, et
+-- elle part de `events` — donc précisément pas de ces lignes-là, qui n'y
+-- figuraient pas encore. Une scène soignée ici reste un événement ordinaire,
+-- même si c'est un duel. C'est le même arbitrage que la 0022 énonce pour
+-- elle-même : un combat manqué reste un événement, ce qu'il était hier, et
+-- cela ne coûte rien ; l'inverse est une affirmation fausse sur l'histoire. Le
+-- type se change depuis la fiche de l'entité, une scène à la fois, par
+-- quelqu'un qui a lu le chapitre.
 
 INSERT INTO events (entity_id, user_id, work_id, summary, is_flashback, shown_in_chapter)
 SELECT en.id,

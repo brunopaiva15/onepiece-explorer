@@ -4,10 +4,17 @@ import { revalidatePath } from 'next/cache'
 import { requireOwner } from '@/domains/auth/session.ts'
 import type { LabelKind } from '@/domains/knowledge/label-kind.ts'
 import { renameEntityLabel, type RenameResult } from '@/domains/knowledge/rename.ts'
+import { retypeEntity, type RetypeResult } from '@/domains/knowledge/retype.ts'
 
 export interface RenameActionResult {
   ok: boolean
   result?: RenameResult
+  error?: string
+}
+
+export interface RetypeActionResult {
+  ok: boolean
+  result?: RetypeResult
   error?: string
 }
 
@@ -51,6 +58,47 @@ export async function renameEntityAction(input: {
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Renommage impossible.',
+    }
+  }
+}
+
+/**
+ * Say what an entity is, from the fiche that got it wrong.
+ *
+ * `requireOwner()` for the same reason the rename does it: an action is a POST
+ * endpoint anyone can reach, and the id in the body is the only thing taken
+ * from the browser — the domain function re-reads the row by owner before
+ * touching it, and refuses a type the ontology does not have.
+ *
+ * The first call is a question, not a write. When facts stand in the way it
+ * returns them with `applied: false` and nothing changed, so the revalidation
+ * below would be pointless — the pages are named only once something actually
+ * moved. The graph draws the type as a colour, the table prints it and the
+ * timeline reads it, so all three follow the fiche.
+ */
+export async function retypeEntityAction(input: {
+  entityId: string
+  nodeType: string
+  confirm?: boolean
+}): Promise<RetypeActionResult> {
+  try {
+    const session = await requireOwner()
+    const result = await retypeEntity(session.userId, input)
+
+    if (result.applied) {
+      revalidatePath(`/entite/${result.entityId}`)
+      revalidatePath('/graph')
+      revalidatePath('/graph/table')
+      revalidatePath('/recherche')
+      revalidatePath('/chronologie')
+    }
+
+    return { ok: true, result }
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : 'Changement de type impossible.',
     }
   }
 }

@@ -13,6 +13,8 @@
  * needed to check it.
  */
 
+import type { Era } from './era.ts'
+
 /**
  * Kinds an external catalogue can illustrate.
  *
@@ -29,6 +31,16 @@ export type SourceName = 'onepieceapi' | 'api-onepiece' | 'anilist' | 'fandom'
 
 export interface ImageCandidate {
   source: SourceName
+  /**
+   * Which side of the two-year ellipse this picture depicts.
+   *
+   * `unknown` for all three catalogues, and truthfully so: they hand over one
+   * portrait per character and say nothing about when it depicts them. Only the
+   * wiki names its files well enough to be read — see era.ts, and
+   * drizzle/0022_a_face_from_before_the_ellipsis.sql for what the database then
+   * does with it.
+   */
+  era: Era
   /** Stable identifier at the source, so a re-run recognises the same picture. */
   sourceRef: string
   kind: CandidateKind
@@ -77,11 +89,19 @@ export interface Catalogue {
  * leaving the next reader to discover it by finding no crew portraits.
  * `event`, `battle`, `voyage`, `concept` and `mystery` are absent because they
  * are not things anyone draws a portrait of.
+ *
+ * A fruit illustrates both an object and a power, and that is not indecision.
+ * The ontology says a Devil Fruit is an object and the capacity it grants is a
+ * power, so the catalogue's fruit pictures belong to the object; they stay
+ * reachable from `power` because a library imported before that was settled has
+ * its fruits filed there, and demoting their portraits would be a second
+ * mistake made on account of the first. Nothing is mismatched by the overlap:
+ * a candidate is only ever taken when its name matches.
  */
 export const KIND_FOR_NODE_TYPE: Readonly<Record<string, CandidateKind[]>> = {
   character: ['character'],
   power: ['fruit'],
-  object: ['ship'],
+  object: ['ship', 'fruit'],
   place: ['island'],
 }
 
