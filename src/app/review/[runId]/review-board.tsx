@@ -1534,6 +1534,21 @@ function ProposalBody({
     const written = String(record.summary ?? '')
     const shown = applyRenames(written, renamedLabels)
 
+    /*
+     * Who accepting this puts in the scene.
+     *
+     * The participants are part of what is stored — each one is recorded as
+     * having been present in this chapter — so they belong on the card that
+     * decides it. They were carried in the payload and shown nowhere, which
+     * made a real change to the graph invisible at the only moment anyone could
+     * object to it. Unresolved identifiers are dropped rather than printed raw:
+     * a participant whose own proposal was rejected records nothing.
+     */
+    const cast = (Array.isArray(record.participants) ? record.participants : [])
+      .map((id) => (typeof id === 'string' ? names[id] : undefined))
+      .filter((name): name is string => name !== undefined)
+      .map((name) => applyRenames(name, renamedLabels))
+
     return (
       <div className="mt-2">
         <p className="text-primary">{shown}</p>
@@ -1560,6 +1575,12 @@ function ProposalBody({
             Enregistré comme{' '}
             <span className="text-primary">{nodeTypeLabel(String(record.kind))}</span>, pas
             comme un événement ordinaire.
+          </p>
+        )}
+        {cast.length > 0 && (
+          <p className="mt-1 text-sm text-secondary">
+            Dans la scène : {cast.join(', ')} — enregistrés comme présents à ce
+            chapitre.
           </p>
         )}
       </div>

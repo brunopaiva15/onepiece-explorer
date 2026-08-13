@@ -219,6 +219,26 @@ export async function autoReview(
       }
     }
 
+    if (item.category === 'event') {
+      /*
+       * An event waits for its cast, for the same reason a relation waits for
+       * its subject.
+       *
+       * Publishing it now records the presence of whoever already exists and
+       * silently records nothing for the rest — and unlike a relation, there is
+       * no failure to show for it: the event publishes cleanly, one name short,
+       * and nobody ever learns which. Held, it publishes complete once the
+       * naming question is answered.
+       */
+      const cast = Array.isArray(item.payload.participants)
+        ? item.payload.participants
+        : []
+      if (cast.some((id) => typeof id === 'string' && heldLocalIds.has(id))) {
+        result.heldByName++
+        continue
+      }
+    }
+
     decisions.push({ reviewItemId: item.id, decision: 'accept' })
     result.accepted++
   }

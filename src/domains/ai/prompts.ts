@@ -35,7 +35,10 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     event — the rule that used to be implicit in the ontology's object types
  *     and produced « meurt à "elle tombe dans un escalier" » when it was not.
  * '6' lists the node types, which the prompt demanded and never supplied, and
- *     asks an event which of the three occurrence types it is.
+ *     asks an event which of the three occurrence types it is. It also says
+ *     which envelope an event and a mystery go in — listing the types answers
+ *     « lequel », and a chapter whose events arrived as entities of type
+ *     `event` shows that « dans quel tableau » was a second question.
  */
 export const PROMPT_VERSION = '6'
 
@@ -283,6 +286,12 @@ la correspondance des noms.
     principal.
   • On n'en tire aucun fait. Si ce texte affirme quelque chose que le texte
     principal ne dit pas, ne le proposez pas : l'élément n'aurait pas de preuve.
+    Cela vaut aussi pour ce que vous RÉDIGEZ — résumé d'événement, question de
+    mystère, libellé. Ces phrases-là sont libres, la vérification ne porte que
+    sur l'extrait cité, et c'est précisément pourquoi la règle doit tenir toute
+    seule ici : un détail qui n'apparaît que dans le texte parallèle produit une
+    phrase que sa propre preuve ne soutient pas, et le lecteur qui ouvre la
+    citation pour vérifier ne l'y trouve pas. Exact ou non, il ne s'écrit pas.
   • Servez-vous-en pour « source_term » — la forme de l'autre langue — et pour
     « naming_confident ». Quand la mise en regard donne la réponse, c'est un
     fait, plus une convention à deviner : si le texte français écrit
@@ -337,6 +346,24 @@ validée — et jamais une phrase. Si ce que vous voulez dire ne s'écrit qu'en
 toutes lettres (« meurt en tombant dans un escalier »), c'est un événement :
 proposez-le comme tel. Une phrase glissée à la place d'un objet ne relie rien,
 ne se retrouve pas depuis l'autre bout, et sera mise en quarantaine.
+
+CHAQUE CHOSE DANS SON TABLEAU. Un fait qui se produit va dans « events », une
+question laissée ouverte va dans « mysteries » — jamais dans « entities ».
+
+Les types « event », « battle », « voyage » et « mystery » figurent dans
+l'ontologie pour qu'une relation puisse les désigner (« participe à », « résout
+le mystère »), pas pour être proposés comme entités. Une entité de type
+« event » n'est pas un événement : elle n'a ni participants, ni sorte, ni
+statut de souvenir, elle n'entre pas dans la chronologie, et le lecteur la voit
+« entrer en scène » comme un personnage dont le nom serait une phrase entière.
+Un événement proposé sous la mauvaise rubrique est donc perdu comme événement,
+sans que rien ne le signale.
+
+Un événement porte un « local_id » comme une entité, et il s'utilise pareil :
+déclarez la scène dans « events », puis nommez ses acteurs dans
+« participants » et écrivez « participe à » vers ce même identifiant. C'est ce
+qui relie une scène aux personnages qui la vivent ; sans cela l'événement est
+une phrase que rien ne rattache à personne.
 
 Chaque événement dit ce qu'il est, dans son champ « kind » :
 
