@@ -323,6 +323,12 @@ Statut épistémique :
   • « hypothetical » — c'est une lecture possible. Passera par une revue humaine
     explicite quelle que soit votre confiance.
 
+Un chapitre long vous est donné par morceaux. Les entités déjà proposées dans
+les morceaux précédents vous sont fournies avec leur identifiant : ne les
+reproposez pas, et surtout, servez-vous de cet identifiant dès qu'une relation
+les nomme. Sans cela, un lien entre quelqu'un présenté au début du chapitre et
+quelqu'un présenté à la fin ne peut être écrit par personne.
+
 Une relation relie deux choses du graphe. Son objet est une entité — l'un des
 « local_id » que vous venez de déclarer, ou l'identifiant d'une entité déjà
 validée — et jamais une phrase. Si ce que vous voulez dire ne s'écrit qu'en

@@ -86,6 +86,20 @@ export interface ExtractRequest {
   /** Entities already validated and visible at this chapter. */
   knownEntities: Array<{ id: string; label: string; nodeType: string }>
   /**
+   * Entities this same chapter has already proposed, in earlier slices.
+   *
+   * A chapter is read in slices, and a slice sees only its own passages. A
+   * relation between someone introduced in the first slice and someone in the
+   * third therefore could not be expressed at all: the model had no way to name
+   * the first — it is not in `knownEntities`, which holds *accepted* entities,
+   * and nothing is accepted mid-run.
+   *
+   * Omitted rather than sent empty when there is nothing yet, so the first
+   * slice's request — and the recorded response keyed on it — is byte for byte
+   * what it was before this existed.
+   */
+  proposedSoFar?: Array<{ id: string; label: string; nodeType: string }>
+  /**
    * Naming decisions already made, visible at this chapter.
    *
    * Settled vocabulary, so the model stops re-inventing a French form every

@@ -267,6 +267,31 @@ export class AnthropicProvider implements ModelProvider {
         // prompt, ontology, validated entities and glossary are identical for
         // every slice of a chapter, and they are the bulk of the request.
         { type: 'text', text: settled, cache_control: { type: 'ephemeral', ttl: CACHE_TTL } },
+        /*
+         * After the breakpoint, and that is the whole point of its being here.
+         *
+         * The cached prefix — system prompt, ontology, accepted entities,
+         * glossary — is identical for every slice of a chapter, which is what
+         * makes the extra calls cheap. This list changes with every slice, so
+         * putting it above the breakpoint would spend the cache to buy the
+         * feature.
+         */
+        ...(request.proposedSoFar && request.proposedSoFar.length > 0
+          ? [
+              {
+                type: 'text' as const,
+                text: [
+                  'Entités déjà proposées pour ce chapitre, dans les passages précédents.',
+                  'Elles ne sont pas encore validées : ne les reproposez pas, mais',
+                  'servez-vous de leur identifiant tel quel pour écrire une relation',
+                  'qui les nomme.',
+                  ...request.proposedSoFar.map(
+                    (e) => `  - ${e.id} · ${e.nodeType} · « ${e.label} »`,
+                  ),
+                ].join('\n'),
+              },
+            ]
+          : []),
         { type: 'text', text: refList(request.allowedRefs) },
         // Omitted rather than sent empty when there are no panels: the API
         // rejects an empty text block, and "Cases :" followed by nothing is

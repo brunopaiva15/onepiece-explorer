@@ -20,7 +20,12 @@ import { cassetteKey, ReplayProvider } from '@/domains/ai/replay.ts'
 import { properNouns, SyntheticProvider } from '@/domains/ai/synthetic.ts'
 import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
 import type { ExtractRequest, ModelProvider } from '@/domains/ai/provider.ts'
-import { parallelWindow, sliceChapter, splitSlice } from '@/domains/pipeline/steps/extract.ts'
+import {
+  namespaceLocalIds,
+  parallelWindow,
+  sliceChapter,
+  splitSlice,
+} from '@/domains/pipeline/steps/extract.ts'
 
 const ONTOLOGY: OntologyView = {
   nodeTypes: new Set(NODE_TYPES.map((t) => t.key)),
@@ -694,5 +699,85 @@ describe('what the Anthropic provider actually sends', () => {
     expect(params).toBeDefined()
     expect(params!.thinking).toBeUndefined()
     expect((params!.output_config as Record<string, unknown>).effort).toBeUndefined()
+  })
+})
+
+/**
+ * A chapter is read in slices, and a relation has to be able to cross one.
+ *
+ * A slice sees only its own passages, and the entities handed to it are the
+ * *accepted* ones — nothing is accepted mid-run. So a link between someone
+ * introduced in the first slice and someone in the third could not be written
+ * by anyone: the model had no name to use for the first. Two things make it
+ * writable, and both are pinned here because both are silent when wrong.
+ */
+describe('local ids across the slices of one run', () => {
+  const slice = (localId: string) => ({
+    entities: [
+      {
+        local_id: localId,
+        node_type: 'character',
+        label: 'Shanks',
+        label_kind: 'true_name' as const,
+        source_term: null,
+        naming_confident: true,
+        evidence: [{ ref: 'b1', kind: 'text' as const, excerpt: 'x' }],
+        confidence: 0.9,
+      },
+    ],
+    assertions: [
+      {
+        subject: localId,
+        predicate: 'meets',
+        object: 'aa000000-0000-4000-8000-000000000000',
+        object_value: null,
+        epistemic_status: 'explicit' as const,
+        evidence: [{ ref: 'b1', kind: 'text' as const, excerpt: 'x' }],
+        confidence: 0.9,
+      },
+    ],
+    events: [],
+    mysteries: [],
+  })
+
+  it('keeps two slices’ e1 apart', () => {
+    /*
+     * Both slices start counting at e1, they are merged into one list, and
+     * publication maps local id to entity row once. The second e1 overwrote the
+     * first, and every relation the first slice proposed about *its* e1 landed
+     * on a different character — a wrong edge, not a missing one.
+     */
+    const first = namespaceLocalIds(slice('e1'), 'aaaa1111')
+    const second = namespaceLocalIds(slice('e1'), 'bbbb2222')
+
+    expect(first.entities[0]!.local_id).toBe('aaaa1111:e1')
+    expect(second.entities[0]!.local_id).toBe('bbbb2222:e1')
+    expect(first.assertions[0]!.subject).toBe('aaaa1111:e1')
+    expect(second.assertions[0]!.subject).toBe('bbbb2222:e1')
+  })
+
+  it('leaves a reference to an entity already in the graph alone', () => {
+    // Those are database uuids handed to the model in the prompt. Prefixing one
+    // would turn a valid reference into a dangling one.
+    const scoped = namespaceLocalIds(slice('e1'), 'aaaa1111')
+    expect(scoped.assertions[0]!.object).toBe('aa000000-0000-4000-8000-000000000000')
+  })
+
+  it('leaves a reference to an earlier slice’s proposal alone', () => {
+    /*
+     * The other half: a later slice naming « aaaa1111:e1 » is naming a proposal
+     * this run will publish, not one of its own. Namespacing it a second time
+     * would break exactly the link this feature exists to make possible.
+     */
+    const later = namespaceLocalIds(
+      {
+        ...slice('e2'),
+        assertions: [{ ...slice('e2').assertions[0]!, subject: 'aaaa1111:e1' }],
+      },
+      'bbbb2222',
+    )
+
+    expect(later.entities[0]!.local_id).toBe('bbbb2222:e2')
+    expect(later.assertions[0]!.subject).toBe('aaaa1111:e1')
   })
 })

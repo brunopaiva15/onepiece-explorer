@@ -670,6 +670,33 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         source: context.sourceKind,
         ontology: renderOntology(world.preds),
         knownEntities,
+        /*
+         * What this chapter has already proposed, so a relation can name it.
+         *
+         * A slice sees only its own passages, and `knownEntities` holds
+         * *accepted* entities — nothing is accepted mid-run. A link between
+         * someone introduced in the first slice and someone in the third could
+         * therefore not be written at all: the model had no name to use for
+         * the first. This is that name.
+         *
+         * Best effort by design. Slices run three at a time, so a slice gets
+         * whatever has landed when it starts rather than everything before it
+         * in the chapter; making it exact would mean running them one after
+         * another and paying three times the wall clock for the last few links.
+         *
+         * Omitted when empty, so the first slice's request — and the recorded
+         * response keyed on it — is byte for byte what it was before this
+         * existed.
+         */
+        ...(accepted.entities.length > 0
+          ? {
+              proposedSoFar: accepted.entities.map((entity) => ({
+                id: entity.local_id,
+                label: entity.label,
+                nodeType: entity.node_type,
+              })),
+            }
+          : {}),
         glossary: world.glossary,
         descriptions: slice.descriptions,
         textBlocks: slice.blocks,
@@ -741,7 +768,17 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         allowedRefs: refs,
       }),
       ontology,
-      new Set(knownEntities.map((e) => e.id)),
+      /*
+       * Accepted entities *and* what earlier slices proposed.
+       *
+       * A reference to one of those is resolvable — it names a proposal this
+       * run will publish — and without it here the relation that finally can
+       * be written would be quarantined as `unknown_subject` on its way out.
+       */
+      new Set([
+        ...knownEntities.map((e) => e.id),
+        ...accepted.entities.map((entity) => entity.local_id),
+      ]),
     )
 
     /*
