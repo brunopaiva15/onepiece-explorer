@@ -87,6 +87,7 @@ async function main(): Promise<void> {
     console.log(`  catalogue    ${report.catalogueSize} illustrations disponibles`)
     console.log(`  examinées    ${report.considered}`)
     console.log(`  rapprochées  ${report.matched}`)
+    console.log(`  dont wiki    ${report.fromWiki}`)
     console.log(`  stockées     ${report.stored}`)
     console.log(`  sans image   ${report.unmatched}`)
 

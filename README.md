@@ -246,6 +246,24 @@ illustration n'est pas une connaissance — elle ne demande pas de décision,
 seulement un moment, et le moment évident est celui où le chapitre devient
 lisible.
 
+**Ce que les trois catalogues ne couvrent pas, le wiki le couvre.** Ils
+connaissent les personnages célèbres, les Fruits du Démon répertoriés, seize
+navires et trente et une îles — et rien d'autre. Le graphe, lui, est plein de
+bars, de villages, d'équipages, d'espèces et de titres. Ceux-là sont demandés à
+l'API du One Piece Fandom, un titre à la fois, **uniquement** pour ce que les
+catalogues n'ont pas su placer : d'abord le wiki anglais, puis le français,
+puisque le graphe est écrit en français et que beaucoup de noms propres
+s'écrivent pareil des deux côtés.
+
+Une fiche doit réellement exister sous ce titre — après redirection de page,
+jamais une redirection vers une *section*. Une redirection vers une section est
+le wiki qui dit qu'il n'a pas d'article pour cette chose, et MediaWiki
+renverrait alors l'image de la page qui l'englobe : une photo d'autre chose,
+légendée comme si c'était celle-ci. La branche « prendre quand même l'image
+anglaise » existe dans la plupart des implémentations, augmente le taux de
+réussite, et est exactement le signal faible que ce dépôt refuse partout
+ailleurs.
+
 Trois choses à savoir, et elles ne sont pas des détails.
 
 **Une image n'est pas une source.** Elle ne prouve rien, aucune assertion ne

@@ -74,6 +74,15 @@ const SOURCE_WEIGHT: Record<ImageCandidate['source'], number> = {
   onepieceapi: 3,
   anilist: 2,
   'api-onepiece': 1,
+  /*
+   * Never actually weighed against the others.
+   *
+   * The wiki is a fallback asked one title at a time, after this matcher has
+   * already returned nothing; its candidates are not in the index and so never
+   * reach a tie-break. Zero is the truthful weight for "would lose if it ever
+   * competed", and the entry exists because the type says every source has one.
+   */
+  fandom: 0,
 }
 
 export interface CandidateIndex {

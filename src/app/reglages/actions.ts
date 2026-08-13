@@ -86,6 +86,8 @@ export interface EnrichImagesResult {
   considered?: number
   stored?: number
   unmatched?: number
+  /** Of the pictures found, how many came from the wiki fallback. */
+  fromWiki?: number
   failures?: number
   catalogueSize?: number
   notes?: string[]
@@ -135,6 +137,7 @@ export async function enrichImagesAction(): Promise<EnrichImagesResult> {
       considered: report.considered,
       stored: report.stored,
       unmatched: report.unmatched,
+      fromWiki: report.fromWiki,
       failures: report.failures.length,
       catalogueSize: report.catalogueSize,
       notes,
