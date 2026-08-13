@@ -5,6 +5,7 @@ import {
   descriptionSystem,
   extractionSystem,
   glossaryList,
+  knownEntitiesList,
   parallelText,
   refList,
   resolutionSystem,
@@ -200,13 +201,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async extract(request: ExtractRequest): Promise<ProviderResult<Extraction>> {
-    const known =
-      request.knownEntities.length === 0
-        ? 'Aucune entité déjà validée à ce stade.'
-        : [
-            'Entités déjà validées et visibles à ce chapitre (utilisez leur identifiant tel quel) :',
-            ...request.knownEntities.map((e) => `  - ${e.id} · ${e.nodeType} · « ${e.label} »`),
-          ].join('\n')
+    const known = knownEntitiesList(request.knownEntities)
 
     const blocks = request.textBlocks
       .map((b) =>

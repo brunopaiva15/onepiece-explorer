@@ -39,8 +39,14 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     which envelope an event and a mystery go in — listing the types answers
  *     « lequel », and a chapter whose events arrived as entities of type
  *     `event` shows that « dans quel tableau » was a second question.
+ * '7' says that the id of a validated entity is for the same thing, never for
+ *     the nearest thing. The prompt told the model to use those ids and never
+ *     told it what to do when none of them fit, so a chapter needing a crew
+ *     nobody has named yet aimed a relation at the closest crew there was —
+ *     « Luffy dirige l'Équipage du Capitaine Usopp », both ends the right
+ *     type, the excerpt properly anchored, and nothing to catch it.
  */
-export const PROMPT_VERSION = '6'
+export const PROMPT_VERSION = '7'
 
 /**
  * What the model is reading.
@@ -189,6 +195,33 @@ export function glossaryList(
         `  - « ${term.sourceTerm} » → « ${term.frenchTerm} »` +
         (term.note ? ` (${term.note})` : ''),
     ),
+  ].join('\n')
+}
+
+/**
+ * The graph as the model is allowed to see it, and what the list is *for*.
+ *
+ * Lives here rather than in each provider because it had been written twice,
+ * identically, and the sentence that matters is the one neither copy had. The
+ * old header said « utilisez leur identifiant tel quel » and stopped there,
+ * which reads as an instruction to pick from the list — so a chapter that
+ * needed a group nobody has named yet got the nearest group in it. The list is
+ * a set of ids for things already known, not a menu of allowed answers, and it
+ * has to say both halves.
+ *
+ * Boundary-filtered by the caller, like the glossary beside it: an entity the
+ * reader has not met is a spoiler in the prompt whatever the model does with it.
+ */
+export function knownEntitiesList(
+  entities: readonly { id: string; label: string; nodeType: string }[],
+): string {
+  if (entities.length === 0) return 'Aucune entité déjà validée à ce stade.'
+  return [
+    'Entités déjà validées et visibles à ce chapitre. Reprenez l’identifiant',
+    'd’une ligne quand vous parlez de cette chose-là, et seulement dans ce cas :',
+    'ce qui n’est pas dans cette liste se déclare dans « entities », même si une',
+    'ligne s’en approche.',
+    ...entities.map((e) => `  - ${e.id} · ${e.nodeType} · « ${e.label} »`),
   ].join('\n')
 }
 
@@ -346,6 +379,23 @@ validée — et jamais une phrase. Si ce que vous voulez dire ne s'écrit qu'en
 toutes lettres (« meurt en tombant dans un escalier »), c'est un événement :
 proposez-le comme tel. Une phrase glissée à la place d'un objet ne relie rien,
 ne se retrouve pas depuis l'autre bout, et sera mise en quarantaine.
+
+UN IDENTIFIANT EXISTANT DÉSIGNE LA MÊME CHOSE, JAMAIS LA PLUS PROCHE. Les deux
+listes qui vous sont fournies — entités déjà validées, entités proposées dans
+les morceaux précédents — sont là pour que vous repreniez l'identifiant de ce
+dont vous parlez, pas pour que vous y choisissiez le moins mauvais. Si ce que
+la relation désigne ne figure dans aucune des deux, déclarez-le dans
+« entities » et pointez la relation vers ce nouveau « local_id ». Une chose que
+la source montre sans la nommer se déclare quand même : libellé descriptif,
+« label_kind » à « placeholder », « naming_confident » à false.
+
+C'est surtout vrai des groupes, qui sont en scène longtemps avant d'être
+nommés. « L'équipage de X » et « l'équipage de Y » sont deux entités quoi qu'il
+arrive : viser le second parce que le premier n'existe pas encore écrit un lien
+faux que rien ne rattrapera — les deux bouts sont du bon type, l'extrait est
+bien ancré, et la fiche affirmera une appartenance que le chapitre ne dit pas.
+Une entité en trop se fusionne en une décision ; un lien vers le mauvais groupe
+se lit comme un fait.
 
 CHAQUE CHOSE DANS SON TABLEAU. Un fait qui se produit va dans « events », une
 question laissée ouverte va dans « mysteries » — jamais dans « entities ».
