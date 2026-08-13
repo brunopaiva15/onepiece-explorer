@@ -4,6 +4,7 @@ import { getViewerSession } from '@/domains/auth/session.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
 import { displayImages } from '@/domains/images/index.ts'
 import { Portrait } from '@/app/components/portrait.tsx'
+import { epistemicLabel } from '@/domains/knowledge/epistemic-label.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 export const metadata: Metadata = { title: 'Graphe — vue tableau' }
@@ -207,14 +208,3 @@ export default async function GraphTablePage({
   )
 }
 
-function epistemicLabel(status: string): string {
-  const labels: Record<string, string> = {
-    explicit: 'affirmé',
-    inferred_strong: 'déduit',
-    hypothetical: 'hypothèse',
-    contradicted: 'contredit',
-    refuted: 'réfuté',
-    user_validated: 'validé par vous',
-  }
-  return labels[status] ?? status
-}

@@ -4,8 +4,11 @@ import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
+import { epistemicColour, epistemicLabel } from '@/domains/knowledge/epistemic-label.ts'
 import { labelKindLabel } from '@/domains/knowledge/label-kind.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
+import { buildEntityProfile } from '@/domains/knowledge/profile.ts'
+import { EntityProfile } from './entity-profile.tsx'
 import { RenameEntity } from './rename-entity.tsx'
 import { RetypeEntity } from './retype-entity.tsx'
 
@@ -17,10 +20,10 @@ export default async function EntityPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ ch?: string }>
+  searchParams: Promise<{ ch?: string; detail?: string }>
 }) {
   const { id } = await params
-  const { ch } = await searchParams
+  const { ch, detail } = await searchParams
   const session = await getViewerSession(ch)
 
   const sheet = await getEntitySheet(session.userId, session.boundaryChapter, id)
@@ -34,6 +37,18 @@ export default async function EntityPage({
   )
   const outgoing = sheet.facts.filter((fact) => fact.direction === 'outgoing')
   const incoming = sheet.facts.filter((fact) => fact.direction === 'incoming')
+
+  /*
+   * The same facts, twice over, on purpose.
+   *
+   * `profile` is the reading — sections that depend on what this entity is,
+   * because nobody asks « what is asserted about Luffy », they ask who his
+   * family is and what crew he belongs to. `outgoing`/`incoming` is the record,
+   * unchanged, with every panel and every excerpt: folded away by default, and
+   * opened by the link each summary line carries.
+   */
+  const profile = buildEntityProfile(sheet.nodeType, sheet.facts)
+  const detailOpen = detail === '1'
 
   return (
     <>
@@ -177,26 +192,55 @@ export default async function EntityPage({
           </section>
         )}
 
-        <FactList
-          title="Ce que l’on sait"
-          facts={outgoing}
+        <EntityProfile
+          sections={profile}
+          entityId={sheet.id}
           boundary={session.boundaryChapter}
-          empty="Rien d’affirmé à propos de cette entité à ce chapitre."
         />
 
-        {incoming.length > 0 && (
-          <FactList
-            title="Ce que l’on dit d’elle"
-            facts={incoming}
-            boundary={session.boundaryChapter}
-            empty=""
-          />
-        )}
+        {sheet.facts.length === 0 ? (
+          <p className="mt-8 border-[3px] border-ink bg-surface-raised p-4 text-secondary">
+            Rien d&apos;affirmé à propos de cette entité à ce chapitre.
+          </p>
+        ) : (
+          /*
+           * The record, folded.
+           *
+           * Nothing here is new and nothing here is cut: it is the two lists
+           * this page used to open with, each fact with its chapter, its status
+           * and the case that proves it. What changed is that it is now the
+           * *second* thing you see — a summary you can check rather than a
+           * transcript you have to read.
+           */
+          <details open={detailOpen} className="panneau mt-10">
+            <summary className="panneau-titre cursor-pointer list-none">
+              <span>Le relevé, fait par fait</span>
+              <span className="chiffre text-xl">{sheet.facts.length}</span>
+            </summary>
+            <div className="panneau-corps">
+              <p className="text-sm text-secondary">
+                Chaque fait porte le chapitre où vous avez pu l&apos;apprendre et la
+                case qui le prouve. Un fait sans preuve n&apos;entre pas ici.
+              </p>
 
-        <p className="mt-14 border-t border-line pt-6 text-sm text-muted">
-          Chaque fait porte le chapitre où vous avez pu l&apos;apprendre et la case
-          qui le prouve. Un fait sans preuve n&apos;entre pas ici.
-        </p>
+              <FactList
+                title="Ce que l’on sait"
+                facts={outgoing}
+                boundary={session.boundaryChapter}
+                empty="Rien d’affirmé à propos de cette entité à ce chapitre."
+              />
+
+              {incoming.length > 0 && (
+                <FactList
+                  title="Ce que l’on dit d’elle"
+                  facts={incoming}
+                  boundary={session.boundaryChapter}
+                  empty=""
+                />
+              )}
+            </div>
+          </details>
+        )}
       </main>
     </>
   )
@@ -216,8 +260,8 @@ function FactList({
   if (facts.length === 0 && empty === '') return null
 
   return (
-    <section className="mt-10">
-      <h2 className="text-lg font-semibold text-primary">{title}</h2>
+    <section className="mt-6">
+      <h3 className="text-lg font-semibold text-primary">{title}</h3>
 
       {facts.length === 0 ? (
         <p className="mt-3 rounded-sm border border-line bg-surface-raised p-4 text-secondary">
@@ -228,7 +272,10 @@ function FactList({
           {facts.map((fact) => (
             <li
               key={fact.assertionId}
-              className="rounded-sm border border-line bg-surface-raised p-4"
+              /* What a summary line points at. `scroll-mt` keeps the fact clear
+                 of the top of the window once the browser has jumped to it. */
+              id={`fait-${fact.assertionId}`}
+              className="scroll-mt-4 rounded-sm border border-line bg-surface-raised p-4 target:border-accent target:bg-[var(--accent-soft)]"
             >
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="text-sm text-accent">
@@ -301,10 +348,18 @@ function FactList({
                           </blockquote>
                         )}
                         <p className="mt-1 font-mono text-xs text-muted">
-                          {evidence.chapterNumber !== null &&
-                            `ch. ${evidence.chapterNumber}`}
-                          {evidence.pageIndex !== null &&
-                            ` · page ${evidence.pageIndex + 1}`}
+                          {/* Joined here rather than concatenated with a
+                              leading separator: an evidence row missing one of
+                              the two printed « · page 1 », a dot in front of
+                              nothing. */}
+                          {[
+                            evidence.chapterNumber !== null &&
+                              `ch. ${evidence.chapterNumber}`,
+                            evidence.pageIndex !== null &&
+                              `page ${evidence.pageIndex + 1}`,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </p>
                       </div>
                     </li>
@@ -319,26 +374,3 @@ function FactList({
   )
 }
 
-function epistemicLabel(status: string): string {
-  const labels: Record<string, string> = {
-    explicit: 'affirmé',
-    inferred_strong: 'déduit',
-    hypothetical: 'hypothèse',
-    contradicted: 'contredit',
-    refuted: 'réfuté',
-    user_validated: 'validé par vous',
-  }
-  return labels[status] ?? status
-}
-
-function epistemicColour(status: string): string {
-  const colours: Record<string, string> = {
-    explicit: 'var(--epi-explicit)',
-    inferred_strong: 'var(--epi-inferred)',
-    hypothetical: 'var(--epi-hypothetical)',
-    contradicted: 'var(--epi-contradicted)',
-    refuted: 'var(--epi-refuted)',
-    user_validated: 'var(--epi-validated)',
-  }
-  return colours[status] ?? 'var(--text-muted)'
-}

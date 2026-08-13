@@ -213,6 +213,20 @@ export const PREDICATES = [
     description: 'Destination d’un déplacement.',
   },
 
+  // --- Geography -----------------------------------------------------------
+  {
+    key: 'part_of_place',
+    labelFr: 'fait partie de',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ['place'],
+    objectTypes: ['place'],
+    description:
+      'Contenance géographique, stable : un village dans une île, une île dans ' +
+      'une mer, une mer dans le monde. Pas une présence — quelqu’un qui se ' +
+      'trouve quelque part relève de located_at.',
+  },
+
   // --- Affiliation ---------------------------------------------------------
   {
     key: 'member_of',
@@ -347,6 +361,18 @@ export const PREDICATES = [
     subjectTypes: ACTORS,
     objectTypes: ['object', 'power'],
     description: 'Emploie un objet ou un pouvoir.',
+  },
+  {
+    key: 'grants_power',
+    labelFr: 'confère le pouvoir',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ['object'],
+    objectTypes: ['power'],
+    description:
+      'Ce qu’un objet donne à qui s’en sert : un fruit du démon et la capacité ' +
+      'qu’il confère. Le fruit est l’objet, la capacité est le pouvoir — sans ' +
+      'ce lien, rien ne relie les deux.',
   },
   {
     key: 'creates',

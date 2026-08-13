@@ -200,7 +200,19 @@ export async function getEntitySheet(
               assertionId: evidence.assertionId,
               excerpt: evidence.excerpt,
               kind: evidence.kind,
-              chapterNumber: panels.chapterNumber,
+              /*
+               * Either end of the evidence carries the chapter.
+               *
+               * Read from `panels` alone, a quotation — evidence anchored to a
+               * text block and no panel, which is most of what extraction
+               * produces — came back with a null chapter, and the fiche printed
+               * « · page 1 »: a separator with nothing in front of it, on the
+               * one line whose job is to say where this was proved. The number
+               * was in the row all along, on the other side of the join.
+               */
+              chapterNumber: sql<
+                number | null
+              >`coalesce(${panels.chapterNumber}, ${textBlocks.chapterNumber})`,
               pageIndex: pages.index,
               displayKey: pages.storageKeyDisplay,
             })

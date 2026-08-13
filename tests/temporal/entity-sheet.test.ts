@@ -3,6 +3,7 @@ import { getEntitySheet } from '@/domains/temporal/entity-sheet.ts'
 import {
   addAssertion,
   addLabel,
+  addQuote,
   closeDb,
   createEntity,
   resetDatabase,
@@ -93,6 +94,33 @@ describe('a sheet’s related entities', () => {
 
     const later = await getEntitySheet(world.userId, 2, luffy)
     expect(later!.facts[0]!.otherLabel).toBe('Dragon')
+  })
+
+  it('dates a quotation by the chapter it was quoted from', async () => {
+    // The chapter came from the panel and only from the panel, so evidence
+    // anchored to a text block — most of what extraction produces — arrived
+    // with none, and the sheet printed « · page 1 » under the excerpt: a
+    // separator with nothing in front of it, on the line whose whole job is to
+    // say where the fact was proved.
+    const luffy = await createEntity(world, 'character', 1)
+    const shanks = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addLabel(world, shanks, 'Shanks', 'true_name', 1, 100)
+    const assertionId = await addAssertion(world, {
+      subject: shanks,
+      predicate: 'protects',
+      object: luffy,
+      knowledgeFrom: 1,
+    })
+    await addQuote(world, {
+      assertionId,
+      chapterNumber: 1,
+      text: 'Shanks perd un bras pour sauver Luffy.',
+    })
+
+    const sheet = await getEntitySheet(world.userId, 2, luffy)
+
+    expect(sheet!.facts[0]!.evidence[0]!.chapterNumber).toBe(1)
   })
 
   it('prefers the strongest name the other end carries', async () => {
