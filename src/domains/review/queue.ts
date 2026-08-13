@@ -7,6 +7,7 @@ import { entities, entityLabels } from '@/db/schema/knowledge.ts'
 import type { EvidenceRef } from '@/domains/ai/schemas.ts'
 import { checkTypes, type TypeMismatch } from '@/domains/knowledge/ontology.ts'
 import { groupDuplicates, type DuplicateInfo } from '@/domains/review/duplicates.ts'
+import { findEcho, type Echo } from '@/domains/review/echoes.ts'
 import { storage } from '@/domains/storage/index.ts'
 
 /**
@@ -97,6 +98,15 @@ export interface ReviewItemView {
    * answer for the card on screen, and it is no longer in the queue.
    */
   duplicate: DuplicateInfo | null
+  /**
+   * Set when the graph already holds something worded almost like this.
+   *
+   * `duplicate` is the neighbouring signal and answers about *this run*, word
+   * for word. This one looks at what is already published, and tolerates
+   * rephrasing — which is what a second processing pass produces, and what
+   * neither of the exact checks could ever see.
+   */
+  echo: Echo | null
 }
 
 export interface ReviewQueue {
@@ -220,6 +230,7 @@ export async function getReviewQueue(
 
   const byStatus = new Map(data.counts.map((row) => [row.status, Number(row.count)]))
   const duplicates = groupDuplicates(data.forGrouping)
+  const echoes = await publishedEchoes(userId, data.head.chapterId, data.rows)
   // Over the whole run, not the page: a relation shown here routinely names an
   // entity whose own card was published in an earlier batch.
   const names = await resolveNames(data.rows, data.forGrouping)
@@ -258,6 +269,7 @@ export async function getReviewQueue(
         ? (labelById.get(relatedEntityId(row.payload)!) ?? null)
         : null,
       duplicate: duplicates.get(row.id) ?? null,
+      echo: echoes.get(row.id) ?? null,
       mergeSuggestion:
         row.category === 'entity' ? (merges.get(row.fingerprint) ?? null) : null,
       typeMismatch:
@@ -412,6 +424,56 @@ async function resolveEvidence(
  * card point at the question that actually decides it. Only the undecided ones:
  * a rapprochement already answered is not something to send the reviewer to.
  */
+/**
+ * What the graph already holds that reads like one of these proposals.
+ *
+ * Only events and mysteries, and only the pending ones. For those two
+ * categories the entity's label *is* its text, so a resemblance between labels
+ * is a resemblance between the things themselves — which is not true of a
+ * character, where two people can share a name and the question of whether they
+ * are one person belongs to entity resolution.
+ *
+ * One query per proposal, which is affordable because it is bounded twice: to
+ * the page being reviewed, and inside `findEcho` by a trigram index scan.
+ */
+async function publishedEchoes(
+  userId: string,
+  chapterId: string,
+  rows: Array<{ id: string; category: string; status: string; payload: unknown }>,
+): Promise<Map<string, Echo>> {
+  const pending = rows.filter(
+    (row) =>
+      row.status === 'proposed' && (row.category === 'event' || row.category === 'mystery'),
+  )
+  if (pending.length === 0) return new Map()
+
+  return withIngest(async (db) => {
+    const [chapter] = await db
+      .select({ workId: chapters.workId, number: chapters.number })
+      .from(chapters)
+      .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))
+      .limit(1)
+    if (!chapter) return new Map<string, Echo>()
+
+    const found = new Map<string, Echo>()
+    for (const row of pending) {
+      const payload = (row.payload ?? {}) as Record<string, unknown>
+      const text = row.category === 'event' ? payload.summary : payload.question
+      if (typeof text !== 'string' || text.length === 0) continue
+
+      const echo = await findEcho(db, {
+        workId: chapter.workId,
+        userId,
+        nodeType: row.category === 'event' ? 'event' : 'mystery',
+        text,
+        chapterNumber: chapter.number,
+      })
+      if (echo) found.set(row.id, echo)
+    }
+    return found
+  })
+}
+
 async function pendingMerges(
   proposals: Array<{
     id: string
