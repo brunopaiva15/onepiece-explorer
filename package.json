@@ -21,6 +21,7 @@
     "images:catalogue": "tsx scripts/image-catalogue.ts",
     "images:enrich": "tsx scripts/enrich-images.ts",
     "repair:luffy-crew": "tsx --conditions=react-server scripts/repair-luffy-crew.ts",
+    "repair:chapitres-1-42": "tsx --conditions=react-server scripts/repair-chapitres-1-42.ts",
     "fixtures:graph": "tsx scripts/generate-graph.ts",
     "demo": "TEST_DB=1 tsx scripts/demo.ts",
     "test": "vitest run",

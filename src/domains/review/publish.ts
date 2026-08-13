@@ -22,6 +22,7 @@ import type {
   CandidateMystery,
   EvidenceRef,
 } from '@/domains/ai/schemas.ts'
+import { futureNameReason, nameRevealedLater } from '@/domains/knowledge/naming.ts'
 import { normalizeText } from '@/domains/knowledge/normalize.ts'
 import { classifyOccurrence } from '@/domains/knowledge/occurrence.ts'
 import { OCCURRENCE_TYPES, type OccurrenceKind } from '@/domains/knowledge/ontology.ts'
@@ -311,6 +312,38 @@ export async function publishDecisions(
       }
 
       const candidate = (decision.correctedPayload ?? item.payload) as CandidateEntity
+
+      /*
+       * A name that belongs to a chapter the reader has not reached.
+       *
+       * Here rather than at extraction, because this is where a naming answer
+       * becomes a name: `correctedPayload` is what the review card was given
+       * back, and the card asks for a French form while showing nothing about
+       * when the reader is. Every mechanism upstream had already agreed —
+       * the model proposed the source's own word, the evidence anchored, the
+       * ontology was satisfied — and the substitution happened after all of
+       * them. See `naming.ts` for why the answer is checkable at all.
+       *
+       * Refused rather than corrected. The card can be answered again, and
+       * choosing a name on the reader's behalf is the one thing the naming
+       * question exists to avoid.
+       */
+      if (candidate.label_kind === 'true_name') {
+        const future = await nameRevealedLater(db, {
+          userId,
+          workId: run.workId,
+          chapterNumber: run.chapterNumber,
+          label: candidate.label,
+          sourceTerm: candidate.source_term,
+        })
+        if (future) {
+          result.failures.push({
+            reviewItemId: item.id,
+            reason: futureNameReason(future),
+          })
+          continue
+        }
+      }
 
       /*
        * The same name, already in the graph.

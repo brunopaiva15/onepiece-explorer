@@ -1,0 +1,109 @@
+name: Réparations (production)
+
+# Runs a repair script against the production database, on a button press.
+#
+# The sibling of migrate.yml, and for the same reason: a repair needs the
+# repository, Node, pnpm and a production credential in one place, and a laptop
+# is not always that place. It is also the only way to run one from an
+# environment that cannot open a Postgres connection at all — a sandbox, a phone,
+# a review session — which is how the first of these scripts came to be written
+# without ever being run against the library it was written for.
+#
+# A repair is not a migration and the difference is why this file is separate:
+#
+#   * A migration changes the schema and is written once for every library.
+#     `db:push` tracks what it has applied and refuses a file that changed after
+#     the fact.
+#   * A repair changes *knowledge* — someone's own graph — and is written for a
+#     defect found by reading it. Nothing tracks it, so every script here is
+#     written to be re-runnable and to say « déjà fait » rather than do it twice.
+#
+# Hence the default below. `dry-run` is the mode you get unless you ask for the
+# other one, because the interesting output of a repair is usually the list of
+# what it *would* touch — that list is what tells you the script found the right
+# rows before it is allowed to write anything.
+#
+# What it needs, once: the repository secret PRODUCTION_DIRECT_URL, which
+# migrate.yml already uses. Nothing new to configure if migrations have ever
+# been run from here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: 'Quelle réparation'
+        required: true
+        type: choice
+        default: chapitres-1-42
+        options:
+          - chapitres-1-42
+          - luffy-crew
+      mode:
+        description: 'Mode'
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - appliquer
+      confirm:
+        description: 'Pour « appliquer » : tapez PRODUCTION'
+        required: false
+        default: ''
+
+# Two repairs at once would interleave their writes on the same graph.
+concurrency:
+  group: repair-production
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: ${{ inputs.script }} (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Only the writing mode asks for a typed answer. A dry run reads and
+      # prints, so making it as expensive to start as a write would teach
+      # everyone to skip straight to the write.
+      - name: Check the confirmation
+        run: |
+          if [ "${{ inputs.mode }}" = "appliquer" ] && [ "${{ inputs.confirm }}" != "PRODUCTION" ]; then
+            echo "Mode « appliquer » : relancez en tapant PRODUCTION dans le champ de confirmation."
+            exit 1
+          fi
+
+      - name: Check the secret is present
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: |
+          if [ -z "$DIRECT_URL" ]; then
+            echo "Le secret PRODUCTION_DIRECT_URL n'est pas configuré."
+            echo "Settings → Secrets and variables → Actions → New repository secret."
+            echo "Valeur : la chaîne du pooler Supabase en mode session (port 5432)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Each script prints what it found, what it changed and what was already
+      # done. That output is the record of the run — there is no other one, and
+      # a repair that says nothing is a repair nobody can check.
+      - name: pnpm repair:${{ inputs.script }}
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+        run: |
+          if [ "${{ inputs.mode }}" = "dry-run" ]; then
+            pnpm repair:${{ inputs.script }} -- --dry-run
+          else
+            pnpm repair:${{ inputs.script }}
+          fi
