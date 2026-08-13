@@ -336,6 +336,19 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
       -- appearance rather than on first_seen_chapter, which holds the
       -- chapter the reader first *heard of* him — the right anchor for the
       -- boundary, and the wrong one for this.
+      --
+      -- It takes a stated mention *before* to claim it, and that condition is
+      -- the whole of what keeps this arm honest. Absence of a stated
+      -- appearance is not evidence of absence: a chapter published before
+      -- migration 0020 states nothing either way, so the first chapter
+      -- imported after it was, for every character in the library, "the first
+      -- chapter stating that they are on the page" — and chapter 21 walked
+      -- Luffy on again in front of a reader who had followed him since
+      -- chapter 1. Requiring the mention makes the two arms say the same
+      -- thing: someone walks on late here only where the thread earlier said
+      -- « est mentionné » about them, which is the same stated row read from
+      -- the other side. A library that says nothing keeps the old answer —
+      -- walked on when first seen, and never again.
       SELECT 'entree', 1, en.id,
              (SELECT l.label FROM entity_labels l
                WHERE l.entity_id = en.id
@@ -349,6 +362,10 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
                       WHERE o.entity_id = en.id AND o.stated
                         AND o.chapter_number = ${chapter}
                         AND o.kind = 'appearance')
+         AND EXISTS (SELECT 1 FROM occurrences o
+                      WHERE o.entity_id = en.id AND o.stated
+                        AND o.chapter_number < ${chapter}
+                        AND o.kind = 'mention')
          AND NOT EXISTS (SELECT 1 FROM occurrences o
                           WHERE o.entity_id = en.id AND o.stated
                             AND o.chapter_number < ${chapter}
@@ -556,10 +573,19 @@ async function readRefutations(
 /**
  * Faces, signed at this chapter.
  *
- * Only on the two beats where a face is the point — someone walking on, and a
- * name landing. A portrait was found *by* a name, so it appears in the chapter
- * that reveals that name and never in the one where the character was still a
- * silhouette. The database applies that; nothing here has to remember.
+ * Only on the beats where a face is the point — someone walking on, someone
+ * spoken of, a name landing. A portrait was found *by* a name, so it appears in
+ * the chapter that reveals that name and never in the one where the character
+ * was still a silhouette. The database applies that; nothing here has to
+ * remember.
+ *
+ * « On en parle » is on that list, and was left off it when the kind was split
+ * out of « entre en scène ». Being spoken of is a beat about a *name* — it is
+ * the whole of what the bead says — so a nameless grey square is the one place
+ * a face is least optional. It is not a spoiler either: the reader has been
+ * given the name, and a portrait hangs off a label the boundary has already
+ * released. Polo is talked about at chapter 19 and walks on at 21; the same
+ * face belongs to both.
  */
 async function withPortraits(
   userId: string,
@@ -569,7 +595,12 @@ async function withPortraits(
   const named = [
     ...new Set(
       beats
-        .filter((beat) => beat.kind === 'entree' || beat.kind === 'nom')
+        .filter(
+          (beat) =>
+            beat.kind === 'entree' ||
+            beat.kind === 'mention' ||
+            beat.kind === 'nom',
+        )
         .map((beat) => beat.entityId)
         .filter((id): id is string => id !== null),
     ),

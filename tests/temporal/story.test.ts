@@ -441,6 +441,26 @@ describe('the faces on the thread', () => {
     expect(at(page, 1, 'entree')[0]!.portrait!.matchedLabel).toBe('Monkey D. Luffy')
   })
 
+  it('gives a face to someone who is only spoken of', async () => {
+    /*
+     * « On en parle · Polo » came back a grey square, then « entre en scène ·
+     * Polo » two chapters later carried his face. The bead about a name is the
+     * one that least survives having none: the kind was split out of « entre en
+     * scène » and this list was not told about it.
+     */
+    const polo = await createEntity(world, 'character', 2)
+    await addLabel(world, polo, 'Polo', 'true_name', 2, 100)
+    await addPresence(world, polo, { chapterNumber: 2, kind: 'mention' })
+    await addPortrait(world, polo, { matchedLabel: 'Polo', revealedIn: 2 })
+
+    const page = await read(1, 4, 4)
+    const beat = at(page, 2, 'mention')[0]!
+
+    expect(beat.text).toBe('Polo')
+    expect(beat.portrait).not.toBeNull()
+    expect(beat.portrait!.matchedLabel).toBe('Polo')
+  })
+
   it('does not spend its budget on entities that have no picture', async () => {
     /*
      * The failure this pins: a chapter introduces a crowd, the cap trims the
@@ -671,6 +691,31 @@ describe('mentionné, puis vu', () => {
 
     expect(at(page, 1, 'entree')).toHaveLength(1)
     expect(at(page, 1, 'mention')).toHaveLength(0)
+  })
+
+  it('does not walk a character on again at the first chapter that states it', async () => {
+    /*
+     * The half of the library imported after the field met the half imported
+     * before it, and every recurring character walked on a second time.
+     *
+     * Luffy is in chapter 1 and in every chapter since. The chapters read
+     * before migration 0020 hold no stated row about him — that is what the
+     * migration says they mean — so the first chapter imported after it was
+     * the first chapter *stating* that he is on the page, and « personne vue
+     * enfin » fired for someone the reader had followed for twenty chapters.
+     *
+     * Absence of a stated appearance is not evidence of absence. Walking on
+     * late is claimed only where the graph says he was spoken of and not
+     * seen.
+     */
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPresence(world, luffy, { chapterNumber: 4, kind: 'appearance' })
+
+    const page = await read(1, 4, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(1)
+    expect(at(page, 4, 'entree')).toHaveLength(0)
   })
 })
 
