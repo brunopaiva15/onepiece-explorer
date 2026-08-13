@@ -2,7 +2,11 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { renameEntityLabel } from '@/domains/knowledge/rename.ts'
 import { getEntitySheet } from '@/domains/temporal/entity-sheet.ts'
 import {
+  addAssertion,
+  addEvent,
   addLabel,
+  addMystery,
+  addQuote,
   closeDb,
   createEntity,
   raw,
@@ -180,6 +184,99 @@ describe('renaming an entity', () => {
 
     const sheet = await getEntitySheet(world.userId, 3, helmeppo)
     expect(sheet!.displayLabel).toBe('Hermep')
+  })
+
+  it('follows the name into the sentences that spell it out', async () => {
+    const helmeppo = await createEntity(world, 'character', 1)
+    await addLabel(world, helmeppo, 'Helmeppo', 'true_name', 3, 100)
+
+    // An event is named by its own summary, and a mystery by its question:
+    // correcting the label alone leaves the timeline saying Helmeppo under a
+    // fiche that says Hermep.
+    const beat = await createEntity(world, 'event', 3)
+    await addEvent(world, beat, {
+      summary: 'Helmeppo détruit les boulettes de riz de Rika.',
+      shownIn: 3,
+    })
+    await addLabel(
+      world,
+      beat,
+      'Helmeppo détruit les boulettes de riz de Rika.',
+      'alias',
+      3,
+      10,
+    )
+
+    const question = await createEntity(world, 'mystery', 3)
+    await addMystery(world, question, {
+      question: 'Pourquoi Helmeppo garde-t-il ce loup ?',
+      openedIn: 3,
+    })
+
+    // Whole words only: the name inside a longer word is not this name.
+    const other = await createEntity(world, 'event', 3)
+    await addEvent(world, other, { summary: 'Les Helmeppos sont deux.', shownIn: 3 })
+
+    const result = await renameEntityLabel(world.userId, {
+      labelId: await labelIdOf(helmeppo, 'Helmeppo'),
+      label: 'Hermep',
+    })
+
+    expect(result.proseRewritten).toBe(2)
+
+    const prose = await raw<Array<{ text: string }>>`
+      SELECT summary AS text FROM events WHERE work_id = ${world.workId}
+      UNION ALL
+      SELECT question FROM mysteries WHERE work_id = ${world.workId}
+      ORDER BY text
+    `
+    expect(prose.map((row) => row.text)).toEqual([
+      'Hermep détruit les boulettes de riz de Rika.',
+      'Les Helmeppos sont deux.',
+      'Pourquoi Hermep garde-t-il ce loup ?',
+    ])
+
+    // The truncated copy the search indexes follows too.
+    expect((await labelsOf(beat))[0]!.label).toBe(
+      'Hermep détruit les boulettes de riz de Rika.',
+    )
+
+    // And the character's own name is not rewritten twice: the corrected label
+    // is the rename itself, the old wording the search-only copy.
+    expect((await labelsOf(helmeppo)).map((row) => row.label)).toEqual([
+      'Hermep',
+      'Helmeppo',
+    ])
+  })
+
+  it('leaves the chapter’s own text alone', async () => {
+    const helmeppo = await createEntity(world, 'character', 1)
+    await addLabel(world, helmeppo, 'Helmeppo', 'true_name', 1, 100)
+
+    const quoted = 'Helmeppo rit très fort.'
+    const assertionId = await addAssertion(world, {
+      subject: helmeppo,
+      predicate: 'related_to',
+      object: helmeppo,
+      knowledgeFrom: 1,
+    })
+    await addQuote(world, { assertionId, chapterNumber: 1, text: quoted })
+
+    await renameEntityLabel(world.userId, {
+      labelId: await labelIdOf(helmeppo, 'Helmeppo'),
+      label: 'Hermep',
+    })
+
+    // Evidence is anchored by finding an excerpt inside this text. Rewriting a
+    // word here would either break every quote citing the block or, worse,
+    // succeed quietly and have the graph claim a wording the source never used.
+    const blocks = await raw<Array<{ text: string; excerpt: string }>>`
+      SELECT b.text, e.excerpt FROM text_blocks b
+      JOIN evidence e ON e.text_block_id = b.id
+      WHERE b.user_id = ${world.userId}
+    `
+    expect(blocks[0]!.text).toBe(quoted)
+    expect(blocks[0]!.excerpt).toBe(quoted)
   })
 
   it('promotes the display when the kind changes', async () => {
