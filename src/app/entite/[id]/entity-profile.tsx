@@ -67,75 +67,102 @@ function ProfileLine({
 }) {
   return (
     <li
-      className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-l-4 py-1.5 pl-2.5 pr-3"
+      className="border-l-4 py-1.5 pl-2.5 pr-3"
       style={{ borderLeftColor: epistemicColour(entry.epistemicStatus) }}
     >
-      <span className="cartouche">{entry.role}</span>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        {entry.otherType && (
+          /* The graph's own colour for this type, so a group is the same red
+             here as it is in the picture. Decorative: the rôles below and the
+             heading already say what this is. */
+          <span
+            aria-hidden
+            className="inline-block size-2.5 self-center border border-ink"
+            style={{
+              background: `var(--type-${entry.otherType}, var(--surface-sunken))`,
+            }}
+          />
+        )}
 
-      {entry.otherType && (
-        /* The graph's own colour for this type, so a group is the same red
-           here as it is in the picture. Decorative: the rôle above and the
-           heading already say what this is. */
-        <span
-          aria-hidden
-          className="inline-block size-2.5 self-center border border-ink"
-          style={{
-            background: `var(--type-${entry.otherType}, var(--surface-sunken))`,
-          }}
-        />
-      )}
+        {entry.otherId ? (
+          <Link
+            href={`/entite/${entry.otherId}?ch=${boundary}`}
+            className="font-medium text-primary hover:underline"
+          >
+            {entry.otherLabel ?? 'entité sans nom révélé'}
+          </Link>
+        ) : (
+          <span className="font-medium text-primary">{entry.literalValue}</span>
+        )}
+      </div>
 
-      {entry.otherId ? (
-        <Link
-          href={`/entite/${entry.otherId}?ch=${boundary}`}
-          className="font-medium text-primary hover:underline"
-        >
-          {entry.otherLabel ?? 'entité sans nom révélé'}
-        </Link>
-      ) : (
-        <span className="font-medium text-primary">{entry.literalValue}</span>
-      )}
+      {/*
+       * The rôles, under the name they belong to.
+       *
+       * Each one is a link into the record — its own fact, its own proof — and
+       * carries its own chapter, because « rencontré au 3, protégé au 11 » is
+       * two different moments and a single date on the line would pick one and
+       * hide the other. A rôle whose claim is not a plain affirmation prints
+       * the word for it: the colour on the edge is the strongest of them, so it
+       * cannot be the only thing saying that one of these is a guess.
+       */}
+      <ul className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        {entry.roles.map((role, index) => (
+          <li key={`${role.predicate}-${role.direction}`} className="flex items-baseline gap-1">
+            {index > 0 && (
+              /* Two rôles run together — « connaît ch. 10 a rencontré ch. 3 » —
+                 read as one long label with a number in the middle. */
+              <span aria-hidden className="pr-0.5 text-muted">
+                ·
+              </span>
+            )}
+            <Link
+              href={`/entite/${entityId}?ch=${boundary}&detail=1#fait-${role.assertionIds[0]}`}
+              className="cartouche decoration-dotted hover:text-secondary hover:underline"
+              title={
+                role.evidenceCount === 1
+                  ? 'Voir ce fait et sa preuve'
+                  : role.evidenceCount > 1
+                    ? `Voir ce fait et ses ${role.evidenceCount} preuves`
+                    : 'Voir ce fait dans le relevé'
+              }
+            >
+              {role.label}
+            </Link>
 
-      {entry.epistemicStatus !== 'explicit' && (
-        <span
-          className="text-[0.7rem]"
-          style={{ color: epistemicColour(entry.epistemicStatus) }}
-        >
-          {epistemicLabel(entry.epistemicStatus)}
-        </span>
-      )}
+            <span className="font-mono text-[0.7rem] text-muted">
+              ch. {role.knowledgeFromChapter}
+            </span>
 
-      {entry.knowledgeUntilChapter !== null && (
-        /* Inside the window where this was believed and is not yet refuted.
-           Saying so is the point of the two-axis model — a wiki would have
-           deleted the line. */
-        <span className="text-[0.7rem] text-[var(--epi-hypothetical)]">
-          démenti ch. {entry.knowledgeUntilChapter}
-        </span>
-      )}
+            {role.epistemicStatus !== 'explicit' && (
+              <span
+                className="text-[0.7rem]"
+                style={{ color: epistemicColour(role.epistemicStatus) }}
+              >
+                {epistemicLabel(role.epistemicStatus)}
+              </span>
+            )}
 
-      {entry.locked && (
-        <span
-          className="text-[0.7rem] text-muted"
-          title="Corrigé par vous : jamais remplacé par une nouvelle extraction"
-        >
-          votre correction
-        </span>
-      )}
+            {role.knowledgeUntilChapter !== null && (
+              /* Inside the window where this was believed and is not yet
+                 refuted. Saying so is the point of the two-axis model — a wiki
+                 would have deleted the line. */
+              <span className="text-[0.7rem] text-[var(--epi-hypothetical)]">
+                démenti ch. {role.knowledgeUntilChapter}
+              </span>
+            )}
 
-      <Link
-        href={`/entite/${entityId}?ch=${boundary}&detail=1#fait-${entry.assertionIds[0]}`}
-        className="ml-auto font-mono text-xs text-muted decoration-dotted hover:underline"
-        title={
-          entry.evidenceCount === 0
-            ? 'Voir ce fait dans le relevé'
-            : entry.evidenceCount === 1
-              ? 'Voir ce fait et sa preuve'
-              : `Voir ce fait et ses ${entry.evidenceCount} preuves`
-        }
-      >
-        ch. {entry.knowledgeFromChapter}
-      </Link>
+            {role.locked && (
+              <span
+                className="text-[0.7rem] text-muted"
+                title="Corrigé par vous : jamais remplacé par une nouvelle extraction"
+              >
+                votre correction
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </li>
   )
 }
