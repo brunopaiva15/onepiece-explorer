@@ -350,7 +350,7 @@ Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répo
 | `/ask` répond qu'il est désactivé | `ASSISTANT_ENABLED` absent | Attendu, et voulu. `ASSISTANT_ENABLED=1` pour l'activer, en sachant que chaque question se facture |
 | « Aucun catalogue d'images en cache » | `pnpm images:catalogue` jamais lancé | Lancez-le. L'erreur est explicite plutôt que « 0 image trouvée », qui ressemblerait à un rapprochement raté |
 | Beaucoup d'entités sans image | Couverture des catalogues, pas un bug | 369 personnages et 31 îles côté onepieceapi. Un personnage secondaire n'y est pas |
-| Un portrait manifestement faux | Rapprochement par nom trop permissif | La légende dit quel nom l'a trouvé. Supprimez la ligne d'`entity_images` ; le rapprochement ne la recréera pas si le nom reste ambigu |
+| Un portrait manifestement faux | Rapprochement par nom trop permissif | La légende dit quel nom l'a trouvé. « Revérifier les rapprochements » (Réglages) repasse les rapprochements par ressemblance sous les règles du jour, retire ceux qu'elles refusent et réexamine les entités dans la foulée. Une passe ordinaire ne le fera jamais : elle saute ce qui a déjà un visage |
 | pgvector absent | PostgreSQL local | Attendu en test : bascule automatique sur `real[]` |
 | Graphe tronqué avec un avertissement | Plus de 25 000 nœuds visibles | Le message dit combien sur combien. Filtrez par type ou baissez la frontière |
 | « no space left on device » | Dérivés d'images accumulés | Supprimez des chapitres, ou purgez les dérivés du bucket |

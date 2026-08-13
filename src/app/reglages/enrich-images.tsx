@@ -104,12 +104,35 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
               disabled={pending}
               onClick={() =>
                 start(async () => {
-                  setResult(await enrichImagesAction(true))
+                  setResult(await enrichImagesAction({ includeIllustrated: true }))
                 })
               }
               className="rounded-sm border border-line px-3 py-2 text-sm text-secondary hover:text-primary disabled:opacity-40"
             >
               Redater les portraits déjà trouvés
+            </button>
+
+            {/*
+              The one button that takes something away.
+              « Morgan », met in chapter 3, was wearing the face of « Morgans »,
+              who appears eight hundred chapters later: a resemblance between
+              two spellings and nothing else. The rule that refuses that
+              rapprochement does nothing for a library already illustrated —
+              the ordinary pass skips whatever has a face. This is the only
+              path to it, and it hands the entity back to the catalogues in the
+              same run.
+            */}
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                start(async () => {
+                  setResult(await enrichImagesAction({ recheck: true }))
+                })
+              }
+              className="rounded-sm border border-line px-3 py-2 text-sm text-secondary hover:text-primary disabled:opacity-40"
+            >
+              Revérifier les rapprochements
             </button>
           </div>
 
@@ -144,6 +167,14 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
             {result.stored} image(s) récupérée(s) sur {result.considered} entité(s)
             examinée(s).
           </p>
+          {result.dropped ? (
+            <p className="mt-1 text-secondary">
+              {result.dropped} image(s) retirée(s) : elles avaient été trouvées
+              par ressemblance de nom avec un personnage que le catalogue
+              lui-même situe des centaines de chapitres plus loin. Les entités
+              concernées viennent d&apos;être réexaminées.
+            </p>
+          ) : null}
           {result.preTimeskip ? (
             <p className="mt-1 text-secondary">
               Dont {result.preTimeskip} portrait(s) d&apos;avant l&apos;ellipse :

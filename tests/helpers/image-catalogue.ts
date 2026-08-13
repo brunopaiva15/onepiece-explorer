@@ -69,6 +69,41 @@ export const CANDIDATES: ImageCandidate[] = [
     firstAppearanceChapter: 43,
     era: 'unknown',
   },
+  /*
+   * The pair that gave this its rule.
+   *
+   * Both rows are real. « Morgan » is the marine of chapter 3 and « Morgans »
+   * the newspaperman of chapter 860, they differ by one letter, and the
+   * catalogues split them the awkward way round: only AniList carries the early
+   * one, and it is the source that goes missing when its rate limit is reached.
+   * What is left is a name that resembles Morgan at 0.8 and belongs to somebody
+   * else entirely.
+   *
+   * The undated AniList copy of Morgans below is not padding either — it is why
+   * the chapter is looked up by character rather than by row.
+   */
+  {
+    source: 'onepieceapi',
+    sourceRef: 'op-morgans',
+    kind: 'character',
+    names: ['Morgans', 'モルガンズ', 'Big News'],
+    imageUrl: 'https://example.invalid/morgans.webp',
+    pageUrl: 'https://example.invalid/characters/morgans',
+    attribution: 'onepieceapi.com',
+    firstAppearanceChapter: 860,
+    era: 'unknown',
+  },
+  {
+    source: 'anilist',
+    sourceRef: 'al-morgans',
+    kind: 'character',
+    names: ['Morgans', 'Big News'],
+    imageUrl: 'https://example.invalid/al-morgans.png',
+    pageUrl: 'https://anilist.co/character/135950',
+    attribution: 'AniList',
+    firstAppearanceChapter: null,
+    era: 'unknown',
+  },
   {
     source: 'api-onepiece',
     sourceRef: '1',

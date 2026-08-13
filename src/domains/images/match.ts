@@ -62,6 +62,26 @@ const MIN_SOLO_TOKEN = 4
 const AMBIGUITY_MARGIN = 0.05
 
 /**
+ * How far past a name's revelation a resemblance may still be believed.
+ *
+ * The measure above compares spellings and nothing else, and one letter is
+ * cheap: « Morgan » and « Morgans » share six of their eight trigrams and score
+ * 0.8, well clear of the floor. They are two different characters — an early
+ * marine captain and a bird who runs a newspaper eight hundred chapters later —
+ * and the catalogue that holds the second one says so in a field nothing was
+ * reading: `first_appearance`. A reader who met this name in chapter 3 did not
+ * meet someone the source itself dates to chapter 860.
+ *
+ * The slack is wide because a story names people long before it draws them, and
+ * what a catalogue dates is the drawing. Two hundred chapters is far more than
+ * such a gap needs and still refuses the case this exists for, which is off by
+ * eight hundred and fifty-seven. Nothing finer would be honest: the number
+ * separates « a name heard early » from « a different person », and those two
+ * are not close together.
+ */
+const FIRST_APPEARANCE_SLACK = 200
+
+/**
  * Tie-break between sources of equal score.
  *
  * onepieceapi first because it is the only one that also knows a chapter of
@@ -88,12 +108,27 @@ const SOURCE_WEIGHT: Record<ImageCandidate['source'], number> = {
 export interface CandidateIndex {
   byKind: Map<CandidateKind, ImageCandidate[]>
   byKey: Map<string, ImageCandidate[]>
+  /**
+   * The chapter a character is first drawn in, by that character's signature.
+   *
+   * Keyed by the character rather than by the row, and that is the whole point.
+   * Only onepieceapi states a chapter; AniList carries a great many of the same
+   * people and states nothing. A check made row by row would refuse the dated
+   * « Morgans » and then hand over the undated one from the other catalogue —
+   * the same wrong face, arrived at more slowly.
+   *
+   * The earliest of several, when sources disagree. This map only ever causes a
+   * refusal, and refusing on the later of two claims would be refusing on the
+   * one that happens to be worse for the candidate.
+   */
+  firstAppearance: Map<string, number>
   size: number
 }
 
 export function buildIndex(candidates: ImageCandidate[]): CandidateIndex {
   const byKind = new Map<CandidateKind, ImageCandidate[]>()
   const byKey = new Map<string, ImageCandidate[]>()
+  const firstAppearance = new Map<string, number>()
 
   for (const candidate of candidates) {
     const kindList = byKind.get(candidate.kind) ?? []
@@ -106,10 +141,41 @@ export function buildIndex(candidates: ImageCandidate[]): CandidateIndex {
       const keyList = byKey.get(key) ?? []
       keyList.push(candidate)
       byKey.set(key, keyList)
+
+      const chapter = candidate.firstAppearanceChapter
+      if (chapter === null) continue
+      const signature = signatureOf(key)
+      const held = firstAppearance.get(signature)
+      if (held === undefined || chapter < held) firstAppearance.set(signature, chapter)
     }
   }
 
-  return { byKind, byKey, size: candidates.length }
+  return { byKind, byKey, firstAppearance, size: candidates.length }
+}
+
+/**
+ * Is this character drawn so long after the name that it cannot be its bearer?
+ *
+ * A sanity check, never knowledge: nothing here enters the graph, and a source
+ * that says nothing about first appearance is believed rather than doubted —
+ * the answer for an undated character is always no.
+ *
+ * Exported because the same question has to be asked of pictures already
+ * stored. A rule that only applies to matches not yet made leaves every library
+ * illustrated before it exactly as wrong as it was, and the reader who reported
+ * the wrong face is looking at one of those.
+ */
+export function appearsTooLate(
+  index: CandidateIndex,
+  candidate: ImageCandidate,
+  revealedInChapter: number,
+): boolean {
+  const chapters = candidate.names
+    .map((name) => index.firstAppearance.get(signatureOf(nameKey(name))))
+    .filter((chapter): chapter is number => chapter !== undefined)
+
+  if (chapters.length === 0) return false
+  return Math.min(...chapters) > revealedInChapter + FIRST_APPEARANCE_SLACK
 }
 
 /**
@@ -239,15 +305,22 @@ function bestForLabel(
    * character appearing in two catalogues is one person and must not be treated
    * as its own rival — otherwise every well-covered character would be
    * disqualified for being popular.
+   *
+   * And a resemblance is checked against the story before it is believed. This
+   * is the only step that matches on spelling alone, so it is the only one that
+   * can hand a chapter-3 name the face of somebody drawn in chapter 860; the
+   * three above all require a real relation between the names.
    */
   const byPerson = new Map<string, { score: number; candidate: ImageCandidate }>()
   for (const candidate of pool) {
+    if (appearsTooLate(index, candidate, label.revealedInChapter)) continue
+
     for (const name of candidate.names) {
       const normalised = nameKey(name)
       const score = trigramSimilarity(key, normalised)
       if (score < TRIGRAM_FLOOR) continue
 
-      const signature = [...tokensOf(normalised)].sort().join(' ')
+      const signature = signatureOf(normalised)
       const held = byPerson.get(signature)
       if (
         !held ||
@@ -310,7 +383,7 @@ function contained(
     for (const name of candidate.names) {
       const tokens = tokensOf(nameKey(name))
       if (test(tokens)) {
-        found.push({ candidate, signature: [...tokens].sort().join(' ') })
+        found.push({ candidate, signature: signatureOf(tokens.join(' ')) })
         break
       }
     }
@@ -346,6 +419,18 @@ export function nameKey(value: string): string {
 
 export function tokensOf(key: string): string[] {
   return key.split(' ').filter((token) => token.length > 0)
+}
+
+/**
+ * One person's fingerprint: their words, sorted, whatever order a source uses.
+ *
+ * « Roronoa Zoro » and « Zoro Roronoa » are one character with two spellings,
+ * and every part of this file that has to recognise that — the containment
+ * steps, the trigram grouping, the chapter of first appearance — asks the same
+ * question and must get the same answer.
+ */
+export function signatureOf(key: string): string {
+  return [...tokensOf(key)].sort().join(' ')
 }
 
 function sameTokens(a: string[], b: string[]): boolean {

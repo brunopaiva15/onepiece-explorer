@@ -94,6 +94,8 @@ export interface EnrichImagesResult {
   fromWiki?: number
   /** Of the pictures found, how many the wiki dates to before the ellipse. */
   preTimeskip?: number
+  /** Pictures taken away because the name that found them no longer matches. */
+  dropped?: number
   failures?: number
   catalogueSize?: number
   notes?: string[]
@@ -114,9 +116,15 @@ export interface EnrichImagesResult {
  * reader below chapter 598 is still being served whatever artwork was found
  * first. Nothing is replaced — the new pictures are added beside the old ones
  * and the boundary chooses between them.
+ *
+ * `recheck` is the one that does take something away, and it is the only way a
+ * correction to the matching rules ever reaches a library already illustrated.
+ * It puts the rapprochements made on a resemblance back through today's rules,
+ * forgets the pictures they no longer justify, and — in the same run, because
+ * an entity that just lost its picture is an entity without one — looks again.
  */
 export async function enrichImagesAction(
-  includeIllustrated = false,
+  options: { includeIllustrated?: boolean; recheck?: boolean } = {},
 ): Promise<EnrichImagesResult> {
   try {
     const session = await requireOwner()
@@ -131,7 +139,10 @@ export async function enrichImagesAction(
       }
     }
 
-    const report = await enrichEntityImages(session.userId, { includeIllustrated })
+    const report = await enrichEntityImages(session.userId, {
+      includeIllustrated: options.includeIllustrated ?? false,
+      recheck: options.recheck ?? false,
+    })
 
     const notes = [
       ...(report.cacheNote ? [report.cacheNote] : []),
@@ -154,6 +165,7 @@ export async function enrichImagesAction(
       unmatched: report.unmatched,
       fromWiki: report.fromWiki,
       preTimeskip: report.preTimeskip,
+      dropped: report.dropped,
       failures: report.failures.length,
       catalogueSize: report.catalogueSize,
       notes,

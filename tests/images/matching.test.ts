@@ -110,6 +110,39 @@ describe('refusing the wrong picture', () => {
     expect(match('character', 'Roi')).toBeNull()
   })
 
+  it('refuses a resemblance the story has not reached', () => {
+    /*
+     * The bug this file grew a rule for. « Morgan » is met in chapter 3;
+     * « Morgans » is a different character the catalogue itself dates to
+     * chapter 860, and the two share six of their eight trigrams. A reader at
+     * chapter 20 was shown the bird.
+     */
+    expect(match('character', 'Morgan', 3)).toBeNull()
+  })
+
+  it('refuses it whichever catalogue offers the face', () => {
+    /*
+     * AniList carries Morgans too, and says nothing about chapters. Checking
+     * row by row would refuse the dated copy and take the undated one — the
+     * same wrong picture, from the other source.
+     */
+    const found = match('character', 'Morgan', 3)
+    expect(found?.candidate.sourceRef).not.toBe('al-morgans')
+    expect(found?.candidate.sourceRef).not.toBe('op-morgans')
+  })
+
+  it('still believes the name itself, however late the character', () => {
+    // The chapter guards a resemblance, not an identity. A page that names
+    // « Morgans » names Morgans, and no arithmetic on chapters says otherwise.
+    expect(match('character', 'Morgans', 3)?.candidate.sourceRef).toBe('op-morgans')
+  })
+
+  it('allows the resemblance once the reader is there', () => {
+    // Nothing about the spelling changed; what changed is that chapter 860 is
+    // no longer eight hundred chapters away from the reader.
+    expect(match('character', 'Morgan', 900)?.candidate.sourceRef).toBe('op-morgans')
+  })
+
   it('does not fall for a decoy sharing a word', () => {
     /*
      * The catalogue holds "Faux Zoro" (Manjarou) as well as Zoro himself. A

@@ -50,6 +50,21 @@ pire qu'aucun portrait : une absence se lit comme « pas trouvé », une erreur 
 lit comme « trouvé », et personne ne revérifie un visage qu'il a accepté. Le
 catalogue contient réellement un « Faux Zoro » ; c'est le cas d'école.
 
+**Et une ressemblance est confrontée à l'histoire avant d'être crue.** L'étape
+par orthographe est la seule qui ne compare que des lettres, et une lettre coûte
+peu : « Morgan » et « Morgans » partagent six trigrammes sur huit et marquent
+0,8. Ce sont deux personnages différents, et le catalogue le dit lui-même dans
+un champ que rien ne lisait — `first_appearance`, chapitre 860 contre un nom
+rencontré au chapitre 3. Un candidat que sa propre source situe des centaines de
+chapitres après la révélation du nom n'est pas son porteur. La marge est large,
+parce qu'un récit nomme les gens bien avant de les dessiner ; elle sépare « un
+nom entendu tôt » de « quelqu'un d'autre », et ces deux-là ne sont pas voisins.
+
+Le chapitre de première apparition est rattaché au **personnage**, pas à la
+ligne : seul onepieceapi le connaît, AniList porte les mêmes gens sans le dire,
+et une vérification ligne par ligne refuserait la copie datée pour servir
+l'autre — le même mauvais visage, atteint plus lentement.
+
 **Les fichiers sont recopiés, pas pointés.** Le lien direct serait plus simple
 et faux trois fois : trois tiers apprendraient quels personnages vous consultez,
 les images casseraient le jour où un projet déplace un bucket, et elles

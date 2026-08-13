@@ -1,9 +1,11 @@
 import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
+import { storage } from '../storage/index.ts'
 import { loadCatalogue, type LoadOptions } from './catalogue.ts'
 import { eraAtChapter, type Era } from './era.ts'
 import {
+  appearsTooLate,
   buildIndex,
   matchEntity,
   type CandidateIndex,
@@ -50,6 +52,14 @@ export interface EnrichReport {
    */
   preTimeskip: number
   postTimeskip: number
+  /**
+   * Pictures thrown away because the rapprochement that found them is refused.
+   *
+   * Zero unless the run was asked to re-check. It counts rows, not entities:
+   * an entity loses everything it had when its identification falls, including
+   * the wiki portraits that were fetched under the wrong character's name.
+   */
+  dropped: number
   failures: Array<{ entityId: string; label: string; reason: string }>
   /** Sources that could not be reached while building the catalogue. */
   catalogueFailures: Array<{ source: string; reason: string }>
@@ -63,6 +73,21 @@ export interface EnrichOptions extends LoadOptions {
   limit?: number
   /** Re-examine entities that already have a picture. */
   includeIllustrated?: boolean
+  /**
+   * Put the stored rapprochements back through today's rules, first.
+   *
+   * A matching rule written after a library was illustrated changes nothing on
+   * its own: the pass skips whatever already has a face, so the face that rule
+   * would now refuse stays exactly where it is. This is the run that goes and
+   * looks — and because a picture it takes away leaves an entity with none, the
+   * ordinary pass below picks that entity up in the same run and illustrates it
+   * again under the current rules.
+   *
+   * Off by default, and never on in the automatic per-chapter pass. Deleting a
+   * reader's illustrations is a thing to be asked for, not a thing that happens
+   * quietly while a chapter is published.
+   */
+  recheck?: boolean
   onProgress?: (done: number, total: number) => void
   /**
    * Override the fetch-and-store step.
@@ -106,6 +131,7 @@ export async function enrichEntityImages(
     fromWiki: 0,
     preTimeskip: 0,
     postTimeskip: 0,
+    dropped: 0,
     failures: [],
     catalogueFailures: catalogue.failures,
     catalogueSize: index.size,
@@ -121,6 +147,18 @@ export async function enrichEntityImages(
    * exactly the case where a fallback earns its keep.
    */
   if (index.size === 0 && !wikiEnabled(options)) return report
+
+  /*
+   * Before looking for what is missing, look again at what is there.
+   *
+   * The order is the point: dropping a refused picture leaves its entity
+   * without one, and `pending()` below selects precisely the entities without
+   * one. So a re-check and a re-illustration are the same run, and the reader
+   * presses one button rather than two.
+   */
+  if (options.recheck) {
+    report.dropped = await dropRefusedImages(userId, catalogue.candidates, index)
+  }
 
   const work = await pending(userId, options)
   report.considered = work.length
@@ -233,6 +271,92 @@ async function portraitsFor(
   const matched = matchEntity(entity, index)
   if (!matched) return fromWiki(entity, options)
   return [matched, ...(await datedPortraits(matched, entity, options))]
+}
+
+/**
+ * Take back the faces that were attached on a resemblance the rules now refuse.
+ *
+ * Only rows matched by `trigram` are re-examined, because that is the only step
+ * that matches on spelling alone and the only one the chapter check applies to.
+ * A picture found by an exact name, by the same words in another order, or by
+ * containment was found on a relation between names, and second-guessing those
+ * here would make this stricter than the matcher itself — which would be a
+ * second rule nobody wrote down.
+ *
+ * A row whose candidate is no longer in the catalogue is left alone. Not being
+ * able to look something up is not evidence against it, and a run made while
+ * one of the sources is down must not read the outage as a verdict.
+ *
+ * When one picture falls, the entity's others go with it. They are not
+ * independent findings: a wiki portrait is fetched under the *catalogue's* name
+ * for the character — see `datedPortraits` — so it inherits the identification
+ * that has just been refused, and keeping it would leave the same wrong face
+ * with better provenance than before.
+ */
+async function dropRefusedImages(
+  userId: string,
+  candidates: ImageCandidate[],
+  index: CandidateIndex,
+): Promise<number> {
+  const bySource = new Map(
+    candidates.map((candidate) => [
+      `${candidate.source} ${candidate.sourceRef}`,
+      candidate,
+    ]),
+  )
+
+  const stored = await withIngest((db) =>
+    db.execute<{
+      entity_id: string
+      source: string
+      source_ref: string
+      revealed_in_chapter: number
+    }>(sql`
+      SELECT entity_id, source, source_ref, revealed_in_chapter
+      FROM entity_images
+      WHERE user_id = ${userId} AND match_method = 'trigram'
+    `),
+  )
+
+  const refused = new Set<string>()
+  for (const row of stored) {
+    const candidate = bySource.get(`${row.source} ${row.source_ref}`)
+    if (!candidate) continue
+    if (appearsTooLate(index, candidate, Number(row.revealed_in_chapter))) {
+      refused.add(row.entity_id)
+    }
+  }
+
+  if (refused.size === 0) return 0
+
+  const removed = await withIngest((db) =>
+    db.execute<{ storage_key: string; thumb_key: string | null }>(sql`
+      DELETE FROM entity_images
+      WHERE user_id = ${userId} AND entity_id IN ${[...refused]}
+      RETURNING storage_key, thumb_key
+    `),
+  )
+
+  /*
+   * The bytes, after the rows.
+   *
+   * This order is the recoverable one. A file left behind by a failed delete is
+   * an orphan in a bucket nobody reads from; a row left pointing at a file that
+   * is gone is a portrait that renders as a broken picture on the fiche. The
+   * failure is swallowed for the same reason: the reader asked for a wrong face
+   * to go away, and it has.
+   */
+  try {
+    await storage().remove(
+      removed
+        .flatMap((row) => [row.storage_key, row.thumb_key])
+        .filter((key): key is string => typeof key === 'string' && key.length > 0),
+    )
+  } catch {
+    /* An unreachable bucket is a stale file, not a failed correction. */
+  }
+
+  return removed.length
 }
 
 /**
