@@ -504,6 +504,11 @@ export function ReviewBoard({ queue }: Props) {
   }
 
   if (items.length === 0) {
+    const pendingElsewhere = queue.pendingElsewhere.reduce(
+      (total, other) => total + other.count,
+      0,
+    )
+
     return (
       <section className="panneau mt-8">
         <h2 className="panneau-titre panneau-titre-vedette">
@@ -521,6 +526,44 @@ export function ReviewBoard({ queue }: Props) {
               Le chapitre {queue.chapterNumber} est ouvert : ses faits sont
               visibles dans le graphe jusqu’à votre position de lecture.
             </p>
+          ) : pendingElsewhere > 0 ? (
+            /*
+             * Decided here, and still open somewhere else.
+             *
+             * This page is one run's queue; the rule that opens a chapter counts
+             * across every run of it, and it is right to — a second processing
+             * leaves a queue of its own, and opening the boundary over proposals
+             * nobody has read is the mistake the whole design exists to prevent.
+             *
+             * What was missing was the bridge. The button was offered, the rule
+             * refused, and the refusal came back as « Il reste des propositions à
+             * décider pour ce chapitre » on a page saying « Rien à revoir » —
+             * true, and impossible to act on. So the other queue is named and
+             * linked before anything is clicked.
+             */
+            <div className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2">
+              <p className="text-sm text-ink">
+                Ce chapitre a été traité plus d’une fois, et {pendingElsewhere}{' '}
+                proposition(s) attendent encore une décision dans{' '}
+                {queue.pendingElsewhere.length > 1
+                  ? 'ces autres traitements'
+                  : 'cet autre traitement'}
+                . Tant qu’elles sont là, le chapitre ne peut pas être marqué comme
+                relu : la frontière du lecteur ne s’ouvre jamais sur des
+                propositions que personne n’a lues.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {queue.pendingElsewhere.map((other) => (
+                  <Link
+                    key={other.runId}
+                    href={`/review/${other.runId}`}
+                    className="bouton !py-1 !text-sm"
+                  >
+                    Ouvrir ce traitement ({other.count})
+                  </Link>
+                ))}
+              </div>
+            </div>
           ) : (
             /*
              * The chapter is decided and invisible, and nothing said so.
