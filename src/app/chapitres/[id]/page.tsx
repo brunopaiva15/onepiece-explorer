@@ -110,7 +110,13 @@ export default async function ChapterPage({
       </header>
 
       <div className="mt-5 flex flex-wrap items-start gap-3">
-        {units > 0 && <StartRun chapterId={chapter.id} options={providerOptions()} />}
+        {units > 0 && (
+          <StartRun
+            chapterId={chapter.id}
+            options={providerOptions()}
+            processed={chapter.status === 'review' || chapter.status === 'published'}
+          />
+        )}
         {lastRunId && (
           <Link href={`/runs/${lastRunId}`} className="bouton !py-1.5 !text-sm">
             Dernier traitement

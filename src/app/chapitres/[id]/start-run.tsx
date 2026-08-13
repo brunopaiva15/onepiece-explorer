@@ -22,9 +22,12 @@ import { startRunAction } from './actions.ts'
 export function StartRun({
   chapterId,
   options,
+  processed = false,
 }: {
   chapterId: string
   options: ProviderOption[]
+  /** Already been through the pipeline: the same button, under its real name. */
+  processed?: boolean
 }) {
   const router = useRouter()
   const [pending, start] = useTransition()
@@ -83,8 +86,26 @@ export function StartRun({
         }}
         className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong disabled:opacity-50"
       >
-        {pending ? 'Lancement…' : 'Lancer le traitement'}
+        {pending ? 'Lancement…' : processed ? 'Réimporter' : 'Lancer le traitement'}
       </button>
+
+      {/*
+       * The question anyone asks before pressing this a second time.
+       *
+       * Every proposal carries a fingerprint of what it claims, and one you
+       * have already answered is skipped rather than queued again — so a
+       * re-import cannot undo a decision, and a label you corrected keeps your
+       * wording. The chapter also stays published while it re-runs: a run may
+       * not take an opened chapter back.
+       */}
+      {processed && (
+        <p className="max-w-md text-xs text-secondary">
+          Vos décisions sont conservées : une proposition déjà acceptée, rejetée
+          ou corrigée n&apos;est pas reposée. Seules les propositions nouvelles
+          arrivent dans la file, et le chapitre reste publié pendant le
+          traitement.
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="max-w-md text-sm text-[var(--epi-contradicted)]">

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
+import { Reimport } from './reimport.tsx'
 import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts'
 import { PageTitle } from '@/app/ui/page-title.tsx'
 import { StatusBadge } from '@/app/ui/status-badge.tsx'
@@ -143,6 +144,12 @@ export default async function ChaptersPage() {
                 </div>
 
                 <div className="mt-auto flex items-center justify-end gap-2 border-t-[3px] border-ink bg-surface-sunken px-3 py-2">
+                  {/* Only for a chapter that has already been through the
+                      pipeline: for a draft, « Traiter » is the same button
+                      under its first name. */}
+                  {(chapter.status === 'review' || chapter.status === 'published') && (
+                    <Reimport chapterId={chapter.id} />
+                  )}
                   <Link href={action.href} className={`bouton ${action.kind} !py-1 !text-sm`}>
                     {action.label}
                   </Link>
