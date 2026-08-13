@@ -5,7 +5,11 @@ import { chapters, pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { reviewItems } from '@/db/schema/ingestion.ts'
 import { entities, entityLabels } from '@/db/schema/knowledge.ts'
 import type { EvidenceRef } from '@/domains/ai/schemas.ts'
-import { checkTypes, type TypeMismatch } from '@/domains/knowledge/ontology.ts'
+import {
+  checkTypes,
+  OCCURRENCE_TYPES,
+  type TypeMismatch,
+} from '@/domains/knowledge/ontology.ts'
 import { groupDuplicates, type DuplicateInfo } from '@/domains/review/duplicates.ts'
 import { findEcho, type Echo } from '@/domains/review/echoes.ts'
 import { storage } from '@/domains/storage/index.ts'
@@ -464,7 +468,10 @@ async function publishedEchoes(
       const echo = await findEcho(db, {
         workId: chapter.workId,
         userId,
-        nodeType: row.category === 'event' ? 'event' : 'mystery',
+        // All three occurrence types for an event: the resemblance the reviewer
+        // is shown must not depend on which flavour the earlier copy was
+        // published under.
+        nodeTypes: row.category === 'event' ? OCCURRENCE_TYPES : ['mystery'],
         text,
         chapterNumber: chapter.number,
       })

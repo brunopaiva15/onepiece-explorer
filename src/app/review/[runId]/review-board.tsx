@@ -7,7 +7,7 @@ import type { Echo } from '@/domains/review/echoes.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
 import type { Decision, DecisionKind, PublishResult } from '@/domains/review/publish.ts'
 import { markChapterReviewedAction, publishDecisionsAction } from './actions.ts'
-import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
+import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 /**
  * The review centre.
@@ -1546,6 +1546,20 @@ function ProposalBody({
         {record.is_flashback === true && (
           <p className="mt-1 text-sm text-[var(--epi-hypothetical)]">
             Présenté comme un souvenir : montré ici, survenu plus tôt.
+          </p>
+        )}
+        {/*
+         * Which sort of node this becomes, said before it is created rather
+         * than discovered on the graph. Only when it is not the ordinary case:
+         * « Événement » on every card would be a word the reviewer learns to
+         * stop reading, and it is « Combat » and « Voyage » that are worth
+         * catching before they are published.
+         */}
+        {(record.kind === 'battle' || record.kind === 'voyage') && (
+          <p className="mt-1 text-sm text-secondary">
+            Enregistré comme{' '}
+            <span className="text-primary">{nodeTypeLabel(String(record.kind))}</span>, pas
+            comme un événement ordinaire.
           </p>
         )}
       </div>
