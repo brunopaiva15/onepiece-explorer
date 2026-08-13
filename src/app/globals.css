@@ -738,6 +738,9 @@ hr.regle {
   border: 2px solid var(--ink);
   border-radius: 50%;
   object-fit: cover;
+  /* Crop from the top, not the middle. Catalogue art is often a full figure in
+     portrait format, and a centred square crop of one is a picture of a torso. */
+  object-position: center top;
   background: var(--surface-sunken);
 }
 
@@ -836,4 +839,32 @@ hr.regle {
     opacity: 1;
     translate: 0 0;
   }
+}
+
+/* The folded tail of a long chapter. */
+.perle-repli {
+  position: relative;
+  padding: 0.4rem 0;
+}
+
+.perle-repli summary {
+  display: inline-block;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--accent-strong);
+  padding-bottom: 0.1rem;
+}
+
+.perle-repli summary:hover {
+  color: var(--text-primary);
+}
+
+.perle-repli ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }

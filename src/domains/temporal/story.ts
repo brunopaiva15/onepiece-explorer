@@ -46,6 +46,17 @@ const QUOTE_MIN = 40
 const QUOTE_MAX = 240
 
 /**
+ * Events shown before the rest is folded away.
+ *
+ * A chapter of the real work carries fifteen of them, and a library of a
+ * thousand chapters carries eleven hundred: told one after another they are not
+ * a thread, they are a transcript. Five is what a chapter is *about*; the rest
+ * is still there, one click away, and the page says how many rather than
+ * quietly dropping them.
+ */
+const EVENTS_PER_CHAPTER = 5
+
+/**
  * Faces signed per chapter.
  *
  * Signing is a round trip per file against the storage provider, and a window
@@ -102,6 +113,8 @@ export interface StoryBeat {
   detailParts: StoryPart[] | null
   entityId: string | null
   portrait: DisplayImage | null
+  /** Past the chapter's event budget: rendered, but folded away. */
+  collapsed?: boolean
 }
 
 export interface StoryPage {
@@ -191,18 +204,29 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
   const [rows, refuted] = await Promise.all([
     withBoundary({ userId, boundaryChapter: chapter }, async (db) =>
       db.execute(sql`
-        -- One line, quoted exactly, and only if it reads as a line: a capital
-        -- at the start, a full stop at the end. The excerpts are prose from the
-        -- source, so the longest one is very often a clause torn out of the
-        -- middle of a paragraph — « declaring he will get a crew that is… » is
-        -- worse than no quote at all. Dialogue wins over narration when both
-        -- qualify, because that is what a quoted line is for.
+        -- One line, quoted exactly — and only from a French chapter.
+        --
+        -- An excerpt keeps the language of its source, because a citation is a
+        -- copy verified character by character and translating one would make
+        -- it something else. That rule is right and it stays. What follows from
+        -- it is that a library whose citable text is the English wiki has no
+        -- French line to quote, and the thread is read in French: « The Red
+        -- Hair Pirates then raise anchor » on a French page is not a quotation,
+        -- it is a language the reader did not ask for. So the bead appears only
+        -- when the chapter's own language is French, and otherwise not at all.
+        --
+        -- Shape matters too: a capital at the start, a full stop at the end.
+        -- The excerpts are prose, so the longest is often a clause torn out of
+        -- the middle of a paragraph, which is worse than no quote. Dialogue
+        -- wins over narration when both qualify.
         (SELECT 'citation' AS kind, 0 AS rang, NULL::uuid AS "entityId",
                 ev.excerpt AS texte, NULL::text AS detail,
                 NULL::jsonb AS extra, 0::numeric AS ordre
            FROM evidence ev
            JOIN assertions a ON a.id = ev.assertion_id
+           JOIN chapters c ON c.id = ev.chapter_id
           WHERE a.knowledge_from_chapter = ${chapter}
+            AND c.language = 'fr'
             AND ev.excerpt IS NOT NULL
             AND char_length(ev.excerpt) BETWEEN ${QUOTE_MIN} AND ${QUOTE_MAX}
             AND ev.excerpt ~ '^[[:upper:]«]'
@@ -213,7 +237,7 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
         UNION ALL
 
         SELECT CASE WHEN e.is_flashback THEN 'souvenir' ELSE 'evenement' END,
-               CASE WHEN e.is_flashback THEN 2 ELSE 1 END,
+               CASE WHEN e.is_flashback THEN 3 ELSE 2 END,
                e.entity_id,
                (SELECT l.label FROM entity_labels l
                  WHERE l.entity_id = e.entity_id
@@ -250,7 +274,12 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
         -- Walking on is for whoever has no beat of their own. An event and a
         -- mystery are entities too, and without this they arrived twice: once
         -- as themselves, once as « entre en scène · Événement ».
-        SELECT 'entree', 4, en.id,
+        --
+        -- First, before the events. The events *name* these people — « Shanks
+        -- refuse d'emmener Luffy » — and a sentence that names someone the
+        -- reader has not been introduced to, with a face beside the name, is
+        -- an introduction happening after the fact.
+        SELECT 'entree', 1, en.id,
                (SELECT l.label FROM entity_labels l
                  WHERE l.entity_id = en.id
                  ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
@@ -305,6 +334,20 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
     if (seen.has(key)) continue
     seen.add(key)
     beats.push(beat)
+  }
+
+  /*
+   * Past the fifth event, folded rather than dropped.
+   *
+   * The chapter keeps every one of them — the count in the summary is the
+   * chapter's real count, and one click opens the rest. Trimming the list here
+   * would make a chapter of fifteen events look like a chapter of five.
+   */
+  let seenEvents = 0
+  for (const beat of beats) {
+    if (beat.kind !== 'evenement' && beat.kind !== 'souvenir') continue
+    seenEvents += 1
+    if (seenEvents > EVENTS_PER_CHAPTER) beat.collapsed = true
   }
 
   // Rank 5: what falls, after what happened and before what it leaves open.
@@ -519,6 +562,32 @@ interface Mention {
 }
 
 /**
+ * The last word of a name, when the name has several.
+ *
+ * The chapter calls him Luffy. The graph calls him « Monkey D. Luffy », because
+ * that is the name the chapter gave. An exact-label match therefore finds
+ * nothing in the one sentence that most needs a face — and the same for Zoro,
+ * for Roger, for every character whose full name is used once and whose short
+ * one is used everywhere after.
+ *
+ * The last word rather than any word: French and Japanese naming both put the
+ * distinctive part last here, and taking any token would match « du » and
+ * « de ». Four characters minimum, and it must still start with a capital, so
+ * « Bar » out of « Partys Bar » is too short and « bandits » never matches
+ * « Bandits ».
+ *
+ * A short form claimed by two different entities is dropped entirely rather
+ * than guessed at — see readMentions().
+ */
+function shortForm(label: string): string | null {
+  const last = label.trim().split(/\s+/).at(-1) ?? ''
+  if (last === label.trim()) return null
+  if (last.length < MENTION_MIN_LENGTH) return null
+  if (last[0] !== last[0]?.toUpperCase()) return null
+  return last
+}
+
+/**
  * Which known names occur in this chapter's sentences.
  *
  * Asked the other way round on purpose: not "which entities does the reader
@@ -550,18 +619,45 @@ async function readMentions(
         FROM entity_labels l
         JOIN entities en ON en.id = l.entity_id
        WHERE char_length(l.label) >= ${MENTION_MIN_LENGTH}
-         AND position(l.label IN ${blob}) > 0
+         AND (position(l.label IN ${blob}) > 0
+              -- The last word of the label. Doubled backslash: this is a
+              -- template literal, and « \s » in one is just « s ».
+              OR position(regexp_replace(l.label, '^.*\\s', '') IN ${blob}) > 0)
     `),
   )
 
   const seen = new Set<string>()
-  const out: Mention[] = []
+  const full: Mention[] = []
+  /** Short form → the entities claiming it. More than one means ambiguous. */
+  const short = new Map<string, Set<string>>()
+
   for (const row of rows as unknown as Mention[]) {
     const key = `${row.entityId}|${row.label}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(row)
+    if (!seen.has(key)) {
+      seen.add(key)
+      full.push(row)
+    }
+    const brief = shortForm(row.label)
+    if (brief === null) continue
+    const claimants = short.get(brief) ?? new Set<string>()
+    claimants.add(row.entityId)
+    short.set(brief, claimants)
   }
+
+  const out = [...full]
+  for (const [label, claimants] of short) {
+    /*
+     * Two characters whose names end the same way — « Monkey D. Luffy » and
+     * « Monkey D. Garp » would not collide, but « Portgas D. Ace » and « Ace »
+     * as an alias of someone else would. When the short form does not identify
+     * one entity, no face is better than a coin flip.
+     */
+    if (claimants.size !== 1) continue
+    const entityId = [...claimants][0]!
+    if (full.some((mention) => mention.label === label)) continue
+    out.push({ label, entityId })
+  }
+
   // Longest first, so « Monkey D. Luffy » wins over « Luffy » at the same spot.
   return out.sort((a, b) => b.label.length - a.label.length)
 }

@@ -8,6 +8,7 @@ import {
   addPortrait,
   addQuote,
   closeDb,
+  raw,
   createEntity,
   resetDatabase,
   seedWorld,
@@ -216,11 +217,11 @@ describe('the beads', () => {
 
     const page = await read(2, 1, 4)
 
-    // What happens, then who walks on, then what it leaves open. The event and
-    // the mystery are entities too and must not also walk on.
+    // Who walks on, then what happens to them, then what it leaves open. The
+    // event and the mystery are entities too and must not also walk on.
     expect(at(page, 2).map((beat) => beat.kind)).toEqual([
-      'evenement',
       'entree',
+      'evenement',
       'question',
     ])
   })
@@ -326,6 +327,75 @@ describe('what the first real chapter showed', () => {
     const page = await read(1, 1, 4)
 
     expect(at(page, 1, 'entree')).toHaveLength(1)
+  })
+})
+
+describe('ce que le vrai chapitre 1 a encore montré', () => {
+  it('calls a character by the short name the sentence uses', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, { matchedLabel: 'Monkey D. Luffy', revealedIn: 1 })
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Luffy quitte le village dans un tonneau, sans se retourner.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const parts = at(await read(1, 1, 4), 1, 'evenement')[0]!.textParts
+
+    expect(parts).not.toBeNull()
+    expect(parts!.filter((part) => part.portrait).map((part) => part.text)).toEqual([
+      'Luffy',
+    ])
+  })
+
+  it('refuses a short name two characters could answer to', async () => {
+    const ace = await createEntity(world, 'character', 1)
+    const other = await createEntity(world, 'character', 1)
+    await addLabel(world, ace, 'Portgas D. Ace', 'true_name', 1, 100)
+    await addLabel(world, other, 'Bannis D. Ace', 'true_name', 1, 100)
+    await addPortrait(world, ace, { matchedLabel: 'Portgas D. Ace', revealedIn: 1 })
+    await addPortrait(world, other, { matchedLabel: 'Bannis D. Ace', revealedIn: 1 })
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Ace traverse la place sans un mot pour les villageois.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    expect(at(await read(1, 1, 4), 1, 'evenement')[0]!.textParts).toBeNull()
+  })
+
+  it('does not quote a chapter whose source is not French', async () => {
+    const subject = await createEntity(world, 'character', 1)
+    await addLabel(world, subject, 'Shanks', 'true_name', 1, 100)
+    const assertionId = await addAssertion(world, {
+      subject,
+      predicate: 'promises',
+      knowledgeFrom: 1,
+      objectValue: { text: 'x' },
+    })
+    await addQuote(world, {
+      assertionId,
+      chapterNumber: 1,
+      text: 'The Red Hair Pirates then raise anchor and set sail from the village.',
+    })
+    await raw`UPDATE chapters SET language = 'en' WHERE user_id = ${world.userId}`
+
+    expect(at(await read(1, 1, 4), 1, 'citation')).toHaveLength(0)
+  })
+
+  it('folds a chapter’s events past the fifth, without dropping any', async () => {
+    for (let i = 0; i < 8; i++) {
+      const event = await createEntity(world, 'event', 1)
+      await addLabel(world, event, `Événement ${i}`, 'true_name', 1, 100)
+      await addEvent(world, event, { summary: `Il arrive ${i}.`, toldIn: 1 })
+    }
+
+    const events = at(await read(1, 1, 4), 1, 'evenement')
+
+    expect(events).toHaveLength(8)
+    expect(events.filter((beat) => beat.collapsed)).toHaveLength(3)
+    expect(events.slice(0, 5).every((beat) => !beat.collapsed)).toBe(true)
   })
 })
 
