@@ -3,8 +3,9 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters, pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { reviewItems } from '@/db/schema/ingestion.ts'
-import { entityLabels } from '@/db/schema/knowledge.ts'
+import { entities, entityLabels } from '@/db/schema/knowledge.ts'
 import type { EvidenceRef } from '@/domains/ai/schemas.ts'
+import { checkTypes, type TypeMismatch } from '@/domains/knowledge/ontology.ts'
 import { groupDuplicates, type DuplicateInfo } from '@/domains/review/duplicates.ts'
 import { storage } from '@/domains/storage/index.ts'
 
@@ -71,6 +72,23 @@ export interface ReviewItemView {
    * rather than inventing a name for it.
    */
   names: Record<string, string>
+  /**
+   * For relations: why this one cannot be written, and what could be.
+   *
+   * A predicate carries the types it accepts, and the database refuses an edge
+   * that disagrees with them (ADR 0004). It was refusing them at the last
+   * possible moment: after « Publier », in a red block listing what did not
+   * make it, with nothing left to do about it. « Monkey D. Luffy member_of
+   * Village de Fuchsia » is the shape it takes — a true fact wearing a
+   * predicate meant for crews.
+   *
+   * Computed here because here is where both ends are already known by name,
+   * which means their node types are one join away. Null when the relation
+   * agrees, when the predicate is one the ontology does not know, or when an
+   * end could not be resolved — in the last two cases nothing can be said
+   * honestly, and the database still fails closed behind us.
+   */
+  typeMismatch: TypeMismatch | null
   /**
    * Set when another item of this run proposes the same thing.
    *
@@ -206,6 +224,7 @@ export async function getReviewQueue(
   // entity whose own card was published in an earlier batch.
   const names = await resolveNames(data.rows, data.forGrouping)
   const merges = await pendingMerges(data.forGrouping)
+  const nodeTypes = await resolveNodeTypes(data.rows, data.forGrouping)
 
   return {
     runId,
@@ -241,6 +260,8 @@ export async function getReviewQueue(
       duplicate: duplicates.get(row.id) ?? null,
       mergeSuggestion:
         row.category === 'entity' ? (merges.get(row.fingerprint) ?? null) : null,
+      typeMismatch:
+        row.category === 'assertion' ? mismatchOf(row.payload, nodeTypes) : null,
       names: Object.fromEntries(
         referencedIds(row.payload)
           .map((id) => [id, names.get(id)] as const)
@@ -498,6 +519,81 @@ async function resolveNames(
   }
 
   return names
+}
+
+/**
+ * The node type behind every identifier a relation names.
+ *
+ * The same two populations resolveNames() deals with, for the same reason: an
+ * end is a UUID when its entity is already in the graph and a local id like
+ * `e3` when it is proposed in this very run. Both have a node type, in
+ * different places — the `entities` row for one, the sibling entity proposal's
+ * payload for the other.
+ *
+ * A local id claimed by two proposals of different types resolves to nothing,
+ * exactly as it does for names. Slices number their entities independently, and
+ * declaring a relation ill-typed on the strength of the wrong slice's entity
+ * would be worse than saying nothing: it would put a red block on a card that
+ * is fine.
+ */
+export async function resolveNodeTypes(
+  rows: Array<{ payload: unknown }>,
+  proposals: Array<{ category: string; payload: unknown }>,
+): Promise<Map<string, string>> {
+  const wanted = new Set(rows.flatMap((row) => referencedIds(row.payload)))
+  if (wanted.size === 0) return new Map()
+
+  const types = new Map<string, string>()
+
+  const claimed = new Map<string, string | null>()
+  for (const proposal of proposals) {
+    if (proposal.category !== 'entity') continue
+    if (proposal.payload === null || typeof proposal.payload !== 'object') continue
+    const record = proposal.payload as Record<string, unknown>
+    const localId = typeof record.local_id === 'string' ? record.local_id.trim() : ''
+    const nodeType = typeof record.node_type === 'string' ? record.node_type.trim() : ''
+    if (localId.length === 0 || nodeType.length === 0) continue
+
+    if (!claimed.has(localId)) claimed.set(localId, nodeType)
+    else if (claimed.get(localId) !== nodeType) claimed.set(localId, null)
+  }
+  for (const [localId, nodeType] of claimed) {
+    if (nodeType !== null && wanted.has(localId)) types.set(localId, nodeType)
+  }
+
+  const storedIds = [...wanted].filter((id) => STORED_ID.test(id))
+  if (storedIds.length > 0) {
+    const rowsFound = await withIngest((db) =>
+      db
+        .select({ id: entities.id, nodeType: entities.nodeType })
+        .from(entities)
+        .where(inArray(entities.id, storedIds)),
+    )
+    for (const row of rowsFound) types.set(row.id, row.nodeType)
+  }
+
+  return types
+}
+
+/** The relation's two ends, checked against what its predicate accepts. */
+export function mismatchOf(
+  payload: unknown,
+  nodeTypes: Map<string, string>,
+): TypeMismatch | null {
+  if (payload === null || typeof payload !== 'object') return null
+  const record = payload as Record<string, unknown>
+
+  const predicate = typeof record.predicate === 'string' ? record.predicate : ''
+  const subject = typeof record.subject === 'string' ? record.subject.trim() : ''
+  if (predicate === '' || subject === '') return null
+
+  // An object that is a literal rather than an entity — « travels_to "la base
+  // de la Marine" » — has no node type, and the database checks none either.
+  const object = typeof record.object === 'string' ? record.object.trim() : ''
+  const objectType = object === '' ? null : (nodeTypes.get(object) ?? null)
+  if (object !== '' && objectType === null) return null
+
+  return checkTypes(predicate, nodeTypes.get(subject) ?? null, objectType)
 }
 
 /**

@@ -70,6 +70,15 @@ export function ReviewBoard({ queue }: Props) {
    * the glossary and stops being asked.
    */
   const [renames, setRenames] = useState<Map<string, string>>(new Map())
+  /*
+   * Predicates the reviewer replaced, by item id.
+   *
+   * Beside the decisions for the same reason a rename is: choosing
+   * « se trouve à » instead of « appartient à » is not yet an answer about
+   * whether the relation is true. It becomes a 'correct' decision at publish
+   * time, and only on an item that was accepted.
+   */
+  const [predicates, setPredicates] = useState<Map<string, string>>(new Map())
   const [cursor, setCursor] = useState(0)
   /**
    * Whether this card was chosen on purpose.
@@ -320,7 +329,11 @@ export function ReviewBoard({ queue }: Props) {
         item.confidence < 0.7 ||
         decisions.has(item.id) ||
         // Already settled by a copy of its own; nothing left to sweep up.
-        autoDeferred.has(item.id)
+        autoDeferred.has(item.id) ||
+        // The database would refuse it, and a bulk action must not queue up a
+        // failure. Which predicate it should have carried is a judgement, and
+        // this button does not make judgements.
+        (item.typeMismatch !== null && !predicates.has(item.id))
       ) {
         continue
       }
@@ -332,7 +345,26 @@ export function ReviewBoard({ queue }: Props) {
       picked.push(item)
     }
     return picked
-  }, [autoDeferred, items, decisions])
+  }, [autoDeferred, items, decisions, predicates])
+
+  /**
+   * Relations marked « accepter » that the database is going to refuse.
+   *
+   * Shown next to the publish button rather than blocking it — publishing the
+   * rest of the batch is still the right move, and this says how much of it
+   * will bounce. Every one of these is a link missing from the graph, which is
+   * the complaint this whole notice exists to answer.
+   */
+  const impossible = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          item.typeMismatch !== null &&
+          decisions.get(item.id) === 'accept' &&
+          !predicates.has(item.id),
+      ).length,
+    [decisions, items, predicates],
+  )
 
   /**
    * Copies of one proposal marked "accept" more than once, right now.
@@ -387,6 +419,24 @@ export function ReviewBoard({ queue }: Props) {
           return { reviewItemId, decision }
         }
 
+        /*
+         * The predicate you picked instead of the one that could not be written.
+         *
+         * 'correct' rather than 'accept', same as a rename: the relation is now
+         * yours — user_validated, locked, proposed by you — which is the honest
+         * record of what happened. The model found the fact and got the shape
+         * wrong; you chose the shape.
+         */
+        if (item.category === 'assertion') {
+          const chosen = predicates.get(reviewItemId)
+          if (!chosen || chosen === payload.predicate) return { reviewItemId, decision }
+          return {
+            reviewItemId,
+            decision: 'correct',
+            correctedPayload: { ...payload, predicate: chosen },
+          }
+        }
+
         if (item.category === 'entity') {
           const renamed = renames.get(reviewItemId)?.trim()
           if (!renamed || renamed === payload.label) return { reviewItemId, decision }
@@ -431,6 +481,7 @@ export function ReviewBoard({ queue }: Props) {
         setResult(response.published)
         setDecisions(new Map())
         setRenames(new Map())
+        setPredicates(new Map())
       } else {
         setError(response.error ?? 'Publication impossible.')
       }
@@ -544,6 +595,16 @@ export function ReviewBoard({ queue }: Props) {
             {counts.defer > 0 && <span className="badge badge-gris">{counts.defer} ⏸</span>}
           </div>
 
+          {impossible > 0 && (
+            <span
+              className="badge badge-rouge"
+              title="Le prédicat n’accepte pas ces types : la base refusera l’écriture. Choisissez-en un autre sur la carte, ou rejetez."
+            >
+              {impossible} relation{impossible > 1 ? 's' : ''} impossible
+              {impossible > 1 ? 's' : ''}
+            </span>
+          )}
+
           {doubleAccepted > 0 && (
             <span
               className="badge badge-rouge"
@@ -643,6 +704,15 @@ export function ReviewBoard({ queue }: Props) {
           onRename={(label) =>
             setRenames((previous) => new Map(previous).set(current.id, label))
           }
+          predicate={predicates.get(current.id) ?? null}
+          onPredicate={(key) =>
+            setPredicates((previous) => {
+              const next = new Map(previous)
+              if (key === '') next.delete(current.id)
+              else next.set(current.id, key)
+              return next
+            })
+          }
           twins={twinsOfCurrent}
           onJump={jumpTo}
           onJumpToItem={(itemId) => {
@@ -741,6 +811,8 @@ function ProposalCard({
   onMove,
   rename,
   onRename,
+  predicate,
+  onPredicate,
   twins,
   onJump,
   onJumpToItem,
@@ -755,6 +827,9 @@ function ProposalCard({
   onMove: (delta: number) => void
   rename: string | null
   onRename: (label: string) => void
+  /** The predicate the reviewer chose in place of the one proposed. */
+  predicate: string | null
+  onPredicate: (key: string) => void
   twins: Twin[]
   onJump: (position: number) => void
   onJumpToItem: (itemId: string) => void
@@ -821,6 +896,15 @@ function ProposalCard({
                 settled={settled}
               />
             )}
+            {item.typeMismatch && (
+              <TypeMismatchNotice
+                mismatch={item.typeMismatch}
+                names={item.names}
+                payload={item.payload}
+                chosen={predicate}
+                onChoose={onPredicate}
+              />
+            )}
             <ProposalBody
               category={item.category}
               payload={item.payload}
@@ -828,6 +912,7 @@ function ProposalCard({
               names={item.names}
               rename={rename}
               onRename={onRename}
+              chosenPredicate={predicate}
               renamedLabels={renamedLabels}
             />
           </div>
@@ -917,6 +1002,105 @@ function MergeNotice({
       >
         Aller au rapprochement
       </button>
+    </div>
+  )
+}
+
+/**
+ * « La base va refuser celle-ci », said before publishing rather than after.
+ *
+ * A predicate carries the node types it accepts and the database enforces it,
+ * so « Monkey D. Luffy member_of Village de Fuchsia » never reaches the graph:
+ * member_of is for crews. That refusal was arriving in the red block *after*
+ * « Publier », among twenty successes, with nothing to do about it — and every
+ * one of them is a link missing from the graph afterwards.
+ *
+ * The list is not an error message but the repair. The fact is almost always
+ * right and only the predicate is wrong: Luffy really does live in Fuchsia, and
+ * `located_at` says so in a way the graph can hold. So every predicate that
+ * accepts these two types is offered, in ontology order — grouped by meaning,
+ * which puts the spatial ones first for a character and a place.
+ *
+ * Nothing is preselected. Choosing for the reviewer would make the correction
+ * invisible, and « the model said member_of, the interface silently wrote
+ * located_at » is exactly the kind of quiet rewriting this repository refuses.
+ */
+function TypeMismatchNotice({
+  mismatch,
+  names,
+  payload,
+  chosen,
+  onChoose,
+}: {
+  mismatch: NonNullable<ReviewItemView['typeMismatch']>
+  names: Record<string, string>
+  payload: unknown
+  chosen: string | null
+  onChoose: (key: string) => void
+}) {
+  const record = (payload ?? {}) as Record<string, unknown>
+  const nameOf = (id: unknown) =>
+    typeof id === 'string' ? (names[id] ?? id) : 'cette entité'
+
+  const culprit = !mismatch.objectAccepted
+    ? {
+        end: nameOf(record.object),
+        type: mismatch.objectType,
+        expected: mismatch.expectedObjectTypes,
+        role: 'objet',
+      }
+    : {
+        end: nameOf(record.subject),
+        type: mismatch.subjectType,
+        expected: mismatch.expectedSubjectTypes,
+        role: 'sujet',
+      }
+
+  return (
+    <div className="mb-3 border-[3px] border-ink bg-[var(--coral)] px-2 py-1.5 text-white">
+      <p className="font-display text-sm uppercase">
+        Relation impossible en l&apos;état
+      </p>
+
+      <p className="mt-1 text-sm">
+        « {predicateLabel(mismatch.predicate)} » n&apos;accepte pas{' '}
+        {culprit.role === 'objet' ? 'un objet' : 'un sujet'} de type «{' '}
+        {culprit.type} » — or {culprit.end} en est un. Attendu :{' '}
+        {culprit.expected.join(', ')}. Acceptée telle quelle, elle sera refusée à
+        l&apos;écriture et le lien manquera dans le graphe.
+      </p>
+
+      {mismatch.alternatives.length > 0 ? (
+        <label className="mt-2 block">
+          <span className="font-display text-xs uppercase">
+            Écrire plutôt
+          </span>
+          <select
+            value={chosen ?? ''}
+            onChange={(event) => onChoose(event.target.value)}
+            className="mt-1 w-full border-[3px] border-ink bg-surface-raised px-2 py-1 text-base text-primary"
+          >
+            <option value="">— garder « {predicateLabel(mismatch.predicate)} » (sera refusée) —</option>
+            {mismatch.alternatives.map((alternative) => (
+              <option key={alternative.key} value={alternative.key}>
+                {alternative.labelFr} ({alternative.key})
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className="mt-1 text-sm">
+          Aucun prédicat de l&apos;ontologie n&apos;accepte ces deux types. Il
+          n&apos;y a rien à corriger ici : rejetez.
+        </p>
+      )}
+
+      {chosen && (
+        <p className="mt-1.5 text-sm">
+          Enregistrée comme votre correction : la relation sera marquée validée
+          par vous plutôt que proposée par le modèle.
+        </p>
+      )}
     </div>
   )
 }
@@ -1099,6 +1283,7 @@ function ProposalBody({
   names,
   rename,
   onRename,
+  chosenPredicate,
   renamedLabels,
 }: {
   category: string
@@ -1107,6 +1292,7 @@ function ProposalBody({
   names: Record<string, string>
   rename: string | null
   onRename: (label: string) => void
+  chosenPredicate: string | null
   renamedLabels: RenamePair[]
 }) {
   const record = (payload ?? {}) as Record<string, unknown>
@@ -1199,12 +1385,19 @@ function ProposalBody({
       ? null
       : String(record.object)
 
+    // Read under the predicate you chose, for the same reason an event is read
+    // under the names you settled: this is the version that will be stored.
+    const written = String(record.predicate ?? '')
+    const shown = chosenPredicate ?? written
+
     return (
       <div className="mt-2">
         <p className="text-primary">
           <EntityEnd id={subject} name={end(record.subject)} />{' '}
-          <span className="text-sm text-accent">
-            {predicateLabel(String(record.predicate ?? ''))}
+          <span
+            className={`text-sm ${shown !== written ? 'text-[var(--epi-validated)]' : 'text-accent'}`}
+          >
+            {predicateLabel(shown)}
           </span>{' '}
           {object !== null ? (
             <EntityEnd id={object} name={end(record.object)} />
