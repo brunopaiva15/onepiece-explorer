@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { quarantineSummary } from '@/domains/pipeline/quarantine.ts'
 import { getReviewQueue } from '@/domains/review/queue.ts'
+import { ReopenPanel } from './reopen-panel.tsx'
 import { ReviewBoard } from './review-board.tsx'
 
 export const metadata: Metadata = { title: 'Centre de revue' }
@@ -26,6 +27,22 @@ export default async function ReviewPage({
 
   const queue = await getReviewQueue(session.userId, runId)
   if (!queue) notFound()
+
+  /*
+   * What was decided, read separately from what is pending.
+   *
+   * Two reads rather than one with `includeDecided`, because the queue's limit
+   * would then be shared: a chapter with two hundred rejected proposals would
+   * push the ones still waiting off the board, which is the opposite of what
+   * this page is for.
+   */
+  const settled = await getReviewQueue(session.userId, runId, {
+    includeDecided: true,
+    limit: 500,
+  })
+  const reopenable = (settled?.items ?? []).filter(
+    (item) => item.status === 'rejected' || item.status === 'deferred',
+  )
 
   const quarantined = await quarantineSummary(session.userId, runId)
 
@@ -61,6 +78,10 @@ export default async function ReviewPage({
       </div>
 
       <ReviewBoard queue={serialisable(queue)} />
+
+      {reopenable.length > 0 && (
+        <ReopenPanel runId={runId} items={serialisable(reopenable)} />
+      )}
 
       {quarantined.length > 0 && (
         <details className="panneau mt-8">

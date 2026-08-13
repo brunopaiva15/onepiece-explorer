@@ -555,40 +555,65 @@ export async function publishDecisions(
         continue
       }
 
-      const [assertion] = await db
-        .insert(assertions)
-        .values({
-          workId: run.workId,
-          userId,
-          subjectEntityId: subjectId,
-          predicate: candidate.predicate,
-          objectEntityId: objectId,
-          objectValue:
-            candidate.object_value === null ? null : { value: candidate.object_value },
-          knowledgeFromChapter: run.chapterNumber,
-          observedInChapter: run.chapterNumber,
-          confidence: candidate.confidence,
-          epistemicStatus:
-            decision.decision === 'correct' ? 'user_validated' : candidate.epistemic_status,
-          reviewStatus: 'accepted',
-          // A corrected assertion is the user's, not the model's, and it is
-          // locked: a later run must never supersede a human's own words.
-          proposedBy: decision.decision === 'correct' ? 'user' : 'ai',
-          locked: decision.decision === 'correct',
-          pipelineVersion: PIPELINE_VERSION,
-          promptVersion: PROMPT_VERSION,
-          runId,
-          proposalFingerprint: item.fingerprint,
+      /*
+       * The ontology's last word, and the only place it is enforced.
+       *
+       * A trigger refuses an edge whose ends do not match the predicate —
+       * « destroys » takes an object, a place or a group, never a character.
+       * That check is right and it belongs in the database. What was wrong is
+       * what happened next: the exception escaped the whole publication, so one
+       * nonsensical relation out of eighty threw away the seventy-nine good
+       * ones and showed the reader a raw INSERT statement.
+       *
+       * A savepoint contains it. PostgreSQL aborts a transaction on any error,
+       * so catching in JavaScript is not enough — the nested transaction is a
+       * SAVEPOINT, and rolling back to it leaves everything already published
+       * intact. The refusal then travels the same way every other one does: a
+       * line in `failures`, in French, naming the item.
+       */
+      let assertionId: string | null
+      try {
+        assertionId = await db.transaction(async (tx) => {
+          const [row] = await tx
+            .insert(assertions)
+            .values({
+              workId: run.workId,
+              userId,
+              subjectEntityId: subjectId,
+              predicate: candidate.predicate,
+              objectEntityId: objectId,
+              objectValue:
+                candidate.object_value === null ? null : { value: candidate.object_value },
+              knowledgeFromChapter: run.chapterNumber,
+              observedInChapter: run.chapterNumber,
+              confidence: candidate.confidence,
+              epistemicStatus:
+                decision.decision === 'correct' ? 'user_validated' : candidate.epistemic_status,
+              reviewStatus: 'accepted',
+              // A corrected assertion is the user's, not the model's, and it is
+              // locked: a later run must never supersede a human's own words.
+              proposedBy: decision.decision === 'correct' ? 'user' : 'ai',
+              locked: decision.decision === 'correct',
+              pipelineVersion: PIPELINE_VERSION,
+              promptVersion: PROMPT_VERSION,
+              runId,
+              proposalFingerprint: item.fingerprint,
+            })
+            .returning({ id: assertions.id })
+          return row?.id ?? null
         })
-        .returning({ id: assertions.id })
+      } catch (error: unknown) {
+        result.failures.push({ reviewItemId: item.id, reason: refusalReason(error) })
+        continue
+      }
 
-      if (!assertion) {
+      if (assertionId === null) {
         result.failures.push({ reviewItemId: item.id, reason: 'Insertion échouée.' })
         continue
       }
 
       const anchors = await insertEvidence(db, {
-        assertionId: assertion.id,
+        assertionId,
         userId,
         chapterId: run.chapterId,
         refs: candidate.evidence,
@@ -1067,6 +1092,25 @@ async function exactTwin(
     .limit(1)
 
   return row?.id ?? null
+}
+
+/**
+ * What the database refused, in the words it refused it with.
+ *
+ * The triggers raise French sentences that name the predicate and the type —
+ * they are better error messages than anything this layer could compose. The
+ * driver wraps them in « Failed query: insert into … » plus the parameters,
+ * which is the part nobody can read and the part that was shown.
+ */
+function refusalReason(error: unknown): string {
+  const cause = (error as { cause?: unknown })?.cause
+  const message =
+    (cause instanceof Error ? cause.message : null) ??
+    (error instanceof Error ? error.message : null)
+
+  if (!message) return 'Refusée par la base.'
+  const firstLine = message.split('\n')[0]?.trim() ?? message
+  return firstLine.startsWith('Failed query') ? 'Refusée par la base.' : firstLine
 }
 
 async function addMergedLabel(

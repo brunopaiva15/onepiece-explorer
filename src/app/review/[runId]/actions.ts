@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { requireOwner } from '@/domains/auth/session.ts'
 import { illustrateQuietly } from '@/domains/images/enrich.ts'
+import { reopenItems } from '@/domains/review/reopen.ts'
 import { autoReview, autoReviewEnabled } from '@/domains/review/auto.ts'
 import {
   markChapterReviewed,
@@ -116,6 +117,34 @@ export async function markChapterReviewedAction(
       }
     }
     return { ok: true, chapterNumber }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Opération impossible.',
+    }
+  }
+}
+
+/**
+ * Put a rejected or deferred proposal back in the queue.
+ *
+ * The escape hatch the review centre did not have. Rejecting a proposal also
+ * recorded the verdict against its fingerprint so that a re-import would not
+ * ask again — which is right, and which left a mistaken rejection with no way
+ * back, taking the chapter's relations down with it. Reopening deletes the
+ * recorded verdict too; see reopenItems().
+ */
+export async function reopenItemsAction(
+  runId: string,
+  itemIds: string[],
+): Promise<{ ok: boolean; reopened?: number; error?: string }> {
+  try {
+    const session = await requireOwner()
+    const { reopened } = await reopenItems(session.userId, runId, itemIds)
+
+    revalidatePath(`/review/${runId}`)
+
+    return { ok: true, reopened }
   } catch (error) {
     return {
       ok: false,
