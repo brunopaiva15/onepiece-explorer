@@ -336,6 +336,19 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
       -- appearance rather than on first_seen_chapter, which holds the
       -- chapter the reader first *heard of* him — the right anchor for the
       -- boundary, and the wrong one for this.
+      --
+      -- It takes a stated mention *before* to claim it, and that condition is
+      -- the whole of what keeps this arm honest. Absence of a stated
+      -- appearance is not evidence of absence: a chapter published before
+      -- migration 0020 states nothing either way, so the first chapter
+      -- imported after it was, for every character in the library, "the first
+      -- chapter stating that they are on the page" — and chapter 21 walked
+      -- Luffy on again in front of a reader who had followed him since
+      -- chapter 1. Requiring the mention makes the two arms say the same
+      -- thing: someone walks on late here only where the thread earlier said
+      -- « est mentionné » about them, which is the same stated row read from
+      -- the other side. A library that says nothing keeps the old answer —
+      -- walked on when first seen, and never again.
       SELECT 'entree', 1, en.id,
              (SELECT l.label FROM entity_labels l
                WHERE l.entity_id = en.id
@@ -349,6 +362,10 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
                       WHERE o.entity_id = en.id AND o.stated
                         AND o.chapter_number = ${chapter}
                         AND o.kind = 'appearance')
+         AND EXISTS (SELECT 1 FROM occurrences o
+                      WHERE o.entity_id = en.id AND o.stated
+                        AND o.chapter_number < ${chapter}
+                        AND o.kind = 'mention')
          AND NOT EXISTS (SELECT 1 FROM occurrences o
                           WHERE o.entity_id = en.id AND o.stated
                             AND o.chapter_number < ${chapter}
