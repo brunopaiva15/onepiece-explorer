@@ -215,17 +215,116 @@ describe('the beads', () => {
 
     const page = await read(2, 1, 4)
 
-    // Who walks on, then what happens, then the names, then what it leaves open.
+    // What happens, then who walks on, then what it leaves open. The event and
+    // the mystery are entities too and must not also walk on.
     expect(at(page, 2).map((beat) => beat.kind)).toEqual([
-      'entree',
-      'entree',
-      'entree',
       'evenement',
-      'nom',
-      'nom',
-      'nom',
+      'entree',
       'question',
     ])
+  })
+})
+
+/**
+ * Everything below was found by looking at the real thing.
+ *
+ * A library of invented fixtures has three entities and one event per chapter,
+ * so none of these showed up in the tests: they need a chapter that introduces
+ * thirty-five entities, half of which are events. Chapter 1 of the real work
+ * did, and produced a page two hundred inches long in which every event
+ * appeared three times.
+ */
+describe('what the first real chapter showed', () => {
+  it('does not walk an event on as if it were a character', async () => {
+    const event = await createEntity(world, 'event', 1)
+    await addLabel(world, event, 'Le duel du quai', 'true_name', 1, 100)
+    await addEvent(world, event, { summary: 'Ils se battent.', toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(0)
+    expect(at(page, 1, 'evenement')).toHaveLength(1)
+  })
+
+  it('does not walk a mystery on as if it were a character', async () => {
+    const mystery = await createEntity(world, 'mystery', 1)
+    await addLabel(world, mystery, 'La marque', 'true_name', 1, 100)
+    await addMystery(world, mystery, { question: 'Qui a laissé la marque ?', openedIn: 1 })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(0)
+    expect(at(page, 1, 'question')).toHaveLength(1)
+  })
+
+  it('does not call a first name a reveal', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'nom')).toHaveLength(0)
+    expect(at(page, 1, 'entree')[0]!.text).toBe('Monkey D. Luffy')
+  })
+
+  it('does not print an event’s sentence twice when it is also its name', async () => {
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Shanks sauve Luffy et perd son bras gauche.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+    const [beat] = at(page, 1, 'evenement')
+
+    expect(beat!.text).toBe(phrase)
+    expect(beat!.detail).toBeNull()
+  })
+
+  it('keeps events in the order they were told, not in alphabetical order', async () => {
+    for (const name of ['Zéphyr lève l’ancre', 'Un canot dérive', 'Alba tombe']) {
+      const event = await createEntity(world, 'event', 1)
+      await addLabel(world, event, name, 'true_name', 1, 100)
+      await addEvent(world, event, { summary: `${name} vraiment.`, toldIn: 1 })
+    }
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'evenement').map((beat) => beat.text)).toEqual([
+      'Zéphyr lève l’ancre',
+      'Un canot dérive',
+      'Alba tombe',
+    ])
+  })
+
+  it('refuses a quote torn out of the middle of a sentence', async () => {
+    const subject = await createEntity(world, 'character', 1)
+    await addLabel(world, subject, 'Luffy', 'true_name', 1, 100)
+    const assertionId = await addAssertion(world, {
+      subject,
+      predicate: 'seeks',
+      knowledgeFrom: 1,
+      objectValue: { text: 'le One Piece' },
+    })
+    await addQuote(world, {
+      assertionId,
+      chapterNumber: 1,
+      text: 'declaring he will get a crew stronger than Shanks and the most',
+    })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'citation')).toHaveLength(0)
+  })
+
+  it('shows the same line once, however many rows carry it', async () => {
+    for (const _ of [0, 1]) {
+      const twin = await createEntity(world, 'character', 1)
+      await addLabel(world, twin, 'Benn Beckman', 'true_name', 1, 100)
+    }
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(1)
   })
 })
 

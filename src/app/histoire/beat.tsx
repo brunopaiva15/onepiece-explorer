@@ -41,7 +41,16 @@ export function Beat({ beat }: { beat: StoryBeat }) {
   if (beat.kind === 'citation') {
     return (
       <li className="perle perle-citation" data-perle>
-        <blockquote>{beat.text}</blockquote>
+        <figure>
+          <blockquote>{beat.text}</blockquote>
+          {/* Not decoration. Everything the graph writes is French; a citation
+              is a copy verified character by character, so it keeps the
+              language of the source — and an English line landing unannounced
+              on a French page reads as a bug rather than as a quotation. */}
+          <figcaption className="perle-source">
+            Cité du chapitre {beat.chapter}, dans la langue de la source
+          </figcaption>
+        </figure>
       </li>
     )
   }

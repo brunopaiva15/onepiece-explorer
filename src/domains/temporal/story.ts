@@ -158,80 +158,121 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
   const [rows, refuted] = await Promise.all([
     withBoundary({ userId, boundaryChapter: chapter }, async (db) =>
       db.execute(sql`
+        -- One line, quoted exactly, and only if it reads as a line: a capital
+        -- at the start, a full stop at the end. The excerpts are prose from the
+        -- source, so the longest one is very often a clause torn out of the
+        -- middle of a paragraph — « declaring he will get a crew that is… » is
+        -- worse than no quote at all. Dialogue wins over narration when both
+        -- qualify, because that is what a quoted line is for.
         (SELECT 'citation' AS kind, 0 AS rang, NULL::uuid AS "entityId",
                 ev.excerpt AS texte, NULL::text AS detail,
-                NULL::jsonb AS extra, 0 AS ordre
+                NULL::jsonb AS extra, 0::numeric AS ordre
            FROM evidence ev
            JOIN assertions a ON a.id = ev.assertion_id
           WHERE a.knowledge_from_chapter = ${chapter}
             AND ev.excerpt IS NOT NULL
             AND char_length(ev.excerpt) BETWEEN ${QUOTE_MIN} AND ${QUOTE_MAX}
-          ORDER BY char_length(ev.excerpt) DESC
+            AND ev.excerpt ~ '^[[:upper:]«]'
+            AND ev.excerpt ~ '[.!?…»]$'
+          ORDER BY (ev.kind = 'dialogue') DESC, char_length(ev.excerpt) DESC
           LIMIT 1)
 
         UNION ALL
 
-        SELECT 'entree', 1, en.id,
-               (SELECT l.label FROM entity_labels l
-                 WHERE l.entity_id = en.id
-                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-                 LIMIT 1),
-               en.node_type, NULL::jsonb, 0
-          FROM entities en
-         WHERE en.first_seen_chapter = ${chapter}
-
-        UNION ALL
-
         SELECT CASE WHEN e.is_flashback THEN 'souvenir' ELSE 'evenement' END,
-               CASE WHEN e.is_flashback THEN 3 ELSE 2 END,
+               CASE WHEN e.is_flashback THEN 2 ELSE 1 END,
                e.entity_id,
                (SELECT l.label FROM entity_labels l
                  WHERE l.entity_id = e.entity_id
                  ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
                  LIMIT 1),
-               e.summary, e.story_time, 0
+               e.summary, e.story_time,
+               extract(epoch FROM e.created_at)
           FROM events e
           JOIN entities en ON en.id = e.entity_id
          WHERE coalesce(e.told_in_chapter, e.shown_in_chapter, 0) = ${chapter}
 
         UNION ALL
 
-        -- A name landing on someone who already had one: the best beat the
-        -- schema holds, and the reason a bead carries a second line at all.
-        SELECT 'nom', 4, l.entity_id, l.label,
+        -- A name landing on someone who *already had one*. Without the EXISTS
+        -- this fires for every label in the chapter, which on chapter 1 is
+        -- every entity in the story — and a first name is not a reveal, it is
+        -- an introduction, which the next arm already makes.
+        SELECT 'nom', 3, l.entity_id, l.label,
                (SELECT p.label FROM entity_labels p
                  WHERE p.entity_id = l.entity_id
                    AND p.revealed_in_chapter < ${chapter}
                  ORDER BY p.precedence DESC, p.revealed_in_chapter DESC
                  LIMIT 1),
-               NULL::jsonb, l.precedence
+               NULL::jsonb, -l.precedence
           FROM entity_labels l
           JOIN entities en ON en.id = l.entity_id
          WHERE l.revealed_in_chapter = ${chapter}
+           AND EXISTS (SELECT 1 FROM entity_labels p
+                        WHERE p.entity_id = l.entity_id
+                          AND p.revealed_in_chapter < ${chapter})
 
         UNION ALL
 
-        SELECT 'reponse', 6, m.entity_id, m.question, NULL, NULL::jsonb, 0
+        -- Walking on is for whoever has no beat of their own. An event and a
+        -- mystery are entities too, and without this they arrived twice: once
+        -- as themselves, once as « entre en scène · Événement ».
+        SELECT 'entree', 4, en.id,
+               (SELECT l.label FROM entity_labels l
+                 WHERE l.entity_id = en.id
+                 ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+                 LIMIT 1),
+               en.node_type, NULL::jsonb,
+               extract(epoch FROM en.created_at)
+          FROM entities en
+         WHERE en.first_seen_chapter = ${chapter}
+           AND NOT EXISTS (SELECT 1 FROM events e2 WHERE e2.entity_id = en.id)
+           AND NOT EXISTS (SELECT 1 FROM mysteries m2 WHERE m2.entity_id = en.id)
+
+        UNION ALL
+
+        SELECT 'reponse', 6, m.entity_id, m.question, NULL, NULL::jsonb,
+               extract(epoch FROM m.created_at)
           FROM mysteries m
           JOIN entities en ON en.id = m.entity_id
          WHERE m.resolved_in_chapter = ${chapter}
 
         UNION ALL
 
-        SELECT 'question', 7, m.entity_id, m.question, NULL, NULL::jsonb, 0
+        SELECT 'question', 7, m.entity_id, m.question, NULL, NULL::jsonb,
+               extract(epoch FROM m.created_at)
           FROM mysteries m
           JOIN entities en ON en.id = m.entity_id
          WHERE m.opened_in_chapter = ${chapter}
 
-        ORDER BY rang, ordre DESC, texte
+        -- Narrative order, never alphabetical: sorting the beads by their text
+        -- turns a chapter into an index of itself.
+        ORDER BY rang, ordre
       `),
     ),
     readRefutations(userId, chapter),
   ])
 
-  const beats: StoryBeat[] = (rows as unknown as Row[]).map((row, index) =>
-    compose(row, chapter, index),
-  )
+  /*
+   * Deduplicated on what the reader actually sees.
+   *
+   * Entity resolution does not always merge two rows that carry the same
+   * name, and a thread is the one place where that shows: the same line,
+   * twice, one bead apart. Two rows may well be two entities; two identical
+   * beads are never two beats.
+   */
+  const seen = new Set<string>()
+  const beats: StoryBeat[] = []
+  for (const [index, row] of (rows as unknown as Row[]).entries()) {
+    const beat = compose(row, chapter, index)
+    // A name landing with nothing to replace is an introduction, and `entree`
+    // has already made it.
+    if (beat.kind === 'nom' && beat.detail === null) continue
+    const key = `${beat.kind}|${beat.text}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    beats.push(beat)
+  }
 
   // Rank 5: what falls, after what happened and before what it leaves open.
   const opened = beats.findIndex((beat) => beat.kind === 'reponse' || beat.kind === 'question')
@@ -258,16 +299,23 @@ function compose(row: Row, chapter: number, index: number): StoryBeat {
     case 'evenement':
     case 'souvenir': {
       const when = describeStoryTime(row.extra)
+      /*
+       * An event is usually named by its own summary — the pipeline has no
+       * better title for « Shanks sauve Luffy et perd son bras gauche » than
+       * that sentence. Printing both lines gave every event bead the same
+       * sentence twice.
+       */
+      const summary =
+        row.detail !== null && row.detail.trim() === text.trim() ? null : row.detail
       return {
         ...base,
         kind: row.kind,
         text: text === '' ? 'événement sans nom' : text,
-        // The summary carries the telling; the in-world moment is appended
-        // only when the pages actually give one.
+        // The in-world moment is appended only when the pages give one.
         detail:
           when && when.kind !== 'unknown'
-            ? [row.detail, when.description].filter(Boolean).join(' — ')
-            : row.detail,
+            ? [summary, when.description].filter(Boolean).join(' — ')
+            : summary,
       }
     }
     case 'nom':

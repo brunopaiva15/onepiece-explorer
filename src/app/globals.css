@@ -719,6 +719,15 @@ hr.regle {
   color: var(--text-primary);
 }
 
+.perle-source {
+  margin-top: 0.45rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
 /* --- The chapter notch --------------------------------------------------- */
 
 .encoche {
