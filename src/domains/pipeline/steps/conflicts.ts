@@ -130,11 +130,12 @@ export async function runConflicts(context: StepContext): Promise<StepResult> {
         proposalFingerprint: item.fingerprint,
         against: existing,
         kind: conflict.kind,
-        explanation: conflict.explain(
-          labelOf.get(existing.subject) ?? existing.subject,
-          existing.knowledgeFrom,
-          chapterNumber,
-        ),
+        explanation: conflict.explain({
+          subject: labelOf.get(existing.subject) ?? existing.subject,
+          object: endLabel(existing, labelOf),
+          since: existing.knowledgeFrom,
+          now: chapterNumber,
+        }),
       })
     }
   }
@@ -199,9 +200,37 @@ export async function runConflicts(context: StepContext): Promise<StepResult> {
 
 type ConflictKind = 'same_predicate_different_object' | 'explicit_refutation' | 'death_after_action'
 
+/** How the accepted assertion reads, at the chapter being reviewed. */
+interface ConflictLabels {
+  /** Its subject, under the name the reader has for it here. */
+  subject: string
+  /** Its other end: an entity's label, or the literal value it carries. */
+  object: string
+  /** The chapter that established it. */
+  since: number
+  /** The chapter under review. */
+  now: number
+}
+
 interface Conflict {
   kind: ConflictKind
-  explain: (subjectLabel: string, since: number, now: number) => string
+  explain: (labels: ConflictLabels) => string
+}
+
+/**
+ * How the accepted assertion's other end reads at this chapter.
+ *
+ * A literal object is already its own text; an entity gets the label the reader
+ * has for it. Falling back to the raw id matters more than it looks: a label
+ * revealed after this chapter is correctly absent from `labelOf`, and an empty
+ * string there would leave the sentence saying « ce qui liait « Zoro » à «  » ».
+ */
+function endLabel(
+  existing: { object: string | null; objectValue: unknown },
+  labelOf: Map<string, string>,
+): string {
+  if (existing.object) return labelOf.get(existing.object) ?? existing.object
+  return String(existing.objectValue ?? '')
 }
 
 /**
@@ -212,7 +241,7 @@ interface Conflict {
  * than missing a subtle collision — the review queue only works while the things
  * in it are worth reading.
  */
-function detectConflict(
+export function detectConflict(
   proposal: CandidateAssertion,
   existing: {
     subject: string
@@ -221,22 +250,46 @@ function detectConflict(
     objectValue: unknown
   },
 ): Conflict | null {
-  const sameSubject = proposal.subject === existing.subject
-  if (!sameSubject) return null
+  /*
+   * A refutation names both of its ends, and contests only the belief that
+   * joins them.
+   *
+   * Matching on the subject alone was a contradiction by construction in the
+   * wrong sense: « Zoro réfute X » collided with *every* accepted assertion
+   * about Zoro, so one proposal raised seven cards, each pointing at a
+   * different row and every one of them reading the same — the sentence was
+   * composed from the subject label and a chapter number and nothing else. The
+   * reader cannot tell those apart, and there is nothing to tell apart, since
+   * at most one of the seven beliefs is the one being refuted.
+   *
+   * The pair is unordered because the stored belief's orientation is arbitrary
+   * with respect to the refutation: `member_of(Zoro, équipage)` is the same
+   * target whether the proposal reads Zoro→équipage or the reverse.
+   *
+   * A refutation carrying a literal rather than an entity points at nothing
+   * identifiable, so it raises no card here — and loses nothing, because
+   * `refutes` and `contradicts` are flagged `requiresExplicitReview` in the
+   * ontology: the proposal still reaches the review centre on its own card,
+   * where refusing it is the same decision without the false precision of a
+   * contradiction against a row nobody chose.
+   */
+  if (proposal.predicate === 'refutes' || proposal.predicate === 'contradicts') {
+    if (!proposal.object || !existing.object) return null
 
-  // A refutation predicate aimed at the same subject is a contradiction by
-  // construction — that is what the predicate means.
-  if (
-    proposal.predicate === 'refutes' ||
-    proposal.predicate === 'contradicts'
-  ) {
+    const sameLink =
+      (proposal.subject === existing.subject && proposal.object === existing.object) ||
+      (proposal.subject === existing.object && proposal.object === existing.subject)
+    if (!sameLink) return null
+
     return {
       kind: 'explicit_refutation',
-      explain: (label, since, now) =>
-        `Le chapitre ${now} réfute explicitement ce qui était établi à propos de ` +
-        `« ${label} » depuis le chapitre ${since}.`,
+      explain: ({ subject, object, since, now }) =>
+        `Le chapitre ${now} réfute explicitement ce qui liait « ${subject} » à ` +
+        `« ${object} » (${existing.predicate}) depuis le chapitre ${since}.`,
     }
   }
+
+  if (proposal.subject !== existing.subject) return null
 
   /*
    * Acting after dying.
@@ -249,8 +302,8 @@ function detectConflict(
   if (existing.predicate === 'dies_at' && ACTION_PREDICATES.has(proposal.predicate)) {
     return {
       kind: 'death_after_action',
-      explain: (label, since, now) =>
-        `« ${label} » est mort selon le chapitre ${since}, mais le chapitre ${now} le montre ` +
+      explain: ({ subject, since, now }) =>
+        `« ${subject} » est mort selon le chapitre ${since}, mais le chapitre ${now} le montre ` +
         `encore actif. Soit la mort n'était qu'apparente, soit l'un des deux passages est ` +
         `un souvenir ou un récit.`,
     }
@@ -280,9 +333,9 @@ function detectConflict(
 
   return {
     kind: 'same_predicate_different_object',
-    explain: (label, since, now) =>
+    explain: ({ subject, object, since, now }) =>
       `Le chapitre ${now} donne une valeur différente pour « ${proposal.predicate} » ` +
-      `à propos de « ${label} », établie autrement depuis le chapitre ${since}.`,
+      `à propos de « ${subject} », qui valait « ${object} » depuis le chapitre ${since}.`,
   }
 }
 
