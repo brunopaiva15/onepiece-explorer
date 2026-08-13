@@ -45,6 +45,7 @@ function sources(overrides?: { allowed?: string[] }) {
     ],
     descriptions: [DESCRIPTION],
     allowedRefs: overrides?.allowed ?? ['b1', 'b2', 'p1c1', 'p1c2'],
+    tolerateNoise: true,
   })
 }
 
@@ -394,6 +395,7 @@ describe('blocking test 5 — a false instruction on a page is narration', () =>
       textBlocks: [{ ref: 'b9', text: injected }],
       descriptions: [DESCRIPTION],
       allowedRefs: ['b9', 'p1c2'],
+      tolerateNoise: true,
     })
 
     // Transcribing it is correct: it is text on the page.

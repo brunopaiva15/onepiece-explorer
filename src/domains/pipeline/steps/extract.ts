@@ -766,6 +766,9 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         textBlocks: slice.blocks,
         descriptions: slice.descriptions,
         allowedRefs: refs,
+        // Only a scanned chapter was read by a machine. What you typed is
+        // quoted exactly or not at all.
+        tolerateNoise: context.sourceKind === 'pages',
       }),
       ontology,
       /*
