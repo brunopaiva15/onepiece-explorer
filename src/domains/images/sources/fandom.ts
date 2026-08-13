@@ -144,14 +144,16 @@ export async function lookupFandomImage(
  * The same name, with the article the wiki files it under.
  *
  * The graph holds « Équipage du Roux »; the article is « L'Équipage du Roux ».
- * That is a determiner, not a different subject, and refusing it costs a
- * picture that plainly exists. Crews, ships and organisations are where French
- * titles carry the article and our labels do not.
  *
- * Still an exact-title match, which is the whole guarantee: a determiner cannot
- * make « Équipage du Roux » resolve to something else. Two variants, not five —
- * these are requests to somebody's free wiki, and the elision rule picks the
- * only one that could be right.
+ * Mostly the wiki already knows that. Asked for the bare name, the French wiki
+ * answers with a page redirect to the article and its picture — measured, not
+ * assumed. This is for the titles it has no redirect for, so it is *one* extra
+ * attempt rather than the four an untested guess would have made: every one of
+ * them is a request to a free wiki, and the entities that reach this code are
+ * precisely the ones most likely to have no article under any spelling.
+ *
+ * Still an exact-title match, which is the whole guarantee — a determiner
+ * cannot make « Équipage du Roux » resolve to something else.
  */
 export function frenchTitles(title: string): string[] {
   const bare = title.trim()
@@ -164,7 +166,7 @@ export function frenchTitles(title: string): string[] {
     bare.normalize('NFD').replace(/\p{Diacritic}/gu, '')[0]?.toLowerCase() ?? ''
   const elides = 'aeiouyh'.includes(first)
 
-  return [bare, elides ? `L'${bare}` : `Le ${bare}`, `Les ${bare}`]
+  return [bare, elides ? `L'${bare}` : `Les ${bare}`]
 }
 
 function toCandidate(answer: Answer, lang: Lang, asked: string): ImageCandidate {
