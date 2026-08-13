@@ -122,7 +122,7 @@ export function RenameEntity({
 
   if (!open) {
     return (
-      <div className="mt-4">
+      <div>
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -142,7 +142,8 @@ export function RenameEntity({
   }
 
   return (
-    <section className="mt-4 rounded-sm border border-line bg-surface-raised p-4">
+    // Full width: the pair of buttons shares a row, and an open form does not.
+    <section className="w-full rounded-sm border border-line bg-surface-raised p-4">
       <h2 className="text-lg font-semibold text-primary">Corriger un nom</h2>
       <p className="mt-1 text-sm text-secondary">
         Pour une traduction que le pipeline a devinée de travers — Helmeppo

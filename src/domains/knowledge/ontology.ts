@@ -28,12 +28,18 @@ export const NODE_TYPES = [
   {
     key: 'object',
     labelFr: 'Objet',
-    description: 'Arme, navire, document, trésor, ressource, artefact.',
+    description:
+      'Arme, navire, document, trésor, ressource, artefact. Un fruit du démon ' +
+      'en est un : il se mange, se vole, se transporte et peut réapparaître ' +
+      'ailleurs — c’est la capacité qu’il confère qui est un pouvoir.',
   },
   {
     key: 'power',
     labelFr: 'Pouvoir',
-    description: 'Fruit du démon, technique, style de combat, capacité.',
+    description:
+      'Une capacité et son exercice : le pouvoir qu’un fruit confère, une ' +
+      'technique nommée, un style de combat. Pas le fruit lui-même, qui est ' +
+      'un objet.',
   },
   {
     key: 'species',

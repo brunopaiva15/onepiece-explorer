@@ -7,6 +7,7 @@ import { displayImage } from '@/domains/images/index.ts'
 import { labelKindLabel } from '@/domains/knowledge/label-kind.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 import { RenameEntity } from './rename-entity.tsx'
+import { RetypeEntity } from './retype-entity.tsx'
 
 export const metadata: Metadata = { title: 'Fiche' }
 export const dynamic = 'force-dynamic'
@@ -127,17 +128,27 @@ export default async function EntityPage({
         </header>
 
         {/*
-         * A name is the one thing on this page you can be sure of and the
-         * pipeline cannot: whether « Helmeppo » is called Hermep in French is a
-         * convention you hold, not a fact in the chapter. Under the cover
-         * rather than in it — a correction is a rare gesture, and the fiche
-         * opens on a face and a name, not on a form.
+         * The two things on this page you can be sure of and the pipeline
+         * cannot: whether « Helmeppo » is called Hermep in French, and whether
+         * the Bara Bara no Mi is a power or the fruit you eat to get one.
+         * Neither is a fact in the chapter — both are conventions you hold.
          *
-         * A visitor reading a public library gets no button. The action checks
-         * ownership again on its own.
+         * Under the cover rather than in it, and side by side: a correction is
+         * a rare gesture, and the fiche opens on a face and a name, not on two
+         * forms. Whichever one is opened takes the row to itself.
+         *
+         * A visitor reading a public library gets no button. Both actions check
+         * ownership again on their own.
          */}
         {session.isOwner && (
-          <RenameEntity labels={sheet.labels} displayLabel={sheet.displayLabel} />
+          <div className="mt-4 flex flex-wrap items-start gap-2">
+            <RenameEntity labels={sheet.labels} displayLabel={sheet.displayLabel} />
+            <RetypeEntity
+              entityId={sheet.id}
+              nodeType={sheet.nodeType}
+              displayLabel={sheet.displayLabel}
+            />
+          </div>
         )}
 
         {sheet.labels.length > 1 && (

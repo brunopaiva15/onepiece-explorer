@@ -91,6 +91,24 @@ identique existe déjà : la survivante garde la plus forte précédence de la p
 plus ancienne révélation, parce que l'entité portait bien ce nom à ce
 chapitre-là, mal orthographié.
 
+**Et un type se corrige aussi.** Le Bara Bara no Mi est un fruit : il se mange,
+il se vole, il se transporte — et le graphe le rangeait en « Pouvoir », juste à
+côté du Bara Bara no Hou, qui est la technique qu'il donne. L'ontologie le
+disait elle-même, dans la description remise au modèle ; elle dit désormais
+qu'un fruit du démon est un objet et qu'un pouvoir est ce qu'il confère. Pour ce
+qui est déjà publié, la fiche porte un bouton « Changer le type », et les
+réglages reclassent d'un coup toutes les entités dont le nom finit par « no Mi ».
+Le type est une propriété de la chose, donc le changement suit toute la
+composante d'identité quel que soit le curseur : deux moitiés d'une même entité
+ne peuvent pas être en désaccord sur ce qu'elle est. Ce qu'il ne fait jamais,
+c'est trancher à votre place. L'ontologie type les deux bouts de chaque relation
+et la base ne le vérifie qu'à l'insertion, donc un changement de type peut
+laisser derrière lui des faits qu'elle n'aurait jamais acceptés : ils sont
+cherchés, montrés, et **rien n'est écrit tant que vous ne les avez pas lus** ;
+confirmés, ils sont rejetés plutôt que supprimés, lignes et preuves intactes. Et
+un nœud qui porte un résumé d'événement ou la question d'un mystère est refusé
+plutôt que cascadé — personne n'a demandé la suppression d'une phrase.
+
 Le chapitre peut être **récupéré depuis le One Piece Fandom** par son numéro :
 les deux versions arrivent d'un coup, l'anglaise comme texte citable — c'est la
 plus détaillée, et un graphe ne contient que ce que sa source affirme — et la

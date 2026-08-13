@@ -9,6 +9,10 @@ import {
   type DeletionResult,
 } from '@/domains/chapters/delete.ts'
 import { enrichEntityImages } from '@/domains/images/index.ts'
+import {
+  retypeDevilFruitsAsObjects,
+  type FruitReclassification,
+} from '@/domains/knowledge/retype.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
 
 export interface PreviewResult {
@@ -146,6 +150,47 @@ export async function enrichImagesAction(): Promise<EnrichImagesResult> {
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Enrichissement impossible.',
+    }
+  }
+}
+
+export interface ReclassifyFruitsResult {
+  ok: boolean
+  result?: FruitReclassification
+  error?: string
+}
+
+/**
+ * Move every Devil Fruit out of « Pouvoir ».
+ *
+ * The ontology used to say a fruit *was* a power, so a library imported before
+ * that was corrected has them all filed beside the techniques they grant. This
+ * is that correction applied to what is already published — the fiche does one
+ * entity, this does the eighty nobody is going to click through.
+ *
+ * Not rate-limited, unlike the enrichment beside it: it calls no model, reaches
+ * no third party, and writes one column of the reader's own rows. What it will
+ * not do is decide anything: a fruit whose published facts the new type forbids
+ * is reported, never forced, because rejecting a fact in bulk is exactly the
+ * silent damage the per-entity form exists to prevent.
+ */
+export async function reclassifyDevilFruitsAction(): Promise<ReclassifyFruitsResult> {
+  try {
+    const session = await requireOwner()
+    const result = await retypeDevilFruitsAsObjects(session.userId)
+
+    if (result.retyped.length > 0) {
+      revalidatePath('/reglages')
+      revalidatePath('/graph')
+      revalidatePath('/graph/table')
+      revalidatePath('/recherche')
+    }
+
+    return { ok: true, result }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Reclassement impossible.',
     }
   }
 }

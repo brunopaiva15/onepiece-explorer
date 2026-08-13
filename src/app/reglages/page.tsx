@@ -17,8 +17,10 @@ import {
   publicLibraryOwnerId,
 } from '@/lib/env.ts'
 import { imageCoverage } from '@/domains/images/index.ts'
+import { devilFruitsFiledAsPowers } from '@/domains/knowledge/retype.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
 import { EnrichImages } from './enrich-images.tsx'
+import { ReclassifyFruits } from './reclassify-fruits.tsx'
 import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 export const metadata: Metadata = { title: 'Réglages et santé' }
@@ -35,16 +37,25 @@ export const dynamic = 'force-dynamic'
 export default async function SettingsPage() {
   const session = await getReaderSession()
 
-  const [chapters, costs, quarantine, failures, orphans, allowances, coverage] =
-    await Promise.all([
-      listChapters(session.userId, session.workId),
-      costSummary(session.userId),
-      quarantineHealth(session.userId),
-      failureHealth(session.userId),
-      listOrphanedAssertions(session.userId),
-      usage(session.userId),
-      imageCoverage(session.userId),
-    ])
+  const [
+    chapters,
+    costs,
+    quarantine,
+    failures,
+    orphans,
+    allowances,
+    coverage,
+    fruits,
+  ] = await Promise.all([
+    listChapters(session.userId, session.workId),
+    costSummary(session.userId),
+    quarantineHealth(session.userId),
+    failureHealth(session.userId),
+    listOrphanedAssertions(session.userId),
+    usage(session.userId),
+    imageCoverage(session.userId),
+    devilFruitsFiledAsPowers(session.userId),
+  ])
 
   return (
     <main id="contenu" className="mx-auto max-w-4xl px-6 py-12">
@@ -227,6 +238,23 @@ export default async function SettingsPage() {
           la liste des personnages que vous consultez.
         </p>
         <EnrichImages coverage={coverage} />
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-lg font-semibold text-primary">
+          Fruits du démon classés en pouvoir
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm text-secondary">
+          L&apos;ontologie a longtemps dit qu&apos;un fruit du démon{' '}
+          <em>était</em> un pouvoir, et l&apos;extraction l&apos;a cru : le Bara
+          Bara no Mi s&apos;est retrouvé classé à côté du Bara Bara no Hou, alors
+          que l&apos;un se mange, se vole et se transporte, et que l&apos;autre
+          est la capacité qu&apos;il donne. Les prochains chapitres importés
+          rangeront les fruits en objets&nbsp;; ce bouton corrige ceux qui sont
+          déjà publiés. Le type d&apos;une entité se change aussi une par une,
+          depuis sa fiche.
+        </p>
+        <ReclassifyFruits fruits={fruits} />
       </section>
 
       <section className="mt-12">
