@@ -175,6 +175,52 @@ const RETYPES: ReadonlyArray<{ label: string; to: string }> = [
   { label: 'Nyaban Brothers', to: 'group' },
 ]
 
+/**
+ * Des appartenances mises en quarantaine faute d'un nœud où pointer.
+ *
+ * Le même trou que « Luffy dirige l'Équipage du Capitaine Usopp », vu par
+ * l'autre bout. L'équipage de Luffy n'existait pas, alors le modèle a écrit ce
+ * qu'il pouvait au bout de la relation : une fois le nom en toutes lettres
+ * (« Équipage de Luffy », refusé comme `literal_object`), une fois un
+ * placeholder (refusé comme `unknown_object`). La quarantaine a eu raison des
+ * deux — l'objet d'une relation est une entité, pas une phrase — et Zoro s'est
+ * retrouvé avec quatorze « affronte » et pas une appartenance.
+ *
+ * Le nœud existe maintenant. Ces propositions sont donc republiées telles
+ * quelles, avec leur extrait d'origine : ce n'est pas une affirmation écrite ici,
+ * c'est celle que le modèle avait tirée de la page et que rien n'avait pu
+ * ranger. Désignées par leur extrait plutôt que par un identifiant de ligne,
+ * pour la même raison que les réécritures : un extrait se relit contre le manga.
+ *
+ * L'objet est « le groupe que Luffy dirige » et non un nom : le nœud a déjà été
+ * renommé une fois, et un script qui le retrouverait par son libellé cesserait
+ * de fonctionner au prochain renommage.
+ */
+const RELEASES: ReadonlyArray<{ subject: string; excerpt: string }> = [
+  { subject: 'Roronoa Zoro', excerpt: 'Zoro accepts Luffy’s offer to join his crew' },
+  { subject: 'Roronoa Zoro', excerpt: 'he has already declared he will join him after this' },
+]
+
+/**
+ * Le nom que le lecteur lit, à la date où il le lit.
+ *
+ * Le nœud a été renommé « Équipage du Chapeau de paille », ce que la source
+ * autorise : elle écrit « the Straw Hats » — pour l'équipage, pas pour le
+ * couvre-chef — au chapitre 23. Mais le renommage a gardé la date du libellé
+ * qu'il remplaçait, le chapitre 5, si bien que la fiche donne ce nom dix-huit
+ * chapitres avant que le lecteur ne le rencontre. C'est la règle que toute
+ * cette relecture applique, appliquée au nom du groupe lui-même.
+ *
+ * Donc deux libellés plutôt qu'un : la description au chapitre 5, où le groupe
+ * se forme et n'a pas de nom, et le nom au chapitre 23, où la source le donne.
+ * C'est le mécanisme employé pour Klahadore et Kuro, et il n'y a pas de raison
+ * que le groupe en soit dispensé.
+ */
+const CREW_LABELS: ReadonlyArray<{ label: string; kind: string; chapter: number; precedence: number }> = [
+  { label: 'Équipage de Luffy', kind: 'placeholder', chapter: 5, precedence: 10 },
+  { label: 'Équipage du Chapeau de paille', kind: 'alias', chapter: 23, precedence: 50 },
+]
+
 const NOTE =
   'Relecture des chapitres 1 à 42 : correction saisie à la main, ' +
   'voir scripts/repair-chapitres-1-42.ts.'
@@ -321,6 +367,10 @@ async function main(): Promise<void> {
     // ---- 6. Deux entités pour une ---------------------------------------------
     console.log('\nENTITÉS EN DOUBLE')
     await mergeTwins(sql, work, dryRun, bump)
+
+    // ---- 6 bis. L'équipage, son nom et ses membres ----------------------------
+    console.log('\nÉQUIPAGE DE LUFFY')
+    await repairCrew(sql, work, dryRun, bump)
 
     // ---- 7. Vu, ou seulement nommé --------------------------------------------
     console.log('\nPRÉSENCES')
@@ -678,6 +728,140 @@ async function sceneByFragment(
     )
   }
   return rows[0] ?? null
+}
+
+/**
+ * Le nœud de l'équipage : son nom daté, et les appartenances qui l'attendaient.
+ *
+ * Retrouvé par la relation plutôt que par le libellé — « le groupe que Luffy
+ * dirige » reste vrai après un renommage, un nom non.
+ */
+async function repairCrew(
+  sql: postgres.Sql,
+  work: { id: string; user_id: string },
+  dry: boolean,
+  bump: (key: string, by?: number) => number,
+): Promise<void> {
+  const [crew] = await sql<Array<{ id: string }>>`
+    SELECT a.object_entity_id AS id
+      FROM assertions a
+      JOIN entity_labels l ON l.entity_id = a.subject_entity_id
+     WHERE a.user_id = ${work.user_id} AND a.predicate = 'leads'
+       AND a.review_status = 'accepted' AND l.label = 'Monkey D. Luffy'
+     LIMIT 1
+  `
+  if (!crew) {
+    console.log('  ! aucun groupe dirigé par Luffy : lancez d’abord repair:luffy-crew')
+    return
+  }
+
+  for (const wanted of CREW_LABELS) {
+    const [held] = await sql<Array<{ revealed_in_chapter: number }>>`
+      SELECT revealed_in_chapter FROM entity_labels
+       WHERE entity_id = ${crew.id} AND label = ${wanted.label}
+    `
+    if (held && held.revealed_in_chapter === wanted.chapter) {
+      console.log(`  = « ${wanted.label} » déjà au ch${wanted.chapter}`)
+      continue
+    }
+    console.log(
+      held
+        ? `  → « ${wanted.label} » ch${held.revealed_in_chapter} → ch${wanted.chapter}`
+        : `  → « ${wanted.label} » ajouté au ch${wanted.chapter}`,
+    )
+    if (dry) continue
+    if (held) {
+      await sql`
+        UPDATE entity_labels
+           SET revealed_in_chapter = ${wanted.chapter}, precedence = ${wanted.precedence},
+               kind = ${wanted.kind}::label_kind
+         WHERE entity_id = ${crew.id} AND label = ${wanted.label}
+      `
+    } else {
+      await sql`
+        INSERT INTO entity_labels
+          (entity_id, user_id, label, normalized_label, kind, revealed_in_chapter, precedence)
+        VALUES (${crew.id}, ${work.user_id}, ${wanted.label},
+                app.normalize_text(${wanted.label}), ${wanted.kind}::label_kind,
+                ${wanted.chapter}, ${wanted.precedence})
+      `
+    }
+    bump('noms')
+  }
+
+  for (const release of RELEASES) {
+    const [row] = await sql<
+      Array<{ id: string; chapter_id: string; number: number; payload: Record<string, unknown> }>
+    >`
+      SELECT q.id, q.chapter_id, c.number, q.payload
+        FROM quarantine q JOIN chapters c ON c.id = q.chapter_id
+       WHERE q.user_id = ${work.user_id}
+         AND q.payload->>'predicate' = 'member_of'
+         AND replace(q.payload->'evidence'->0->>'excerpt', '’', chr(39))
+             LIKE ${'%' + straight(release.excerpt) + '%'}
+       LIMIT 1
+    `
+    if (!row) {
+      console.log(`  = « ${release.excerpt.slice(0, 44)}… » plus en quarantaine`)
+      continue
+    }
+
+    const [subject] = await sql<Array<{ entity_id: string }>>`
+      SELECT entity_id FROM entity_labels
+       WHERE user_id = ${work.user_id} AND label = ${release.subject} LIMIT 1
+    `
+    if (!subject) {
+      console.log(`  ! « ${release.subject} » introuvable`)
+      continue
+    }
+
+    console.log(`  → ${release.subject} membre au ch${row.number} (levée de quarantaine)`)
+    if (dry) continue
+
+    const excerpt = String(
+      (row.payload['evidence'] as Array<Record<string, string>>)[0]?.excerpt ?? '',
+    )
+    /*
+     * Le bloc source retrouvé par son texte, pas par la référence « b9 » du
+     * payload : celle-ci n'a de sens que dans la table de références du run qui
+     * l'a produite. Le trigger d'ancrage revalide de toute façon que l'extrait
+     * est bien dans le bloc cité.
+     */
+    const [block] = await sql<Array<{ id: string; page_id: string }>>`
+      SELECT id, page_id FROM text_blocks
+       WHERE chapter_id = ${row.chapter_id}
+         AND normalized_text LIKE '%' || app.normalize_text(${excerpt}) || '%'
+       LIMIT 1
+    `
+    if (!block) {
+      console.log('      ! extrait introuvable dans le chapitre, laissé en quarantaine')
+      continue
+    }
+
+    const [made] = await sql<Array<{ id: string }>>`
+      INSERT INTO assertions (
+        work_id, user_id, subject_entity_id, predicate, object_entity_id,
+        knowledge_from_chapter, observed_in_chapter, confidence,
+        epistemic_status, review_status, proposed_by, locked
+      ) VALUES (
+        ${work.id}, ${work.user_id}, ${subject.entity_id}, 'member_of', ${crew.id},
+        ${row.number}, ${row.number}, ${Number(row.payload['confidence'] ?? 0.8)},
+        'explicit', 'accepted', 'user', true
+      ) RETURNING id
+    `
+    await sql`
+      INSERT INTO evidence (assertion_id, user_id, chapter_id, page_id, text_block_id, kind, excerpt)
+      VALUES (${made!.id}, ${work.user_id}, ${row.chapter_id}, ${block.page_id},
+              ${block.id}, 'dialogue', ${excerpt})
+    `
+    await sql`DELETE FROM quarantine WHERE id = ${row.id}`
+    await sql`
+      INSERT INTO audit_log (user_id, action, subject_kind, subject_id, detail)
+      VALUES (${work.user_id}, 'quarantine_released', 'assertion', ${made!.id},
+              ${sql.json({ subject: release.subject, chapter: row.number, note: NOTE })})
+    `
+    bump('appartenances')
+  }
 }
 
 function summarise(done: Counters): string {
