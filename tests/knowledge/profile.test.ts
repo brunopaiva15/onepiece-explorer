@@ -129,6 +129,8 @@ describe('a place’s sheet', () => {
     ])
 
     expect(titles(sections)).toEqual(['presents', 'evenements'])
+    expect(sections[0]!.entries[0]!.role).toBe('sur place')
+    expect(sections[1]!.entries[0]!.role).toBe('s’y déroule')
   })
 })
 

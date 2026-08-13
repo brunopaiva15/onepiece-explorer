@@ -348,10 +348,18 @@ function FactList({
                           </blockquote>
                         )}
                         <p className="mt-1 font-mono text-xs text-muted">
-                          {evidence.chapterNumber !== null &&
-                            `ch. ${evidence.chapterNumber}`}
-                          {evidence.pageIndex !== null &&
-                            ` · page ${evidence.pageIndex + 1}`}
+                          {/* Joined here rather than concatenated with a
+                              leading separator: an evidence row missing one of
+                              the two printed « · page 1 », a dot in front of
+                              nothing. */}
+                          {[
+                            evidence.chapterNumber !== null &&
+                              `ch. ${evidence.chapterNumber}`,
+                            evidence.pageIndex !== null &&
+                              `page ${evidence.pageIndex + 1}`,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </p>
                       </div>
                     </li>

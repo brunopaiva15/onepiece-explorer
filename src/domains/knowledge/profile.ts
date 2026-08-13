@@ -330,7 +330,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'leaves:in',
     ]),
     section('evenements', 'Ce qui s’y passe', [
-      'located_at:in:event|battle|voyage',
+      'located_at:in:event|battle|voyage>s’y déroule',
       'dies_at:in',
     ]),
     section('tenu-par', 'Qui le tient', [
