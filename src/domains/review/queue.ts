@@ -144,6 +144,23 @@ export interface ReviewQueue {
    * mystery.
    */
   chapterPublished: boolean
+  /**
+   * Proposals still open on this chapter, in some other run of it.
+   *
+   * The page is one run's queue; the rule that closes a chapter counts across
+   * every run of it, and deliberately — a second processing leaves a queue of
+   * its own, and opening the boundary over proposals nobody has read is the one
+   * mistake this design exists to prevent.
+   *
+   * What was missing is the bridge between the two. With this run's queue empty
+   * the panel offered « Marquer le chapitre comme relu », the rule refused
+   * because another run still held undecided items, and the answer came back as
+   * « Il reste des propositions à décider pour ce chapitre » — about a page
+   * showing « Rien à revoir », with nowhere to go. Someone who has just decided
+   * nineteen cards is told, correctly and uselessly, that they have not
+   * finished.
+   */
+  pendingElsewhere: Array<{ runId: string; count: number }>
   items: ReviewItemView[]
   counts: {
     pending: number
@@ -226,6 +243,19 @@ export async function getReviewQueue(
       GROUP BY status
     `)
 
+    // What still blocks the chapter, and where it is. Grouped by run, because
+    // « ailleurs » is only actionable if it names the page to go to.
+    const elsewhere = await db.execute<{ run_id: string; count: number }>(sql`
+      SELECT run_id, count(*)::int AS count
+      FROM review_items
+      WHERE chapter_id = ${head.chapterId}
+        AND user_id = ${userId}
+        AND status = 'proposed'
+        AND run_id <> ${runId}
+      GROUP BY run_id
+      ORDER BY count DESC
+    `)
+
     const [explicit] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(reviewItems)
@@ -238,7 +268,14 @@ export async function getReviewQueue(
         ),
       )
 
-    return { head, rows, forGrouping, counts, explicit: explicit?.count ?? 0 }
+    return {
+      head,
+      rows,
+      forGrouping,
+      counts,
+      elsewhere,
+      explicit: explicit?.count ?? 0,
+    }
   })
 
   if (!data) return null
@@ -264,6 +301,10 @@ export async function getReviewQueue(
     chapterNumber: data.head.chapterNumber,
     chapterTitle: data.head.chapterTitle,
     chapterPublished: data.head.chapterStatus === 'published',
+    pendingElsewhere: data.elsewhere.map((row) => ({
+      runId: String(row.run_id),
+      count: Number(row.count),
+    })),
     items: data.rows.map((row) => ({
       id: row.id,
       category: row.category,

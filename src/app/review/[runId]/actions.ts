@@ -130,9 +130,20 @@ export async function markChapterReviewedAction(
     revalidatePath('/graph')
 
     if (chapterNumber === null) {
+      /*
+       * Said in full, because the page this lands on shows an empty queue.
+       *
+       * The rule counts every run of the chapter, so what blocks is almost
+       * always a second processing whose queue is on another page — the panel
+       * now names and links it before the button is offered, and this is the
+       * message for the race where one arrives between the two.
+       */
       return {
         ok: false,
-        error: 'Il reste des propositions à décider pour ce chapitre.',
+        error:
+          'Il reste des propositions à décider pour ce chapitre, dans un autre ' +
+          'traitement que celui-ci. Rechargez la page : le traitement concerné y ' +
+          'est nommé.',
       }
     }
     return { ok: true, chapterNumber }
