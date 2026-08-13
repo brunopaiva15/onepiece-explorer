@@ -521,6 +521,253 @@ export async function publishDecisions(
         .where(eq(reviewItems.id, item.id))
     }
 
+    /*
+     * Events and mysteries are entities with a side table, per the schema.
+     *
+     * Before the assertions, not after them. An event is a node the ontology
+     * lets a relation point at — « Zoro participe à <la destruction de la
+     * maison> », `dies_at` an event — and a relation is resolved against
+     * `localToEntity`, which the loop below fills. Published after, the event
+     * did not exist yet when its own relations were written, and every one of
+     * them failed with « son entité a été rejetée ou reportée » about a scene
+     * the reviewer had just accepted.
+     */
+    for (const item of items) {
+      if (item.category !== 'event' && item.category !== 'mystery') continue
+      const decision = byId.get(item.id)
+      if (!decision || item.status !== 'proposed') continue
+
+      if (decision.decision === 'reject' || decision.decision === 'defer') {
+        if (decision.decision === 'reject') {
+          await recordDecision(db, userId, run.workId, item, decision)
+          result.rejected++
+        } else {
+          result.deferred++
+        }
+        await db
+          .update(reviewItems)
+          .set({ status: decision.decision === 'reject' ? 'rejected' : 'deferred' })
+          .where(eq(reviewItems.id, item.id))
+        continue
+      }
+
+      const nodeType = item.category === 'event' ? 'event' : 'mystery'
+
+      /*
+       * The same question, asked twice.
+       *
+       * An event and a mystery are entities with a side table, and this loop
+       * created one unconditionally — the twin check added for the entity
+       * category never reached here. Two slices proposing the same question, or
+       * a re-import proposing it again, therefore produced two rows saying the
+       * same words, and /mysteres showed « Qui est l'homme que Zoro
+       * recherchait ? » twice, both opened at chapter 8.
+       *
+       * The label is what it is compared on, and for these two categories the
+       * label *is* the text: an event is named by its summary, a mystery by its
+       * question. So the check is the same one, on the same rule — exact
+       * normalised label, same node type, at this chapter or before.
+       */
+      const payload = (decision.correctedPayload ?? item.payload) as
+        | CandidateEvent
+        | CandidateMystery
+      const text =
+        item.category === 'event'
+          ? (payload as CandidateEvent).summary
+          : (payload as CandidateMystery).question
+      const label = text.slice(0, 200)
+
+      const twin = await exactTwin(db, {
+        workId: run.workId,
+        userId,
+        nodeType,
+        label,
+        chapterNumber: run.chapterNumber,
+      })
+
+      /*
+       * The same scene, written twice.
+       *
+       * `exactTwin` above catches the identical re-proposal. It cannot catch
+       * the one a second processing pass produces, because a model does not
+       * phrase a scene identically twice — and each accepted copy becomes its
+       * own entity, since an event *is* an entity here. Two nodes for one
+       * scene, joined by nothing.
+       *
+       * Refused rather than merged: reusing the existing entity, as the exact
+       * path does, would be deciding that two differently-worded texts are one
+       * memory. Above ECHO_TOO_CLOSE the words are practically the same and
+       * saying so costs nothing; below it, the card carries the resemblance and
+       * the reviewer decides. Rejecting is a real way out, so this is a
+       * question, not a dead end — the message has to say which.
+       */
+      if (twin === null) {
+        const echo = await findEcho(db, {
+          workId: run.workId,
+          userId,
+          nodeType,
+          text: label,
+          chapterNumber: run.chapterNumber,
+        })
+
+        if (echo !== null && echo.overlap >= ECHO_TOO_CLOSE) {
+          result.failures.push({
+            reviewItemId: item.id,
+            reason:
+              `Presque mot pour mot ce qui est déjà enregistré au chapitre ` +
+              `${echo.chapterNumber} : « ${echo.label.slice(0, 120)} ». Publier les deux ` +
+              `créerait deux fiches pour une seule scène. Rejetez celle-ci — ou reportez-la ` +
+              `si les deux scènes sont bien distinctes.`,
+          })
+          continue
+        }
+      }
+
+      if (twin !== null) {
+        if (item.category === 'event') {
+          const candidate = (decision.correctedPayload ?? item.payload) as CandidateEvent
+          localToEntity.set(candidate.local_id, twin)
+          await recordParticipants(db, {
+            userId,
+            chapterId: run.chapterId,
+            chapterNumber: run.chapterNumber,
+            participants: candidate.participants,
+            localToEntity,
+            confidence: candidate.confidence,
+          })
+        }
+
+        await db.insert(auditLog).values({
+          userId,
+          action: 'entity_reused',
+          subjectKind: 'entity',
+          subjectId: twin,
+          detail: {
+            label,
+            nodeType,
+            chapterNumber: run.chapterNumber,
+            reviewItemId: item.id,
+          },
+        })
+        await recordDecision(db, userId, run.workId, item, decision)
+        await db
+          .update(reviewItems)
+          .set({ status: 'accepted' })
+          .where(eq(reviewItems.id, item.id))
+        result.entitiesReused++
+        continue
+      }
+
+      const [entity] = await db
+        .insert(entities)
+        .values({
+          workId: run.workId,
+          userId,
+          nodeType,
+          firstSeenChapter: run.chapterNumber,
+          reviewStatus: 'accepted',
+          runId,
+          // Provenance, like an entity's. It is what lets « Zoro participe à
+          // <cette scène> » resolve, in this batch or in a later one.
+          ...(item.category === 'event'
+            ? {
+                proposalLocalId:
+                  ((decision.correctedPayload ?? item.payload) as CandidateEvent).local_id,
+              }
+            : {}),
+        })
+        .returning({ id: entities.id })
+
+      if (!entity) {
+        result.failures.push({ reviewItemId: item.id, reason: 'Création échouée.' })
+        continue
+      }
+
+      if (item.category === 'event') {
+        const candidate = (decision.correctedPayload ?? item.payload) as CandidateEvent
+        localToEntity.set(candidate.local_id, entity.id)
+        await db.insert(events).values({
+          entityId: entity.id,
+          userId,
+          workId: run.workId,
+          summary: candidate.summary,
+          isFlashback: candidate.is_flashback,
+          /*
+           * Shown and told are recorded separately and neither is inferred. A
+           * flashback is *shown* in this chapter while happening earlier in the
+           * story; collapsing the two axes is exactly the mistake that makes a
+           * timeline lie.
+           */
+          shownInChapter: run.chapterNumber,
+          toldInChapter: candidate.is_flashback ? run.chapterNumber : null,
+        })
+        await db.insert(entityLabels).values({
+          entityId: entity.id,
+          userId,
+          label: candidate.summary.slice(0, 200),
+          normalizedLabel: normalizeText(candidate.summary.slice(0, 200)),
+          kind: 'alias',
+          revealedInChapter: run.chapterNumber,
+          precedence: 10,
+        })
+
+        /*
+         * Who was in the scene, written down at last.
+         *
+         * `participants` has been in the extraction schema since it was
+         * written, has been anchored and filtered on every run since, and was
+         * then dropped on the floor here — an event reached the graph knowing
+         * nobody. What it costs is the answer to the question the library is
+         * for: « qu'est-ce que Nami fait au chapitre 14 » had nothing to read,
+         * because the chapter's facts were events and no event named her.
+         *
+         * Recorded as presence rather than as relations. An occurrence says
+         * where someone was seen, which is what the model stated; inventing a
+         * « participe à » edge per participant would be writing assertions
+         * nobody reviewed, and the review card now lists the names so the
+         * decision covers them.
+         */
+        await recordParticipants(db, {
+          userId,
+          chapterId: run.chapterId,
+          chapterNumber: run.chapterNumber,
+          participants: candidate.participants,
+          localToEntity,
+          confidence: candidate.confidence,
+        })
+
+        result.eventsCreated++
+        result.labelsCreated++
+      } else {
+        const candidate = (decision.correctedPayload ?? item.payload) as CandidateMystery
+        await db.insert(mysteries).values({
+          entityId: entity.id,
+          userId,
+          workId: run.workId,
+          question: candidate.question,
+          openedInChapter: run.chapterNumber,
+          state: 'open',
+        })
+        await db.insert(entityLabels).values({
+          entityId: entity.id,
+          userId,
+          label: candidate.question.slice(0, 200),
+          normalizedLabel: normalizeText(candidate.question.slice(0, 200)),
+          kind: 'alias',
+          revealedInChapter: run.chapterNumber,
+          precedence: 10,
+        })
+        result.mysteriesCreated++
+        result.labelsCreated++
+      }
+
+      await recordDecision(db, userId, run.workId, item, decision)
+      await db
+        .update(reviewItems)
+        .set({ status: 'accepted' })
+        .where(eq(reviewItems.id, item.id))
+    }
+
     // Then assertions, which may reference the entities just created.
     for (const item of items) {
       if (item.category !== 'assertion') continue
@@ -680,194 +927,6 @@ export async function publishDecisions(
         .where(eq(reviewItems.id, item.id))
     }
 
-    // Events and mysteries are entities with a side table, per the schema.
-    for (const item of items) {
-      if (item.category !== 'event' && item.category !== 'mystery') continue
-      const decision = byId.get(item.id)
-      if (!decision || item.status !== 'proposed') continue
-
-      if (decision.decision === 'reject' || decision.decision === 'defer') {
-        if (decision.decision === 'reject') {
-          await recordDecision(db, userId, run.workId, item, decision)
-          result.rejected++
-        } else {
-          result.deferred++
-        }
-        await db
-          .update(reviewItems)
-          .set({ status: decision.decision === 'reject' ? 'rejected' : 'deferred' })
-          .where(eq(reviewItems.id, item.id))
-        continue
-      }
-
-      const nodeType = item.category === 'event' ? 'event' : 'mystery'
-
-      /*
-       * The same question, asked twice.
-       *
-       * An event and a mystery are entities with a side table, and this loop
-       * created one unconditionally — the twin check added for the entity
-       * category never reached here. Two slices proposing the same question, or
-       * a re-import proposing it again, therefore produced two rows saying the
-       * same words, and /mysteres showed « Qui est l'homme que Zoro
-       * recherchait ? » twice, both opened at chapter 8.
-       *
-       * The label is what it is compared on, and for these two categories the
-       * label *is* the text: an event is named by its summary, a mystery by its
-       * question. So the check is the same one, on the same rule — exact
-       * normalised label, same node type, at this chapter or before.
-       */
-      const payload = (decision.correctedPayload ?? item.payload) as
-        | CandidateEvent
-        | CandidateMystery
-      const text =
-        item.category === 'event'
-          ? (payload as CandidateEvent).summary
-          : (payload as CandidateMystery).question
-      const label = text.slice(0, 200)
-
-      const twin = await exactTwin(db, {
-        workId: run.workId,
-        userId,
-        nodeType,
-        label,
-        chapterNumber: run.chapterNumber,
-      })
-
-      /*
-       * The same scene, written twice.
-       *
-       * `exactTwin` above catches the identical re-proposal. It cannot catch
-       * the one a second processing pass produces, because a model does not
-       * phrase a scene identically twice — and each accepted copy becomes its
-       * own entity, since an event *is* an entity here. Two nodes for one
-       * scene, joined by nothing.
-       *
-       * Refused rather than merged: reusing the existing entity, as the exact
-       * path does, would be deciding that two differently-worded texts are one
-       * memory. Above ECHO_TOO_CLOSE the words are practically the same and
-       * saying so costs nothing; below it, the card carries the resemblance and
-       * the reviewer decides. Rejecting is a real way out, so this is a
-       * question, not a dead end — the message has to say which.
-       */
-      if (twin === null) {
-        const echo = await findEcho(db, {
-          workId: run.workId,
-          userId,
-          nodeType,
-          text: label,
-          chapterNumber: run.chapterNumber,
-        })
-
-        if (echo !== null && echo.overlap >= ECHO_TOO_CLOSE) {
-          result.failures.push({
-            reviewItemId: item.id,
-            reason:
-              `Presque mot pour mot ce qui est déjà enregistré au chapitre ` +
-              `${echo.chapterNumber} : « ${echo.label.slice(0, 120)} ». Publier les deux ` +
-              `créerait deux fiches pour une seule scène. Rejetez celle-ci — ou reportez-la ` +
-              `si les deux scènes sont bien distinctes.`,
-          })
-          continue
-        }
-      }
-
-      if (twin !== null) {
-        await db.insert(auditLog).values({
-          userId,
-          action: 'entity_reused',
-          subjectKind: 'entity',
-          subjectId: twin,
-          detail: {
-            label,
-            nodeType,
-            chapterNumber: run.chapterNumber,
-            reviewItemId: item.id,
-          },
-        })
-        await recordDecision(db, userId, run.workId, item, decision)
-        await db
-          .update(reviewItems)
-          .set({ status: 'accepted' })
-          .where(eq(reviewItems.id, item.id))
-        result.entitiesReused++
-        continue
-      }
-
-      const [entity] = await db
-        .insert(entities)
-        .values({
-          workId: run.workId,
-          userId,
-          nodeType,
-          firstSeenChapter: run.chapterNumber,
-          reviewStatus: 'accepted',
-          runId,
-        })
-        .returning({ id: entities.id })
-
-      if (!entity) {
-        result.failures.push({ reviewItemId: item.id, reason: 'Création échouée.' })
-        continue
-      }
-
-      if (item.category === 'event') {
-        const candidate = (decision.correctedPayload ?? item.payload) as CandidateEvent
-        await db.insert(events).values({
-          entityId: entity.id,
-          userId,
-          workId: run.workId,
-          summary: candidate.summary,
-          isFlashback: candidate.is_flashback,
-          /*
-           * Shown and told are recorded separately and neither is inferred. A
-           * flashback is *shown* in this chapter while happening earlier in the
-           * story; collapsing the two axes is exactly the mistake that makes a
-           * timeline lie.
-           */
-          shownInChapter: run.chapterNumber,
-          toldInChapter: candidate.is_flashback ? run.chapterNumber : null,
-        })
-        await db.insert(entityLabels).values({
-          entityId: entity.id,
-          userId,
-          label: candidate.summary.slice(0, 200),
-          normalizedLabel: normalizeText(candidate.summary.slice(0, 200)),
-          kind: 'alias',
-          revealedInChapter: run.chapterNumber,
-          precedence: 10,
-        })
-        result.eventsCreated++
-        result.labelsCreated++
-      } else {
-        const candidate = (decision.correctedPayload ?? item.payload) as CandidateMystery
-        await db.insert(mysteries).values({
-          entityId: entity.id,
-          userId,
-          workId: run.workId,
-          question: candidate.question,
-          openedInChapter: run.chapterNumber,
-          state: 'open',
-        })
-        await db.insert(entityLabels).values({
-          entityId: entity.id,
-          userId,
-          label: candidate.question.slice(0, 200),
-          normalizedLabel: normalizeText(candidate.question.slice(0, 200)),
-          kind: 'alias',
-          revealedInChapter: run.chapterNumber,
-          precedence: 10,
-        })
-        result.mysteriesCreated++
-        result.labelsCreated++
-      }
-
-      await recordDecision(db, userId, run.workId, item, decision)
-      await db
-        .update(reviewItems)
-        .set({ status: 'accepted' })
-        .where(eq(reviewItems.id, item.id))
-    }
 
     /*
      * Rapprochements and contradictions, decided rather than ignored.
@@ -1278,6 +1337,51 @@ async function recordPresence(
     chapterNumber: input.chapterNumber,
     confidence: input.confidence,
   })
+}
+
+/**
+ * The cast of one scene, recorded as having been there.
+ *
+ * An event's participants are given as identifiers, and which kind depends on
+ * when the entity was published: a local id like `e3` for someone this same
+ * run proposed, a UUID for someone already in the graph. `localToEntity`
+ * answers the first, and the events loop runs after the entities one so the
+ * answer is there.
+ *
+ * `appearance`, not `mention`. An event is a thing that happens on the page and
+ * its participants are the people it happens to — « Koby parle de Zoro » is not
+ * an event with Zoro in it, it is a relation, and the model has `mentions` for
+ * that. An identifier that resolves to nothing is skipped in silence: it means
+ * the participant's own proposal was rejected or deferred, which the reviewer
+ * decided on purpose and does not need told twice.
+ */
+async function recordParticipants(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    userId: string
+    chapterId: string
+    chapterNumber: number
+    participants: string[]
+    localToEntity: Map<string, string>
+    confidence: number
+  },
+): Promise<void> {
+  const seen = new Set<string>()
+
+  for (const participant of input.participants) {
+    const entityId = input.localToEntity.get(participant) ?? participant
+    if (!isUuid(entityId) || seen.has(entityId)) continue
+    seen.add(entityId)
+
+    await recordPresence(db, {
+      userId: input.userId,
+      entityId,
+      chapterId: input.chapterId,
+      chapterNumber: input.chapterNumber,
+      kind: 'appearance',
+      confidence: input.confidence,
+    })
+  }
 }
 
 async function addMergedLabel(

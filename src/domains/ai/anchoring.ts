@@ -216,12 +216,109 @@ export interface FilterResult {
 }
 
 /**
+ * Node types the extraction has an array of its own for.
+ *
+ * `event` and `mystery` are in the ontology because a relation has to be able
+ * to point at one — `participates_in` takes an event, `resolves_mystery` takes
+ * a mystery. They are not there to be *proposed* as entities, and the two are
+ * a hair apart in a schema that offers `entities`, `events` and `mysteries`
+ * side by side.
+ */
+const HAS_OWN_CATEGORY = new Set(['event', 'mystery'])
+
+/**
+ * An event proposed as an entity, put back where events go.
+ *
+ * The failure this repairs is silent and total. An `entities` row of type
+ * `event` is a node with a sentence for a name and no row in `events`: absent
+ * from the chronology, which reads that table; absent from story mode's « il
+ * arrive », which reads it too; and caught instead by the arm that announces
+ * whoever has no beat of their own — so a chapter's six events arrived as six
+ * characters walking on, labelled « entre en scène · Événement ». Nothing about
+ * it is visible in review, where the card says « entité » and shows a sentence,
+ * which is exactly what an event card shows.
+ *
+ * The prompt now says where an event goes (PROMPT_VERSION 6). This is the part
+ * that does not depend on the model having read it — the same division of
+ * labour as everywhere else in this file.
+ *
+ * A mystery is refiled only when nothing in the extraction names it, and that
+ * asymmetry is not an oversight: an event keeps its `local_id` and stays
+ * referenceable, a mystery has none in the schema, so refiling one that a
+ * relation points at would cut the edge in the name of tidiness. Left as an
+ * entity, it is at least a node the relation still reaches.
+ */
+export function refileMisfiled(extraction: Extraction): {
+  extraction: Extraction
+  refiled: { events: number; mysteries: number }
+} {
+  if (!extraction.entities.some((entity) => HAS_OWN_CATEGORY.has(entity.node_type))) {
+    return { extraction, refiled: { events: 0, mysteries: 0 } }
+  }
+
+  const named = new Set<string>([
+    ...extraction.assertions.flatMap((assertion) =>
+      assertion.object === null ? [assertion.subject] : [assertion.subject, assertion.object],
+    ),
+    ...extraction.events.flatMap((event) => event.participants),
+  ])
+
+  const entities: CandidateEntity[] = []
+  const events = [...extraction.events]
+  const mysteries = [...extraction.mysteries]
+  const refiled = { events: 0, mysteries: 0 }
+
+  for (const entity of extraction.entities) {
+    if (entity.node_type === 'event') {
+      events.push({
+        local_id: entity.local_id,
+        summary: entity.label,
+        participants: [],
+        // Nothing in an entity proposal says a scene is a memory. Claiming it
+        // is one would put it at the wrong place on the story axis, which is
+        // the one thing the timeline exists to get right.
+        is_flashback: false,
+        evidence: entity.evidence,
+        confidence: entity.confidence,
+      })
+      refiled.events++
+      continue
+    }
+
+    if (entity.node_type === 'mystery' && !named.has(entity.local_id)) {
+      mysteries.push({
+        question: entity.label,
+        evidence: entity.evidence,
+        confidence: entity.confidence,
+      })
+      refiled.mysteries++
+      continue
+    }
+
+    entities.push(entity)
+  }
+
+  return {
+    extraction: { entities, assertions: extraction.assertions, events, mysteries },
+    refiled,
+  }
+}
+
+/**
  * Split an extraction into what can be trusted and what cannot.
  *
  * Order matters: entities are filtered first, because an assertion whose
  * subject was itself quarantined has nothing to attach to. Dropping the
  * assertion silently would hide the reason — so it is quarantined too, with a
  * reason that names the missing subject.
+ *
+ * Events are filtered second, before the assertions rather than after them, and
+ * that ordering is a fix rather than a tidy-up. An event is a node — half the
+ * ontology's temporal predicates take one as their object — and while its
+ * `local_id` was absent from the resolvable set, « Zoro participe à <l'attaque
+ * du Buggy Ball> » could not be written by anyone: the model proposed the
+ * event, named it in a relation, and the relation was quarantined as
+ * `unknown_object` for naming something this very response had declared.
  */
 export function filterExtraction(
   extraction: Extraction,
@@ -256,6 +353,28 @@ export function filterExtraction(
 
   const resolvable = (ref: string): boolean =>
     localIds.has(ref) || knownEntityIds.has(ref)
+
+  const events: CandidateEvent[] = []
+  for (const event of extraction.events) {
+    const failure = firstFailure(event.evidence, sources)
+    if (failure) {
+      quarantined.push({ ...failure, payload: event })
+      continue
+    }
+    events.push({
+      ...event,
+      // Participants that did not survive are dropped from the list rather than
+      // sinking the whole event: an event is still a real event if one of its
+      // participants could not be anchored.
+      //
+      // Read before the event's own id joins the set, so a participant list
+      // cannot name the event it belongs to.
+      participants: event.participants.filter(resolvable),
+    })
+  }
+
+  // Now the events are nodes like any other, and a relation may name one.
+  for (const event of events) localIds.add(event.local_id)
 
   const assertions: CandidateAssertion[] = []
   for (const assertion of extraction.assertions) {
@@ -330,22 +449,6 @@ export function filterExtraction(
     }
 
     assertions.push(assertion)
-  }
-
-  const events: CandidateEvent[] = []
-  for (const event of extraction.events) {
-    const failure = firstFailure(event.evidence, sources)
-    if (failure) {
-      quarantined.push({ ...failure, payload: event })
-      continue
-    }
-    events.push({
-      ...event,
-      // Participants that did not survive are dropped from the list rather than
-      // sinking the whole event: an event is still a real event if one of its
-      // participants could not be anchored.
-      participants: event.participants.filter(resolvable),
-    })
   }
 
   const mysteries: CandidateMystery[] = []

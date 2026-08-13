@@ -16,6 +16,7 @@ import {
   buildAnchorSources,
   filterExtraction,
   proposalFingerprint,
+  refileMisfiled,
   type FilterResult,
   type OntologyView,
   type Quarantined,
@@ -246,6 +247,12 @@ export function namespaceLocalIds(extraction: Extraction, prefix: string): Extra
     events: extraction.events.map((event) => ({
       ...event,
       local_id: scoped(event.local_id),
+      // Participants were left un-namespaced, which made them dangle: `e1` in a
+      // participant list matched no entity once every entity had become
+      // `<clé>:e1`, so an event published from the second slice of a chapter
+      // knew nobody. Same rule as a relation's two ends, and for the same
+      // reason — it is the same identifier.
+      participants: event.participants.map(scoped),
     })),
     mysteries: extraction.mysteries,
   }
@@ -440,7 +447,13 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         ),
       )
 
-    const types = await db.select({ key: nodeTypes.key }).from(nodeTypes)
+    const types = await db
+      .select({
+        key: nodeTypes.key,
+        labelFr: nodeTypes.labelFr,
+        description: nodeTypes.description,
+      })
+      .from(nodeTypes)
     const preds = await db
       .select({
         key: predicates.key,
@@ -575,6 +588,8 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
 
   const accepted: Extraction = { entities: [], assertions: [], events: [], mysteries: [] }
   const quarantined: Quarantined[] = []
+  /** Proposals that arrived under the wrong heading and were put back. */
+  const misfiled = { events: 0, mysteries: 0 }
   let usage = { costCents: 0, inputTokens: 0, outputTokens: 0, modelId: undefined as string | undefined }
   let refusal: string | null = null
 
@@ -668,7 +683,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       result = await provider.extract({
         chapterNumber,
         source: context.sourceKind,
-        ontology: renderOntology(world.preds),
+        ontology: renderOntology(world.types, world.preds),
         knownEntities,
         /*
          * What this chapter has already proposed, so a relation can name it.
@@ -760,8 +775,26 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       continue
     }
 
+    /*
+     * Put back what came in the wrong envelope, before anything is checked.
+     *
+     * Before filtering, because an event proposed as an entity must be an event
+     * by the time relations are resolved against it — refiling it afterwards
+     * would leave the assertions that name it quarantined for pointing at
+     * something that no longer exists under that heading.
+     */
+    const refiled = refileMisfiled(result.value)
+    if (refiled.refiled.events > 0 || refiled.refiled.mysteries > 0) {
+      misfiled.events += refiled.refiled.events
+      misfiled.mysteries += refiled.refiled.mysteries
+      console.warn(
+        `[extract] ${refiled.refiled.events} événement(s) et ` +
+          `${refiled.refiled.mysteries} mystère(s) proposés comme entités, reclassés`,
+      )
+    }
+
     const sliceFiltered = filterExtraction(
-      result.value,
+      refiled.extraction,
       buildAnchorSources({
         textBlocks: slice.blocks,
         descriptions: slice.descriptions,
@@ -1018,6 +1051,18 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
   if (healed.healed > 0) {
     parts.push(`${healed.healed} fait(s) réancré(s) après suppression`)
   }
+  if (misfiled.events + misfiled.mysteries > 0) {
+    /*
+     * Said out loud, because it changes what the review queue contains. A
+     * proposal that arrives as an entity and is queued as an event is not the
+     * card the model wrote, and a run where that happened is worth telling
+     * apart from one where it did not — that is how the prompt gets measured.
+     */
+    parts.push(
+      `${misfiled.events + misfiled.mysteries} proposition(s) reclassée(s) ` +
+        `(événement ou mystère proposé comme entité)`,
+    )
+  }
   if (reapplied > 0) {
     parts.push(`${reapplied} déjà décidées lors d'un import précédent, non redemandées`)
   }
@@ -1052,8 +1097,18 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
  * Read from the database rather than from the TypeScript constant, because a
  * user-created predicate has to be usable without a code change — the ontology
  * is stored as data precisely so that adding one needs no migration.
+ *
+ * The node types are listed, and were not. « N'utilisez aucun autre type ni
+ * aucun autre prédicat » sat above a list of predicates alone, so the only
+ * statement of what a type *is* was the arrows: `character|group → group`. A
+ * model reading that infers the vocabulary correctly — the keys are all there —
+ * and infers nothing at all about what belongs in each one, which is how a
+ * chapter's six events arrived as six entities of type `event`, each with a
+ * sentence for a name, none of them in the chronology. Naming the types costs a
+ * few hundred cached tokens once per chapter.
  */
-function renderOntology(
+export function renderOntology(
+  types: Array<{ key: string; labelFr: string; description: string | null }>,
   preds: Array<{
     key: string
     labelFr: string
@@ -1069,17 +1124,29 @@ function renderOntology(
     PREDICATES.map((p) => [p.key as string, { description: p.description }]),
   )
 
-  return preds
-    .map((predicate) => {
-      const builtin = known.get(predicate.key)
-      const detail = predicate.description ?? builtin?.description ?? ''
-      return (
-        `  ${predicate.key} (${predicate.labelFr}) : ` +
-        `${predicate.subjectTypes.join('|')} → ${predicate.objectTypes.join('|')}` +
-        (detail ? `\n      ${detail}` : '')
-      )
-    })
-    .join('\n')
+  const typeLines = types.map(
+    (type) =>
+      `  ${type.key} (${type.labelFr})` +
+      (type.description ? `\n      ${type.description}` : ''),
+  )
+
+  const predicateLines = preds.map((predicate) => {
+    const builtin = known.get(predicate.key)
+    const detail = predicate.description ?? builtin?.description ?? ''
+    return (
+      `  ${predicate.key} (${predicate.labelFr}) : ` +
+      `${predicate.subjectTypes.join('|')} → ${predicate.objectTypes.join('|')}` +
+      (detail ? `\n      ${detail}` : '')
+    )
+  })
+
+  return [
+    'Types de nœud :',
+    ...typeLines,
+    '',
+    'Prédicats :',
+    ...predicateLines,
+  ].join('\n')
 }
 
 /**
