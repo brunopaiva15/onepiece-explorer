@@ -209,3 +209,44 @@ describe('what it refuses to join', () => {
     expect(result.entitiesCreated).toBe(1)
   })
 })
+
+describe('a question the graph has already been asked', () => {
+  it('does not open a second mystery saying the same words', async () => {
+    /*
+     * An event and a mystery are entities with a side table, and their branch
+     * created one unconditionally — the twin check never reached it. Two slices
+     * proposing the same question, or a re-import proposing it again, produced
+     * two rows saying the same thing, and /mysteres showed it twice.
+     */
+    const question = 'Qui est l’homme que Zoro recherchait avant de devenir chasseur de primes ?'
+
+    const propose = async () => {
+      const id = randomUUID()
+      await raw`
+        INSERT INTO review_items (
+          id, run_id, chapter_id, user_id, category, priority, payload,
+          proposal_fingerprint, requires_explicit_review, confidence, status
+        ) VALUES (
+          ${id}, ${runId}, ${chapterId}, ${world.userId}, 'mystery', 50,
+          ${raw.json({ question, evidence: EVIDENCE, confidence: 0.9 })},
+          ${randomUUID()}, true, 0.9, 'proposed'
+        )`
+      return id
+    }
+
+    const first = await propose()
+    const second = await propose()
+
+    const result = await publishDecisions(world.userId, runId, [
+      { reviewItemId: first, decision: 'accept' },
+      { reviewItemId: second, decision: 'accept' },
+    ])
+
+    expect(result.failures).toEqual([])
+    expect(result.entitiesReused).toBe(1)
+
+    const rows = await raw<Array<{ count: number }>>`
+      SELECT count(*)::int AS count FROM mysteries WHERE user_id = ${world.userId}`
+    expect(rows[0]!.count).toBe(1)
+  })
+})

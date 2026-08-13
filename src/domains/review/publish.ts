@@ -700,6 +700,61 @@ export async function publishDecisions(
       }
 
       const nodeType = item.category === 'event' ? 'event' : 'mystery'
+
+      /*
+       * The same question, asked twice.
+       *
+       * An event and a mystery are entities with a side table, and this loop
+       * created one unconditionally — the twin check added for the entity
+       * category never reached here. Two slices proposing the same question, or
+       * a re-import proposing it again, therefore produced two rows saying the
+       * same words, and /mysteres showed « Qui est l'homme que Zoro
+       * recherchait ? » twice, both opened at chapter 8.
+       *
+       * The label is what it is compared on, and for these two categories the
+       * label *is* the text: an event is named by its summary, a mystery by its
+       * question. So the check is the same one, on the same rule — exact
+       * normalised label, same node type, at this chapter or before.
+       */
+      const payload = (decision.correctedPayload ?? item.payload) as
+        | CandidateEvent
+        | CandidateMystery
+      const text =
+        item.category === 'event'
+          ? (payload as CandidateEvent).summary
+          : (payload as CandidateMystery).question
+      const label = text.slice(0, 200)
+
+      const twin = await exactTwin(db, {
+        workId: run.workId,
+        userId,
+        nodeType,
+        label,
+        chapterNumber: run.chapterNumber,
+      })
+
+      if (twin !== null) {
+        await db.insert(auditLog).values({
+          userId,
+          action: 'entity_reused',
+          subjectKind: 'entity',
+          subjectId: twin,
+          detail: {
+            label,
+            nodeType,
+            chapterNumber: run.chapterNumber,
+            reviewItemId: item.id,
+          },
+        })
+        await recordDecision(db, userId, run.workId, item, decision)
+        await db
+          .update(reviewItems)
+          .set({ status: 'accepted' })
+          .where(eq(reviewItems.id, item.id))
+        result.entitiesReused++
+        continue
+      }
+
       const [entity] = await db
         .insert(entities)
         .values({

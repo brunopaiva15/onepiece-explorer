@@ -29,7 +29,26 @@ export default async function MysteriesPage({
   const session = await getViewerSession(ch)
   const timeline = await getTimeline(session.userId, session.boundaryChapter)
 
-  const mysteries = timeline.byRevelation.filter((entry) => entry.kind === 'mystery')
+  /*
+   * The same question, asked once.
+   *
+   * Publication now refuses to create a second entity for a question the graph
+   * already holds — but a library built before that refusal has the duplicates
+   * already, and re-importing every chapter to clear them is not a repair
+   * anybody owes. Two rows saying exactly the same words are one question to a
+   * reader, so the page shows it once, keeping the earliest: the chapter that
+   * asked it first is the true one.
+   */
+  const seen = new Set<string>()
+  const mysteries = timeline.byRevelation
+    .filter((entry) => entry.kind === 'mystery')
+    .sort((a, b) => a.knownFromChapter - b.knownFromChapter)
+    .filter((entry) => {
+      const key = (entry.summary ?? entry.label).trim().toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
   const open = mysteries.filter((entry) => entry.resolvedInChapter === null)
   const closed = mysteries
     .filter((entry) => entry.resolvedInChapter !== null)
