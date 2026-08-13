@@ -77,11 +77,19 @@ export interface Catalogue {
  * leaving the next reader to discover it by finding no crew portraits.
  * `event`, `battle`, `voyage`, `concept` and `mystery` are absent because they
  * are not things anyone draws a portrait of.
+ *
+ * A fruit illustrates both an object and a power, and that is not indecision.
+ * The ontology says a Devil Fruit is an object and the capacity it grants is a
+ * power, so the catalogue's fruit pictures belong to the object; they stay
+ * reachable from `power` because a library imported before that was settled has
+ * its fruits filed there, and demoting their portraits would be a second
+ * mistake made on account of the first. Nothing is mismatched by the overlap:
+ * a candidate is only ever taken when its name matches.
  */
 export const KIND_FOR_NODE_TYPE: Readonly<Record<string, CandidateKind[]>> = {
   character: ['character'],
   power: ['fruit'],
-  object: ['ship'],
+  object: ['ship', 'fruit'],
   place: ['island'],
 }
 
