@@ -5,6 +5,7 @@ import {
   addEvent,
   addLabel,
   addMystery,
+  addPortrait,
   addQuote,
   closeDb,
   createEntity,
@@ -215,17 +216,292 @@ describe('the beads', () => {
 
     const page = await read(2, 1, 4)
 
-    // Who walks on, then what happens, then the names, then what it leaves open.
+    // What happens, then who walks on, then what it leaves open. The event and
+    // the mystery are entities too and must not also walk on.
     expect(at(page, 2).map((beat) => beat.kind)).toEqual([
-      'entree',
-      'entree',
-      'entree',
       'evenement',
-      'nom',
-      'nom',
-      'nom',
+      'entree',
       'question',
     ])
+  })
+})
+
+/**
+ * Everything below was found by looking at the real thing.
+ *
+ * A library of invented fixtures has three entities and one event per chapter,
+ * so none of these showed up in the tests: they need a chapter that introduces
+ * thirty-five entities, half of which are events. Chapter 1 of the real work
+ * did, and produced a page two hundred inches long in which every event
+ * appeared three times.
+ */
+describe('what the first real chapter showed', () => {
+  it('does not walk an event on as if it were a character', async () => {
+    const event = await createEntity(world, 'event', 1)
+    await addLabel(world, event, 'Le duel du quai', 'true_name', 1, 100)
+    await addEvent(world, event, { summary: 'Ils se battent.', toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(0)
+    expect(at(page, 1, 'evenement')).toHaveLength(1)
+  })
+
+  it('does not walk a mystery on as if it were a character', async () => {
+    const mystery = await createEntity(world, 'mystery', 1)
+    await addLabel(world, mystery, 'La marque', 'true_name', 1, 100)
+    await addMystery(world, mystery, { question: 'Qui a laissé la marque ?', openedIn: 1 })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(0)
+    expect(at(page, 1, 'question')).toHaveLength(1)
+  })
+
+  it('does not call a first name a reveal', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'nom')).toHaveLength(0)
+    expect(at(page, 1, 'entree')[0]!.text).toBe('Monkey D. Luffy')
+  })
+
+  it('does not print an event’s sentence twice when it is also its name', async () => {
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Shanks sauve Luffy et perd son bras gauche.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+    const [beat] = at(page, 1, 'evenement')
+
+    expect(beat!.text).toBe(phrase)
+    expect(beat!.detail).toBeNull()
+  })
+
+  it('keeps events in the order they were told, not in alphabetical order', async () => {
+    for (const name of ['Zéphyr lève l’ancre', 'Un canot dérive', 'Alba tombe']) {
+      const event = await createEntity(world, 'event', 1)
+      await addLabel(world, event, name, 'true_name', 1, 100)
+      await addEvent(world, event, { summary: `${name} vraiment.`, toldIn: 1 })
+    }
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'evenement').map((beat) => beat.text)).toEqual([
+      'Zéphyr lève l’ancre',
+      'Un canot dérive',
+      'Alba tombe',
+    ])
+  })
+
+  it('refuses a quote torn out of the middle of a sentence', async () => {
+    const subject = await createEntity(world, 'character', 1)
+    await addLabel(world, subject, 'Luffy', 'true_name', 1, 100)
+    const assertionId = await addAssertion(world, {
+      subject,
+      predicate: 'seeks',
+      knowledgeFrom: 1,
+      objectValue: { text: 'le One Piece' },
+    })
+    await addQuote(world, {
+      assertionId,
+      chapterNumber: 1,
+      text: 'declaring he will get a crew stronger than Shanks and the most',
+    })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'citation')).toHaveLength(0)
+  })
+
+  it('shows the same line once, however many rows carry it', async () => {
+    for (const _ of [0, 1]) {
+      const twin = await createEntity(world, 'character', 1)
+      await addLabel(world, twin, 'Benn Beckman', 'true_name', 1, 100)
+    }
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')).toHaveLength(1)
+  })
+})
+
+describe('the faces on the thread', () => {
+  it('gives a character their portrait', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, {
+      matchedLabel: 'Monkey D. Luffy',
+      revealedIn: 1,
+    })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'entree')[0]!.portrait).not.toBeNull()
+    expect(at(page, 1, 'entree')[0]!.portrait!.matchedLabel).toBe('Monkey D. Luffy')
+  })
+
+  it('does not spend its budget on entities that have no picture', async () => {
+    /*
+     * The failure this pins: a chapter introduces a crowd, the cap trims the
+     * *candidates* to the first handful, those happen to be groups and places
+     * no catalogue illustrates, and the chapter comes back with no faces —
+     * looking exactly like a chapter whose characters matched nothing.
+     */
+    // More candidates than the cap, and the only one with a face is last.
+    for (let i = 0; i < 20; i++) {
+      const extra = await createEntity(world, 'place', 1)
+      await addLabel(world, extra, `Île ${i}`, 'true_name', 1, 100)
+    }
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, {
+      matchedLabel: 'Monkey D. Luffy',
+      revealedIn: 1,
+    })
+
+    const page = await read(1, 1, 4)
+    const face = at(page, 1, 'entree').find((beat) => beat.entityId === luffy)
+
+    expect(face!.portrait).not.toBeNull()
+  })
+
+  it('finds a picture hanging off the merged half of an entity', async () => {
+    const silhouette = await createEntity(world, 'character', 1)
+    const named = await createEntity(world, 'character', 1)
+    await addLabel(world, silhouette, 'la silhouette', 'alias', 1, 10)
+    await addLabel(world, named, 'Shanks', 'true_name', 1, 100)
+    // The catalogue matched the half that carries the true name.
+    await addPortrait(world, named, { matchedLabel: 'Shanks', revealedIn: 1 })
+    await addAssertion(world, {
+      subject: silhouette,
+      predicate: 'same_as',
+      object: named,
+      knowledgeFrom: 1,
+    })
+
+    const page = await read(1, 1, 4)
+    const beat = at(page, 1, 'entree').find(
+      (candidate) => candidate.entityId === silhouette,
+    )
+
+    expect(beat!.portrait).not.toBeNull()
+    expect(beat!.portrait!.matchedLabel).toBe('Shanks')
+  })
+
+  it('puts a face beside every named character inside a sentence', async () => {
+    const shanks = await createEntity(world, 'character', 1)
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, shanks, 'Shanks', 'true_name', 1, 100)
+    await addLabel(world, luffy, 'Luffy', 'true_name', 1, 100)
+    await addPortrait(world, shanks, { matchedLabel: 'Shanks', revealedIn: 1 })
+    await addPortrait(world, luffy, { matchedLabel: 'Luffy', revealedIn: 1 })
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase =
+      'Au Partys Bar, Shanks refuse d’emmener Luffy en mer, jugeant qu’il est trop jeune.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+    const parts = at(page, 1, 'evenement')[0]!.textParts
+
+    expect(parts).not.toBeNull()
+    expect(parts!.map((part) => part.text).join('')).toBe(phrase)
+    expect(
+      parts!.filter((part) => part.portrait).map((part) => part.text),
+    ).toEqual(['Shanks', 'Luffy'])
+  })
+
+  it('does not grow a face in the middle of a word', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, { matchedLabel: 'Luffy', revealedIn: 1 })
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Luffytaro traverse le pont sans que personne ne le voie.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'evenement')[0]!.textParts).toBeNull()
+  })
+
+  it('prefers the longest name when two overlap', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Luffy', 'alias', 1, 10)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, { matchedLabel: 'Luffy', revealedIn: 1 })
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Monkey D. Luffy quitte le village au petit matin, seul.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+    const parts = at(page, 1, 'evenement')[0]!.textParts
+
+    expect(parts!.filter((part) => part.portrait).map((part) => part.text)).toEqual([
+      'Monkey D. Luffy',
+    ])
+  })
+
+  it('leaves a name alone when the library has no face for it', async () => {
+    const shanks = await createEntity(world, 'character', 1)
+    await addLabel(world, shanks, 'Shanks', 'true_name', 1, 100)
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Shanks lève l’ancre sans se retourner vers le village.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+
+    expect(at(page, 1, 'evenement')[0]!.textParts).toBeNull()
+  })
+
+  it('never puts a face on a name the reader has not been given', async () => {
+    /*
+     * The sentence contains the true name because chapter 4 wrote it. Read at
+     * chapter 2, that label does not exist — row-level security removed it —
+     * so nothing matches and the reader sees the sentence as written, with no
+     * face and no link to a character they have not met.
+     */
+    const stranger = await createEntity(world, 'character', 1)
+    await addLabel(world, stranger, 'la silhouette', 'alias', 1, 10)
+    await addLabel(world, stranger, 'Kaelo Renn', 'true_name', 4, 100)
+    await addPortrait(world, stranger, {
+      matchedLabel: 'Kaelo Renn',
+      revealedIn: 4,
+    })
+
+    const event = await createEntity(world, 'event', 2)
+    const phrase = 'Kaelo Renn traverse la place sans que personne ne le nomme.'
+    await addLabel(world, event, phrase, 'true_name', 2, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 2 })
+
+    const page = await read(1, 4, 4)
+
+    expect(at(page, 2, 'evenement')[0]!.textParts).toBeNull()
+  })
+
+  it('never shows a face before the name that found it', async () => {
+    const stranger = await createEntity(world, 'character', 1)
+    await addLabel(world, stranger, 'l’homme au tablier de cuir', 'alias', 1, 10)
+    await addLabel(world, stranger, 'Kaelo Renn', 'true_name', 3, 100)
+    await addPortrait(world, stranger, {
+      matchedLabel: 'Kaelo Renn',
+      revealedIn: 3,
+    })
+
+    const page = await read(1, 4, 4)
+
+    expect(at(page, 1, 'entree')[0]!.portrait).toBeNull()
+    expect(at(page, 3, 'nom')[0]!.portrait).not.toBeNull()
   })
 })
 

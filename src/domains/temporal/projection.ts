@@ -422,6 +422,48 @@ export async function identityComponent(
   })
 }
 
+/**
+ * The same answer for many entities, in one read.
+ *
+ * `identityComponent()` reads every visible `same_as` to answer about one
+ * entity; asking it about twenty entities reads that table twenty times. The
+ * union-find it builds already knows about all of them, so this builds it once
+ * and asks it repeatedly. Callers that resolve a whole page of entities — the
+ * story thread looking for faces — need this shape rather than a loop.
+ */
+export async function identityComponents(
+  userId: string,
+  boundaryChapter: number,
+  entityIds: string[],
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  if (entityIds.length === 0) return out
+
+  return withBoundary({ userId, boundaryChapter }, async (db) => {
+    const rows = await db.execute<{
+      subject_entity_id: string
+      object_entity_id: string | null
+    }>(sql`
+      SELECT subject_entity_id, object_entity_id
+      FROM assertions
+      WHERE predicate = 'same_as' AND object_entity_id IS NOT NULL
+    `)
+
+    const identity = new UnionFind()
+    for (const id of entityIds) identity.find(id)
+    for (const row of rows) {
+      if (!row.object_entity_id) continue
+      identity.union(row.subject_entity_id, row.object_entity_id)
+    }
+
+    const members = identity.members()
+    for (const id of entityIds) {
+      out.set(id, members.get(identity.find(id)) ?? [id])
+    }
+    return out
+  })
+}
+
 async function componentOf(db: BoundaryDb, entityId: string): Promise<string[]> {
   const rows = await db.execute<{
     subject_entity_id: string

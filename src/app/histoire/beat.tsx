@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Portrait } from '@/app/components/portrait.tsx'
-import type { StoryBeat } from '@/domains/temporal/story.ts'
+import type { StoryBeat, StoryPart } from '@/domains/temporal/story.ts'
 
 /**
  * One bead on the thread.
@@ -41,7 +41,16 @@ export function Beat({ beat }: { beat: StoryBeat }) {
   if (beat.kind === 'citation') {
     return (
       <li className="perle perle-citation" data-perle>
-        <blockquote>{beat.text}</blockquote>
+        <figure>
+          <blockquote>{beat.text}</blockquote>
+          {/* Not decoration. Everything the graph writes is French; a citation
+              is a copy verified character by character, so it keeps the
+              language of the source — and an English line landing unannounced
+              on a French page reads as a bug rather than as a quotation. */}
+          <figcaption className="perle-source">
+            Cité du chapitre {beat.chapter}, dans la langue de la source
+          </figcaption>
+        </figure>
       </li>
     )
   }
@@ -75,22 +84,57 @@ export function Beat({ beat }: { beat: StoryBeat }) {
 
             {href ? (
               <Link href={href} className="perle-nom">
-                {beat.text}
+                <Ligne parts={beat.textParts} fallback={beat.text} />
               </Link>
             ) : (
               <span
                 className={beat.kind === 'dementi' ? 'perle-raye' : undefined}
               >
-                {beat.text}
+                <Ligne parts={beat.textParts} fallback={beat.text} />
               </span>
             )}
           </p>
 
           {beat.kind !== 'nom' && beat.detail && (
-            <p className="perle-detail">{beat.detail}</p>
+            <p className="perle-detail">
+              <Ligne parts={beat.detailParts} fallback={beat.detail} />
+            </p>
           )}
         </div>
       </div>
     </li>
+  )
+}
+
+/**
+ * A line, with a face beside every name that has one.
+ *
+ * The faces are images rather than links on purpose: the whole line is already
+ * a link to what the bead is about, and an anchor inside an anchor is not
+ * markup a browser will keep. The picture is next to the name it belongs to,
+ * which is what makes it checkable without a caption.
+ */
+function Ligne({
+  parts,
+  fallback,
+}: {
+  parts: StoryPart[] | null
+  fallback: string
+}) {
+  if (!parts) return <>{fallback}</>
+
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.portrait ? (
+          <span key={index} className="mention">
+            {part.text}
+            <Portrait image={part.portrait} label={part.text} size="inline" />
+          </span>
+        ) : (
+          <span key={index}>{part.text}</span>
+        ),
+      )}
+    </>
   )
 }

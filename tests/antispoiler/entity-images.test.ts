@@ -177,8 +177,15 @@ describe('what enrichment refuses to do', () => {
     const concept = await createEntity(world, 'concept', 1)
     await addLabel(world, concept, 'Le One Piece', 'true_name', 1, 100)
 
-    // Not "unmatched" — not looked at. Counting it as a miss would make the
-    // coverage figure permanently and misleadingly incomplete.
+    /*
+     * Not "unmatched" — not looked at. Counting it as a miss would make the
+     * coverage figure permanently and misleadingly incomplete.
+     *
+     * `enrich()` runs offline, which now also switches off the wiki fallback,
+     * and offline is the condition under which nothing can illustrate a
+     * concept: the four catalogue kinds do not cover one. With the wiki
+     * reachable this same entity *is* considered, and tests/images covers that.
+     */
     const report = await enrich()
     expect(report.considered).toBe(0)
   })

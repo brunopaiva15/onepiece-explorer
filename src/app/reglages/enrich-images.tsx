@@ -121,10 +121,18 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
             {result.stored} image(s) récupérée(s) sur {result.considered} entité(s)
             examinée(s).
           </p>
+          {result.fromWiki ? (
+            <p className="mt-1 text-secondary">
+              Dont {result.fromWiki} trouvée(s) sur le wiki, faute de
+              correspondance dans les catalogues — c&apos;est la voie des lieux,
+              des groupes et des espèces, qu&apos;aucun des trois ne référence.
+            </p>
+          ) : null}
           <p className="mt-1 text-secondary">
-            {result.unmatched} sans correspondance dans les {result.catalogueSize}{' '}
-            illustrations du catalogue — c&apos;est le cas normal pour un
-            personnage secondaire ou une désignation provisoire, pas une erreur.
+            {result.unmatched} sans image : ni les {result.catalogueSize}{' '}
+            illustrations du catalogue ni le wiki n&apos;ont de fiche à ce nom —
+            c&apos;est le cas normal pour un personnage secondaire ou une
+            désignation provisoire, pas une erreur.
           </p>
           {result.failures ? (
             <p className="mt-1 text-[var(--epi-contradicted)]">

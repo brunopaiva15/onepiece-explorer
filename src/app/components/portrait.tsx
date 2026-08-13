@@ -25,9 +25,32 @@ export function Portrait({
 }: {
   image: DisplayImage | null
   label: string
-  size?: 'large' | 'small'
+  size?: 'large' | 'small' | 'inline'
 }) {
   if (!image) return null
+
+  /*
+   * A face inside a sentence, sitting on the text's own baseline.
+   *
+   * The caption cannot travel with this one — there is nowhere to put it in the
+   * middle of a line — so it is only ever used *next to the name it belongs
+   * to*, which is the honesty the caption normally provides: the reader can see
+   * what the picture claims to be and judge it. It is decorative to a screen
+   * reader, because the name is right there in the text.
+   */
+  if (size === 'inline') {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={image.thumbUrl}
+        alt=""
+        loading="lazy"
+        width={24}
+        height={24}
+        className="vignette"
+      />
+    )
+  }
 
   if (size === 'small') {
     return (

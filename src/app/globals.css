@@ -719,6 +719,37 @@ hr.regle {
   color: var(--text-primary);
 }
 
+/*
+ * A name and its face, kept together.
+ *
+ * `white-space: nowrap` on the pair so a line break never leaves a portrait
+ * stranded at the start of the next line, away from the name it illustrates.
+ */
+.mention {
+  white-space: nowrap;
+}
+
+.vignette {
+  display: inline-block;
+  width: 1.5em;
+  height: 1.5em;
+  margin-inline: 0.2em 0.05em;
+  vertical-align: -0.42em;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-sunken);
+}
+
+.perle-source {
+  margin-top: 0.45rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
 /* --- The chapter notch --------------------------------------------------- */
 
 .encoche {

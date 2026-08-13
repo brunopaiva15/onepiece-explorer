@@ -13,10 +13,19 @@
  * needed to check it.
  */
 
-/** Kinds an external catalogue can illustrate. */
-export type CandidateKind = 'character' | 'fruit' | 'ship' | 'island'
+/**
+ * Kinds an external catalogue can illustrate.
+ *
+ * `page` is the odd one and is deliberately vague: it means "an article on a
+ * wiki", whatever that article is about. The three catalogues answer with typed
+ * rows — this is a character, this is a ship — and the wiki fallback does not;
+ * it answers with a page that has a lead image. Forcing it into one of the four
+ * typed kinds would state something nobody checked, and the matcher would then
+ * act on it.
+ */
+export type CandidateKind = 'character' | 'fruit' | 'ship' | 'island' | 'page'
 
-export type SourceName = 'onepieceapi' | 'api-onepiece' | 'anilist'
+export type SourceName = 'onepieceapi' | 'api-onepiece' | 'anilist' | 'fandom'
 
 export interface ImageCandidate {
   source: SourceName
@@ -75,3 +84,27 @@ export const KIND_FOR_NODE_TYPE: Readonly<Record<string, CandidateKind[]>> = {
   object: ['ship'],
   place: ['island'],
 }
+
+/**
+ * Node types the wiki fallback may look up.
+ *
+ * Wider than the catalogues, which is the point: the four typed kinds above
+ * cover famous characters, the known Devil Fruits, sixteen ships and thirty-one
+ * islands, and nothing else. A bar, a village, a crew, a race and a title are
+ * all things the wiki has an article and a picture for, and all things the
+ * graph is full of.
+ *
+ * Events, battles, voyages and mysteries stay out. Some of them do have wiki
+ * articles, but the picture on such a page is a scene or a poster rather than a
+ * portrait of the thing named, and the thread never shows a face for them
+ * anyway.
+ */
+export const FANDOM_NODE_TYPES: readonly string[] = [
+  'character',
+  'group',
+  'place',
+  'object',
+  'power',
+  'species',
+  'concept',
+]

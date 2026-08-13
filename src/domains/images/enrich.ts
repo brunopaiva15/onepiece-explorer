@@ -2,9 +2,14 @@ import 'server-only'
 import { sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
 import { loadCatalogue, type LoadOptions } from './catalogue.ts'
-import { buildIndex, matchEntity, type MatchInput } from './match.ts'
+import { buildIndex, matchEntity, type Match, type MatchInput } from './match.ts'
+import { lookupFandomImage } from './sources/fandom.ts'
 import { downloadAndStore } from './store.ts'
-import { KIND_FOR_NODE_TYPE } from './types.ts'
+import {
+  FANDOM_NODE_TYPES,
+  KIND_FOR_NODE_TYPE,
+  type ImageCandidate,
+} from './types.ts'
 
 /**
  * Give the extracted entities a face.
@@ -26,6 +31,8 @@ export interface EnrichReport {
   stored: number
   /** Entities with no plausible candidate. Expected, not a failure. */
   unmatched: number
+  /** Of `matched`, how many the wiki fallback found. */
+  fromWiki: number
   failures: Array<{ entityId: string; label: string; reason: string }>
   /** Sources that could not be reached while building the catalogue. */
   catalogueFailures: Array<{ source: string; reason: string }>
@@ -49,6 +56,16 @@ export interface EnrichOptions extends LoadOptions {
    * "flaky" rather than blocking. The real implementation is the default.
    */
   download?: typeof downloadAndStore
+  /**
+   * Ask the wiki about whatever the catalogues could not place.
+   *
+   * On by default, and off whenever `offline` is set — a run told not to
+   * touch the network must not make one request per unmatched entity. Setting
+   * this to false switches it off on its own.
+   */
+  fandom?: boolean
+  /** Override the wiki lookup. Same reason as `download`. */
+  lookup?: (name: string) => Promise<ImageCandidate | null>
 }
 
 interface Row extends Record<string, unknown> {
@@ -69,13 +86,22 @@ export async function enrichEntityImages(
     matched: 0,
     stored: 0,
     unmatched: 0,
+    fromWiki: 0,
     failures: [],
     catalogueFailures: catalogue.failures,
     catalogueSize: index.size,
     ...(catalogue.cacheNote ? { cacheNote: catalogue.cacheNote } : {}),
   }
 
-  if (index.size === 0) return report
+  /*
+   * An empty catalogue used to end the run here.
+   *
+   * That was right when the catalogues were the only source: nothing to match
+   * against, nothing to do. It is wrong now — the wiki fallback needs no
+   * catalogue at all, and the case where all three community APIs are down is
+   * exactly the case where a fallback earns its keep.
+   */
+  if (index.size === 0 && !wikiEnabled(options)) return report
 
   const work = await pending(userId, options)
   report.considered = work.length
@@ -95,12 +121,13 @@ export async function enrichEntityImages(
       })),
     }
 
-    const match = matchEntity(input, index)
+    const match = matchEntity(input, index) ?? (await fromWiki(input, options))
     if (!match) {
       report.unmatched += 1
       continue
     }
     report.matched += 1
+    if (match.candidate.source === 'fandom') report.fromWiki += 1
 
     try {
       const fetchAndStore = options.download ?? downloadAndStore
@@ -195,8 +222,74 @@ export async function illustrateQuietly(
  * questions with no possible answer, and would report them as "unmatched" as
  * though something had gone wrong.
  */
+/**
+ * The wiki, asked about what the catalogues could not place.
+ *
+ * Tried on the entity's own labels, best first, and stopped at the first hit —
+ * one entity is worth at most a couple of requests to somebody else's free
+ * wiki. The label that found the article is the one recorded, which is what
+ * decides the chapter the picture may appear at: a face found by a true name
+ * stays hidden until the reader is given that name.
+ */
+async function fromWiki(
+  entity: MatchInput,
+  options: EnrichOptions,
+): Promise<Match | null> {
+  if (!wikiEnabled(options)) return null
+  if (!FANDOM_NODE_TYPES.includes(entity.nodeType)) return null
+
+  const lookup = options.lookup ?? lookupFandomImage
+
+  for (const label of entity.labels.slice(0, WIKI_LABELS_PER_ENTITY)) {
+    const candidate = await lookup(label.label)
+    if (!candidate) continue
+    return {
+      candidate,
+      // An article exists under exactly this name. That is a stronger signal
+      // than anything the trigram matcher produces, and it is still a guess:
+      // the caption names the page and links to it so a reader can tell.
+      method: 'exact',
+      score: 1,
+      matchedLabel: label.label,
+      revealedInChapter: label.revealedInChapter,
+    }
+  }
+
+  return null
+}
+
+/** Labels tried per entity before giving up. Requests are somebody else's. */
+const WIKI_LABELS_PER_ENTITY = 2
+
+/**
+ * `offline` means offline.
+ *
+ * It was written for the catalogue, whose network access was the only one there
+ * was, and the wiki fallback would have quietly walked around it — a run asked
+ * not to touch the network would have made one request per unmatched entity.
+ * Honouring it here also keeps the whole test suite hermetic by default: every
+ * existing enrichment test passes `offline: true`, and none of them had to
+ * learn about a lookup that did not exist when they were written.
+ */
+function wikiEnabled(options: EnrichOptions): boolean {
+  return options.fandom !== false && options.offline !== true
+}
+
 async function pending(userId: string, options: EnrichOptions): Promise<Row[]> {
-  const types = Object.keys(KIND_FOR_NODE_TYPE)
+  /*
+   * Every type either catalogue path can illustrate.
+   *
+   * This used to be the four typed kinds alone, which meant a group, a species
+   * or a concept was never even queued — the run reported them as nothing at
+   * all rather than as unmatched, and « pourquoi le Partys Bar n'a pas d'image »
+   * had no answer anywhere in the report.
+   */
+  const types = [
+    ...new Set([
+      ...Object.keys(KIND_FOR_NODE_TYPE),
+      ...(wikiEnabled(options) ? FANDOM_NODE_TYPES : []),
+    ]),
+  ]
   const limit = options.limit ?? 5_000
 
   return withIngest(async (db) => {
