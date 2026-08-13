@@ -1,4 +1,5 @@
 import 'server-only'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { sql, type ExtractTablesWithRelations } from 'drizzle-orm'
 import type { PgTransaction } from 'drizzle-orm/pg-core'
 import type { PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
@@ -124,19 +125,70 @@ export async function withBoundary<T>(
 }
 
 /**
+ * The ingest transaction this async context is already inside, if any.
+ *
+ * A transaction holds its connection for as long as it runs. So a withIngest()
+ * nested inside another one asks the ingest pool for a *second* connection
+ * while the first is held by the code waiting for it — and if the pool has no
+ * second connection to give, the two halves wait for each other forever.
+ *
+ * That is not hypothetical and it is not rare: publishDecisions() opens a
+ * transaction and calls rebuildRefTable(), which opens its own. It worked only
+ * because the pool was four deep. Sizing it to one — which is what a serverless
+ * runtime should hold against a fifteen-client pooler — turned a latent nesting
+ * into « Publication… » forever, and left the instance's only connection
+ * checked out, so every later page that resolves a session through this role
+ * hung behind it too.
+ *
+ * Widening the pool would only raise the number of concurrent publications
+ * needed to reproduce it. The nesting itself is the defect, and the fix is for
+ * a nested call to *join* the transaction already open rather than ask for
+ * another connection: same role, same visibility, same commit.
+ */
+interface OpenIngest {
+  tx: BoundaryDb
+  /** Set once the transaction has settled — see the check in withIngest(). */
+  done: boolean
+}
+
+const openIngest = new AsyncLocalStorage<OpenIngest>()
+
+/**
  * Run `fn` as the ingestion role, exempt from the boundary.
  *
  * For the pipeline, publication and delta computation only — all of which
  * legitimately need to see proposals that are not yet accepted and chapters
  * beyond the reader's position. Never use it to serve a user-facing read:
  * that is exactly the mistake row-level security exists to prevent.
+ *
+ * **Reentrant.** Called from inside another withIngest(), it runs `fn` on that
+ * transaction instead of opening a second one. Two consequences worth knowing:
+ * what the nested call writes commits with the outer transaction rather than on
+ * its own, and a throw out of it poisons the outer one. Where a failure has to
+ * be contained, open a savepoint explicitly with `db.transaction()` — which is
+ * what publication does around each assertion, so that one refused edge does
+ * not take the whole chapter down with it.
+ *
+ * The `done` check is for a callback that outlives its request: `after()`
+ * captures the async context it was scheduled in, so a callback scheduled
+ * during a transaction would otherwise reach for that transaction long after it
+ * committed. A settled scope is treated as no scope, and the callback opens its
+ * own.
  */
 export async function withIngest<T>(
   fn: (db: BoundaryDb) => Promise<T>,
 ): Promise<T> {
+  const open = openIngest.getStore()
+  if (open && !open.done) return fn(open.tx)
+
   return ingestDb().transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL ROLE app_ingest`)
-    return fn(tx)
+    const scope: OpenIngest = { tx, done: false }
+    try {
+      return await openIngest.run(scope, () => fn(tx))
+    } finally {
+      scope.done = true
+    }
   })
 }
 
@@ -146,6 +198,13 @@ export async function withIngest<T>(
  * Only the chapter-deletion path should use this, and only after writing an
  * audit entry. The opt-in is explicit so that "we deleted history" is always a
  * deliberate act that shows up in a diff.
+ *
+ * Unlike withIngest() this one refuses to nest, rather than joining the
+ * transaction already open. Joining would mean setting `app.allow_destructive`
+ * on someone else's transaction — and that setting is transaction-scoped, not
+ * block-scoped, so permission to delete append-only rows would stay on for
+ * everything that ran after it. A loud error about an arrangement that does not
+ * exist today is better than a quiet widening tomorrow.
  */
 export async function withDestructive<T>(
   reason: string,
@@ -154,9 +213,21 @@ export async function withDestructive<T>(
   if (!reason.trim()) {
     throw new Error('Une opération destructive doit être justifiée.')
   }
+  const open = openIngest.getStore()
+  if (open && !open.done) {
+    throw new Error(
+      'withDestructive() ne peut pas être imbriqué dans withIngest() : ' +
+        "l'autorisation de suppression vaudrait pour toute la transaction.",
+    )
+  }
   return ingestDb().transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL ROLE app_ingest`)
     await tx.execute(sql`SELECT set_config('app.allow_destructive', 'on', true)`)
-    return fn(tx)
+    const scope: OpenIngest = { tx, done: false }
+    try {
+      return await openIngest.run(scope, () => fn(tx))
+    } finally {
+      scope.done = true
+    }
   })
 }

@@ -343,6 +343,7 @@ Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répo
 | 429 « Limite atteinte » | Garde-fou de dépense | Attendez le délai indiqué. S'il se déclenche sans action de votre part, cherchez la boucle avant de relever le plafond |
 | Une requête renvoie zéro ligne alors que les données existent | Lecture hors `withBoundary()`, ou frontière trop basse | C'est le comportement voulu — la RLS échoue fermée. Vérifiez l'appelant |
 | `prepared statement already exists` | `prepare: false` manquant sur le pooler | Le client applicatif doit le poser ; le pipeline n'utilise pas le pooler |
+| Un bouton reste sur « … » indéfiniment, puis toute l'instance se fige | Deux connexions demandées au pool d'ingestion pour une seule opération | Redéployez pour libérer l'instance. `withIngest()` est réentrant : un appel imbriqué rejoint la transaction ouverte. Ce qui provoque cela, c'est un chemin qui contourne le wrapper |
 | Un réglage de session fuit d'un utilisateur à l'autre | `SET` au lieu de `SET LOCAL` | Toute variable de session doit être posée par `set_config(..., true)` dans une transaction |
 | `pnpm build` réclame une base | Un module se connecte à l'import | Les clients sont des fabriques paresseuses ; une connexion au chargement du module casse le build |
 | Recherche sémantique « désactivée » | Aucun fournisseur d'embeddings | Attendu. Le plein texte, l'approchant et le graphe fonctionnent sans |
