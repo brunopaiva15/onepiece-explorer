@@ -85,6 +85,10 @@ export function RenameEntity({
       setDone(
         `« ${result.previousLabel} » est désormais « ${result.label} », ` +
           `révélé au chapitre ${result.revealedInChapter}.` +
+          (result.proseRewritten > 0
+            ? ` ${result.proseRewritten} événement(s) ou mystère(s) qui l’écrivaient` +
+              ` en toutes lettres ont suivi.`
+            : '') +
           (result.keptAsAlias
             ? ` L’ancienne forme reste trouvable par la recherche.`
             : '') +
@@ -128,7 +132,9 @@ export function RenameEntity({
         Pour une traduction que le pipeline a devinée de travers — Helmeppo
         s&apos;appelle Hermep en français — ou une orthographe à reprendre. Le
         chapitre de révélation ne bouge pas&nbsp;: c&apos;est le même nom, mieux
-        écrit.
+        écrit. Les événements et les mystères qui l&apos;écrivent en toutes
+        lettres suivent&nbsp;; le texte du chapitre, lui, n&apos;est jamais
+        retouché — c&apos;est ce que la source dit.
       </p>
 
       {labels.length > 1 && (
