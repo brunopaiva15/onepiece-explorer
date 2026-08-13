@@ -58,6 +58,9 @@ export async function fetchApiOnePiece(): Promise<ImageCandidate[]> {
         // than a plausible number: a wrong revelation chapter would show a
         // picture too early, which is the one failure mode that matters here.
         firstAppearanceChapter: null,
+        // A Devil Fruit looks the same on both sides of the ellipse, and the
+        // endpoint would not say so if it did not.
+        era: 'unknown',
       },
     ]
   })

@@ -336,6 +336,18 @@ que vous n'avez pas encore. C'est la base qui l'applique, comme le reste.
 qu'il a accepté. Le rapprochement refuse donc tout signal faible, et la légende
 dit toujours quel nom a trouvé l'image et dans quel catalogue.
 
+**Et pas un visage d'après l'ellipse.** Entre la fin du chapitre 597 et le début
+du 598 il se passe deux ans, et ce qui revient n'est pas un relookage : c'est la
+conséquence de l'arc précédent. Or l'image en haut d'une fiche de wiki est
+toujours la plus récente — pour Nami, Luffy, Zoro, Vivi ou Koby, c'est celle
+d'après. Une image porte donc désormais la période qu'elle montre, lue dans le
+nom de fichier du wiki (`Nami_Manga_Pre_Timeskip_Infobox.png`), et la base
+refuse un visage d'après l'ellipse tant que vous n'avez pas atteint le
+chapitre 598. Une image sans date — c'est le cas de tout ce qui vient des trois
+catalogues — reste servie des deux côtés : « inconnu » n'est pas « après », et
+masquer par précaution viderait le graphe de ses visages sur une supposition.
+Voir `docs/adr/0011-a-portrait-carries-the-period-it-shows.md`.
+
 Les fichiers sont recopiés dans votre bucket privé plutôt que chargés depuis
 chez eux : trois tiers n'ont pas à savoir quels personnages vous consultez, et
 une image ne doit pas casser le jour où un projet de fans déplace un bucket.
@@ -632,6 +644,8 @@ const graphe = await withBoundary(
   une image n'est jamais une source, et pourquoi elle attend son nom
 - [Un lot est une file](docs/adr/0010-a-batch-is-a-queue.md) — pourquoi dix
   chapitres s'importent ensemble et se traitent un par un
+- [Une illustration porte sa période](docs/adr/0011-a-portrait-carries-the-period-it-shows.md)
+  — pourquoi le visage d'après l'ellipse attend le chapitre 598
 - [Importer depuis votre machine](docs/importer-en-local.md) — la marche à
   suivre complète quand l'application est hébergée ailleurs
 - [Exploitation](docs/operations.md) — déployer, surveiller, sauvegarder,

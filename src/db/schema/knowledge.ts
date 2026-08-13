@@ -409,6 +409,12 @@ export const entityImages = pgTable(
     matchMethod: text('match_method').notNull(),
     matchScore: real('match_score').notNull(),
     revealedInChapter: integer('revealed_in_chapter').notNull(),
+    /**
+     * Which side of the two-year ellipse the picture depicts, when its source
+     * says so — see drizzle/0022_a_face_from_before_the_ellipsis.sql. The
+     * boundary policy withholds a post-ellipse face below chapter 598.
+     */
+    era: text('era').notNull().default('unknown'),
     isPrimary: boolean('is_primary').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -417,6 +423,7 @@ export const entityImages = pgTable(
   (t) => [
     unique('entity_images_unique_source').on(t.entityId, t.source, t.sourceRef),
     index('entity_images_boundary_idx').on(t.userId, t.entityId, t.revealedInChapter),
+    index('entity_images_era_idx').on(t.entityId, t.era),
   ],
 )
 

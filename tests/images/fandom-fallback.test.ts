@@ -70,6 +70,7 @@ function wikiCandidate(title: string): ImageCandidate {
     pageUrl: `https://onepiece.fandom.com/fr/wiki/${title}`,
     attribution: 'onepiece.fandom.com (fr)',
     firstAppearanceChapter: null,
+    era: 'unknown',
   }
 }
 
@@ -97,7 +98,7 @@ describe('what the catalogues cannot illustrate', () => {
     const report = await enrichEntityImages(world.userId, {
       ...CATALOGUE,
       download: stored,
-      lookup: async (name) => (name === 'Partys Bar' ? wikiCandidate(name) : null),
+      lookup: async (name) => (name === 'Partys Bar' ? [wikiCandidate(name)] : []),
     })
 
     expect(report.fromWiki).toBe(1)
@@ -119,7 +120,7 @@ describe('what the catalogues cannot illustrate', () => {
     const report = await enrichEntityImages(world.userId, {
       ...CATALOGUE,
       download: stored,
-      lookup: async (name) => wikiCandidate(name),
+      lookup: async (name) => [wikiCandidate(name)],
     })
 
     // Before the fallback these two were never even queued: `considered` was 0
@@ -137,7 +138,7 @@ describe('what the catalogues cannot illustrate', () => {
       ...CATALOGUE,
       download: stored,
       // Only the true name has an article, as is usually the case.
-      lookup: async (name) => (name === 'Kaelo Renn' ? wikiCandidate(name) : null),
+      lookup: async (name) => (name === 'Kaelo Renn' ? [wikiCandidate(name)] : []),
     })
 
     const rows = await imagesOf(stranger)
@@ -152,7 +153,7 @@ describe('what the catalogues cannot illustrate', () => {
     const report = await enrichEntityImages(world.userId, {
       ...CATALOGUE,
       download: stored,
-      lookup: async () => null,
+      lookup: async () => [],
     })
 
     expect(report.unmatched).toBe(1)
@@ -171,7 +172,7 @@ describe('what the catalogues cannot illustrate', () => {
       download: stored,
       lookup: async (name) => {
         asked.push(name)
-        return wikiCandidate(name)
+        return [wikiCandidate(name)]
       },
     })
 
@@ -200,7 +201,7 @@ describe('what the catalogues cannot illustrate', () => {
         ],
       }),
       download: stored,
-      lookup: async (name) => wikiCandidate(name),
+      lookup: async (name) => [wikiCandidate(name)],
     })
 
     expect(report.stored).toBe(1)

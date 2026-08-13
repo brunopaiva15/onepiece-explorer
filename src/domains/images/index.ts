@@ -20,3 +20,16 @@ export { buildCatalogue, loadCatalogue, cataloguePath, summarize } from './catal
 export { buildIndex, matchEntity, nameKey, trigramSimilarity } from './match.ts'
 export { entityImageKey } from './store.ts'
 export { KIND_FOR_NODE_TYPE, type CandidateKind, type ImageCandidate } from './types.ts'
+export {
+  eraAtChapter,
+  eraOfFileName,
+  eraOfImageUrl,
+  LAST_PRE_TIMESKIP_CHAPTER,
+  type Era,
+  type ReaderEra,
+} from './era.ts'
+export {
+  bestPortraits,
+  lookupFandomImages,
+  lookupFandomPortraits,
+} from './sources/fandom.ts'

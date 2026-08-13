@@ -13,6 +13,8 @@
  * needed to check it.
  */
 
+import type { Era } from './era.ts'
+
 /**
  * Kinds an external catalogue can illustrate.
  *
@@ -29,6 +31,16 @@ export type SourceName = 'onepieceapi' | 'api-onepiece' | 'anilist' | 'fandom'
 
 export interface ImageCandidate {
   source: SourceName
+  /**
+   * Which side of the two-year ellipse this picture depicts.
+   *
+   * `unknown` for all three catalogues, and truthfully so: they hand over one
+   * portrait per character and say nothing about when it depicts them. Only the
+   * wiki names its files well enough to be read — see era.ts, and
+   * drizzle/0022_a_face_from_before_the_ellipsis.sql for what the database then
+   * does with it.
+   */
+  era: Era
   /** Stable identifier at the source, so a re-run recognises the same picture. */
   sourceRef: string
   kind: CandidateKind

@@ -108,6 +108,9 @@ function toCandidate(
     pageUrl: `${BASE}/${resource}`,
     attribution: 'onepieceapi.com',
     firstAppearanceChapter: chapterOf(row.extra_data?.first_appearance),
+    // One portrait per row, undated. See era.ts on why that stays `unknown`
+    // rather than being guessed at from "it is probably the current artwork".
+    era: 'unknown',
   }
 }
 

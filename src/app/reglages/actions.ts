@@ -92,6 +92,8 @@ export interface EnrichImagesResult {
   unmatched?: number
   /** Of the pictures found, how many came from the wiki fallback. */
   fromWiki?: number
+  /** Of the pictures found, how many the wiki dates to before the ellipse. */
+  preTimeskip?: number
   failures?: number
   catalogueSize?: number
   notes?: string[]
@@ -105,8 +107,17 @@ export interface EnrichImagesResult {
  * and it costs nothing — but because it downloads from three free community
  * services. A button that can be clicked in a loop is a button that can hammer
  * someone else's server, and being polite to them is worth one shared counter.
+ *
+ * `includeIllustrated` re-examines entities that already have a picture, which
+ * is normally a waste and is exactly what a library illustrated before the
+ * portraits carried a date needs: those rows are all `era = 'unknown'`, so a
+ * reader below chapter 598 is still being served whatever artwork was found
+ * first. Nothing is replaced — the new pictures are added beside the old ones
+ * and the boundary chooses between them.
  */
-export async function enrichImagesAction(): Promise<EnrichImagesResult> {
+export async function enrichImagesAction(
+  includeIllustrated = false,
+): Promise<EnrichImagesResult> {
   try {
     const session = await requireOwner()
 
@@ -120,7 +131,7 @@ export async function enrichImagesAction(): Promise<EnrichImagesResult> {
       }
     }
 
-    const report = await enrichEntityImages(session.userId)
+    const report = await enrichEntityImages(session.userId, { includeIllustrated })
 
     const notes = [
       ...(report.cacheNote ? [report.cacheNote] : []),
@@ -142,6 +153,7 @@ export async function enrichImagesAction(): Promise<EnrichImagesResult> {
       stored: report.stored,
       unmatched: report.unmatched,
       fromWiki: report.fromWiki,
+      preTimeskip: report.preTimeskip,
       failures: report.failures.length,
       catalogueSize: report.catalogueSize,
       notes,
