@@ -113,6 +113,16 @@ export const chapters = pgTable(
     parallelLanguage: text('parallel_language').$type<'fr' | 'en'>(),
     /** Content fingerprint over the source — makes re-import idempotent. */
     sourceFingerprint: text('source_fingerprint'),
+    /**
+     * Waiting for the chapter before it to be published.
+     *
+     * A batch import stores ten chapters and processes them one at a time, in
+     * order, because entity resolution only ever compares a proposal against
+     * what is *already in the graph* — and nothing is in the graph until it has
+     * been reviewed. Ten runs at once would each be blind to the nine others
+     * and propose the same character nine extra times. See migration 0021.
+     */
+    queuedForRun: boolean('queued_for_run').notNull().default(false),
     pageCount: integer('page_count').notNull().default(0),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
