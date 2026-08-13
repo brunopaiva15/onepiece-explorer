@@ -61,6 +61,44 @@ describe('a character’s sheet', () => {
     expect(titles(sections)).toEqual(['adversaires'])
   })
 
+  it('never files an adversary among the allies', () => {
+    /*
+     * Chapitre 1, la scène du bar. Higuma parle à Shanks — il le provoque —
+     * et la fiche de Shanks le rangeait parmi ses « Proches », en même temps
+     * que parmi ses « Adversaires », parce que `speaks_to` y était classé.
+     *
+     * Le prédicat dit pourtant ce qu'il vaut : « adresse la parole, attesté
+     * par un dialogue ». Adresser la parole n'est pas un lien d'affection, et
+     * `knows` et `meets` ne le sont pas davantage — on connaît son ennemi.
+     * Seuls l'alliance et la protection font un proche.
+     */
+    const sections = buildEntityProfile('character', [
+      fact({ predicate: 'speaks_to', direction: 'incoming', otherId: 'higuma' }),
+      fact({ predicate: 'enemy_of', otherId: 'higuma' }),
+      fact({ predicate: 'protects', otherId: 'luffy' }),
+    ])
+
+    const allies = sections.find((s) => s.key === 'allies')!
+    expect(allies.entries.map((e) => e.otherId)).toEqual(['luffy'])
+    expect(sections.find((s) => s.key === 'adversaires')!.entries[0]!.otherId).toBe(
+      'higuma',
+    )
+    // Le fait n'est pas perdu pour autant : il est neutre, il est rangé où il
+    // ne prétend rien.
+    expect(sections.find((s) => s.key === 'rencontres')!.entries[0]!.otherId).toBe(
+      'higuma',
+    )
+  })
+
+  it('does not call a destruction a possession', () => {
+    const sections = buildEntityProfile('character', [
+      fact({ predicate: 'owns', otherId: 'chapeau', otherType: 'object' }),
+      fact({ predicate: 'destroys', otherId: 'navire', otherType: 'object' }),
+    ])
+
+    expect(titles(sections)).toEqual(['avoir', 'faconne'])
+  })
+
   it('files an incoming fact by what it means, not by its direction', () => {
     // « Shanks protège Luffy » belongs among Luffy's proches, and reads from
     // his side. The old page called it « ce que l'on dit d'elle » and left the
@@ -69,7 +107,7 @@ describe('a character’s sheet', () => {
       fact({ predicate: 'protects', direction: 'incoming', otherLabel: 'Shanks' }),
     ])
 
-    expect(titles(sections)).toEqual(['proches'])
+    expect(titles(sections)).toEqual(['allies'])
     expect(sections[0]!.entries[0]!.role).toBe('protégé par')
   })
 })
