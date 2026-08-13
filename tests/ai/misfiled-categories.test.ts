@@ -9,6 +9,10 @@ import { extractionSystem } from '@/domains/ai/prompts.ts'
 import type { Extraction } from '@/domains/ai/schemas.ts'
 import { NODE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { namespaceLocalIds, renderOntology } from '@/domains/pipeline/steps/extract.ts'
+// The function publication itself uses to answer « quelle sorte de scène » —
+// asserted here rather than reimplemented, since that is the contract refiling
+// has to hand over to.
+import { occurrenceType } from '@/domains/review/publish.ts'
 
 /**
  * A scene proposed as a character, and everything that follows from it.
@@ -85,6 +89,62 @@ describe('a proposal that arrived under the wrong heading', () => {
     // The id survives, so anything naming it still reaches it.
     expect(extraction.events[0]!.local_id).toBe('e7')
     expect(extraction.events[0]!.evidence).toEqual(cite)
+  })
+
+  it('files a combat and a voyage there too, keeping what they are', () => {
+    /*
+     * The hole the first version left. `battle` and `voyage` are node types in
+     * the same ontology, offered in the same field, and a model that classifies
+     * a scene *better* wrote one of them — so the more precise answer was the
+     * one nothing caught. « Dix ans plus tard, Luffy quitte seul le Village de
+     * Fuchsia pour prendre la mer » is a voyage, and it became a node with a
+     * sentence for a name that later chapters could point a relation at.
+     *
+     * The kind travels with it: publication resolves an absent one by re-reading
+     * the summary, and that reading never returns `voyage` — so dropping it here
+     * would quietly demote the scene to an ordinary event.
+     */
+    const { extraction, refiled } = refileMisfiled({
+      ...empty(),
+      entities: [
+        entity({
+          local_id: 'e2',
+          node_type: 'voyage',
+          label:
+            'Dix ans plus tard, Luffy quitte seul le Village de Fuchsia pour ' +
+            'prendre la mer, sous le regard de Makino et des villageois.',
+        }),
+        entity({
+          local_id: 'e3',
+          node_type: 'battle',
+          label: 'Zoro affronte Baggy en duel.',
+        }),
+      ],
+    })
+
+    expect(refiled.events).toBe(2)
+    expect(extraction.entities).toHaveLength(0)
+    expect(extraction.events.map((event) => event.kind)).toEqual(['voyage', 'battle'])
+    expect(extraction.events.map((event) => event.local_id)).toEqual(['e2', 'e3'])
+  })
+
+  it('lets an ordinary event still be recognised as a combat', () => {
+    /*
+     * `event` is what publication falls back to when nobody said, and the
+     * fallback re-reads the summary — which is how « affronte » and « duel »
+     * are found. Stating `event` here would look like carrying the model's
+     * answer over and would in fact take that reading away, so the field is
+     * left empty and the scene keeps its chance to be a combat.
+     */
+    const { extraction } = refileMisfiled({
+      ...empty(),
+      entities: [
+        entity({ node_type: 'event', label: 'Zoro affronte Baggy en duel.' }),
+      ],
+    })
+
+    expect(extraction.events[0]!.kind).toBeUndefined()
+    expect(occurrenceType(extraction.events[0]!)).toBe('battle')
   })
 
   it('does not claim a refiled scene is a memory', () => {

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { anchorMatch, isAnchoredIn, normalizeText } from '../knowledge/normalize.ts'
+import { OCCURRENCE_TYPES, type OccurrenceKind } from '../knowledge/ontology.ts'
 import type {
   CandidateAssertion,
   CandidateEntity,
@@ -218,25 +219,41 @@ export interface FilterResult {
 /**
  * Node types the extraction has an array of its own for.
  *
- * `event` and `mystery` are in the ontology because a relation has to be able
- * to point at one — `participates_in` takes an event, `resolves_mystery` takes
- * a mystery. They are not there to be *proposed* as entities, and the two are
- * a hair apart in a schema that offers `entities`, `events` and `mysteries`
+ * An occurrence and a `mystery` are in the ontology because a relation has to
+ * be able to point at one — `participates_in` takes an event, `resolves_mystery`
+ * takes a mystery. They are not there to be *proposed* as entities, and the two
+ * are a hair apart in a schema that offers `entities`, `events` and `mysteries`
  * side by side.
+ *
+ * All three occurrence types, not `event` alone. `battle` and `voyage` are node
+ * types the model may write in that same slot, and it writes them for the best
+ * of reasons: it classified the scene *better*. « Dix ans plus tard, Luffy
+ * quitte seul le Village de Fuchsia pour prendre la mer » is a voyage, said so,
+ * and went straight past a door that was only watching for the word `event`.
  */
-const HAS_OWN_CATEGORY = new Set(['event', 'mystery'])
+const OCCURRENCE = new Set<string>(OCCURRENCE_TYPES)
+const HAS_OWN_CATEGORY = new Set<string>([...OCCURRENCE, 'mystery'])
 
 /**
  * An event proposed as an entity, put back where events go.
  *
- * The failure this repairs is silent and total. An `entities` row of type
- * `event` is a node with a sentence for a name and no row in `events`: absent
- * from the chronology, which reads that table; absent from story mode's « il
- * arrive », which reads it too; and caught instead by the arm that announces
- * whoever has no beat of their own — so a chapter's six events arrived as six
- * characters walking on, labelled « entre en scène · Événement ». Nothing about
- * it is visible in review, where the card says « entité » and shows a sentence,
- * which is exactly what an event card shows.
+ * The failure this repairs is silent and total. An `entities` row of an
+ * occurrence type is a node with a sentence for a name and no row in `events`:
+ * absent from the chronology, which reads that table; absent from story mode's
+ * « il arrive », which reads it too; and caught instead by the arm that
+ * announces whoever has no beat of their own — so a chapter's six events
+ * arrived as six characters walking on, labelled « entre en scène ·
+ * Événement ». Nothing about it is visible in review, where the card says
+ * « entité » and shows a sentence, which is exactly what an event card shows.
+ *
+ * And it does not stay quiet in its own chapter. The node is an entity like any
+ * other, so the next chapter's extraction is handed it among the people and the
+ * places — a sentence naming three characters, offered as something a relation
+ * may point at. `located_at`, `travels_from` and `travels_to` all accept an
+ * occurrence as their subject, so « <la phrase où Luffy quitte Fuchsia> se
+ * trouve à la Base de la Marine » is well typed, passes every check, and reads
+ * on the review card as a claim about Luffy. The scene has become the character
+ * it mentions.
  *
  * The prompt now says where an event goes (PROMPT_VERSION 6). This is the part
  * that does not depend on the model having read it — the same division of
@@ -269,10 +286,28 @@ export function refileMisfiled(extraction: Extraction): {
   const refiled = { events: 0, mysteries: 0 }
 
   for (const entity of extraction.entities) {
-    if (entity.node_type === 'event') {
+    if (OCCURRENCE.has(entity.node_type)) {
       events.push({
         local_id: entity.local_id,
         summary: entity.label,
+        /*
+         * The sort of scene it said this was, carried over rather than guessed
+         * again — and only when it says more than the fallback would.
+         *
+         * Publication resolves an absent `kind` by re-reading the summary, and
+         * that reading never returns `voyage` on purpose: a departure has no
+         * vocabulary a chapter of seafaring does not use constantly. So dropping
+         * a stated `voyage` here would file the one scene the model named
+         * precisely as an ordinary event, invisibly.
+         *
+         * `event` is the fallback's own answer, and stating it would be worse
+         * than saying nothing: « Zoro affronte Baggy en duel » misfiled as an
+         * entity of type `event` is still a combat, and it is the re-reading
+         * that finds it. Silence here is what keeps that door open.
+         */
+        ...(entity.node_type === 'event'
+          ? {}
+          : { kind: entity.node_type as OccurrenceKind }),
         participants: [],
         // Nothing in an entity proposal says a scene is a memory. Claiming it
         // is one would put it at the wrong place on the story axis, which is

@@ -157,6 +157,50 @@ describe('naming the ends of a relation', () => {
     const queue = await getReviewQueue(world.userId, runId)
     expect(queue!.items.find((row) => row.id === item)!.names).toEqual({})
   })
+
+  it('says which of them is a scene rather than someone', async () => {
+    /*
+     * A name is not enough to read a relation. An event is an entity with a
+     * side table and its name *is* its summary, so an end that is a scene
+     * arrives as a bare sentence: « Dix ans plus tard, Luffy quitte seul le
+     * Village de Fuchsia… se trouve à la Base de la Marine » reads as a claim
+     * about Luffy and is a claim about the scene that mentions him. Nothing
+     * else on the card says otherwise — `located_at` accepts an occurrence, so
+     * the relation is well typed and `typeMismatch` is silent.
+     */
+    const scene = await createEntity(world, 'voyage', 1)
+    await addLabel(
+      world,
+      scene,
+      'Dix ans plus tard, Luffy quitte seul le Village de Fuchsia.',
+      'alias',
+      1,
+      10,
+    )
+    const base = await createEntity(world, 'place', 1)
+    await addLabel(world, base, 'Base de la Marine', 'alias', 1, 10)
+
+    const item = await propose('assertion', {
+      ...relation(scene, base),
+      predicate: 'located_at',
+    })
+
+    const row = (await getReviewQueue(world.userId, runId))!.items.find(
+      (queued) => queued.id === item,
+    )!
+
+    expect(row.typeMismatch).toBeNull()
+    expect(row.nodeTypes[scene]).toBe('voyage')
+    expect(row.nodeTypes[base]).toBe('place')
+  })
+
+  it('says it for an end still under review, too', async () => {
+    await propose('entity', { ...entity('e1', 'Shanks'), node_type: 'character' })
+    const item = await propose('assertion', relation('e1', null))
+
+    const queue = await getReviewQueue(world.userId, runId)
+    expect(queue!.items.find((row) => row.id === item)!.nodeTypes.e1).toBe('character')
+  })
 })
 
 describe('which identifiers a payload mentions', () => {
