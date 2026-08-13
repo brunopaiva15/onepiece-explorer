@@ -167,6 +167,102 @@ export async function fetchChapterSummaries(
   return { chapterNumber, summaries, problems }
 }
 
+/**
+ * How many chapters one range may ask for.
+ *
+ * Not a performance limit — the wiki answers a chapter in well under a second.
+ * It is a limit on how much prose a person is agreeing to store without having
+ * read it. Twenty chapters is a volume and a half, already more than anyone
+ * proof-reads in one sitting; a field that accepted "1 to 1100" would turn a
+ * typo into a library.
+ */
+export const MAX_RANGE_LENGTH = 20
+
+/** How many chapters are in flight at once. Four requests each, so: politely. */
+const RANGE_CONCURRENCY = 3
+
+export interface FandomRangeEntry {
+  chapterNumber: number
+  /** What came back, or null when the wiki has this chapter in no language. */
+  fetched: FandomFetch | null
+  /** Why nothing came back. Set exactly when `fetched` is null. */
+  error: string | null
+}
+
+/**
+ * A run of consecutive chapters, each fetched independently.
+ *
+ * One chapter failing is an outcome, not an abort. The French wiki lags the
+ * English one by hundreds of chapters and either can have a hole in it; a range
+ * of ten that loses one must still import the nine, or the feature is unusable
+ * exactly where it is most needed. So every chapter comes back carrying either
+ * its summaries or its reason, and the form shows both before anything is
+ * stored.
+ *
+ * Results are in chapter order regardless of which finished first — the order
+ * is the one thing the caller cannot recompute, since it is what the queue will
+ * be processed in.
+ */
+export async function fetchChapterRange(
+  from: number,
+  to: number,
+  fetcher: Fetcher = defaultFetcher,
+): Promise<FandomRangeEntry[]> {
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0) {
+    throw new FandomError('Un intervalle se donne en entiers positifs.')
+  }
+  if (to < from) {
+    throw new FandomError(
+      `L’intervalle ${from}–${to} va à l’envers : le premier chapitre doit venir avant le dernier.`,
+    )
+  }
+
+  const length = to - from + 1
+  if (length > MAX_RANGE_LENGTH) {
+    throw new FandomError(
+      `${length} chapitres d’un coup, au-delà des ${MAX_RANGE_LENGTH} autorisés. ` +
+        'Ce sont des textes que vous allez relire avant de les stocker : ' +
+        'au-delà, personne ne les relit.',
+    )
+  }
+
+  const numbers = Array.from({ length }, (_, offset) => from + offset)
+  const results = new Map<number, FandomRangeEntry>()
+  let cursor = 0
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = cursor++
+      const chapterNumber = numbers[index]
+      if (chapterNumber === undefined) return
+
+      try {
+        results.set(chapterNumber, {
+          chapterNumber,
+          fetched: await fetchChapterSummaries(chapterNumber, fetcher),
+          error: null,
+        })
+      } catch (error) {
+        results.set(chapterNumber, {
+          chapterNumber,
+          fetched: null,
+          error: error instanceof Error ? error.message : 'Erreur inconnue.',
+        })
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(RANGE_CONCURRENCY, numbers.length) }, () => worker()),
+  )
+
+  return numbers.map((chapterNumber) => {
+    const entry = results.get(chapterNumber)
+    if (!entry) throw new Error(`Chapitre ${chapterNumber} sans résultat.`)
+    return entry
+  })
+}
+
 async function fetchOne(
   language: FandomLanguage,
   chapterNumber: number,
