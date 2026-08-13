@@ -59,27 +59,53 @@ export interface ProfileFact {
   evidence: readonly unknown[]
 }
 
-export interface ProfileEntry {
-  /** Stable within its section; the same relation asserted twice is one entry. */
-  key: string
+/**
+ * One thing this entity is to the sheet: « protège », « a rencontré », « chef ».
+ *
+ * A rôle carries its own epistemic weight, and that is the whole reason it is a
+ * record rather than a string. Luffy protects Koby *and* has met him; the
+ * meeting may be a deduction and the protection stated outright, and folding
+ * both onto one line must not quietly lend the deduction the other's
+ * certainty.
+ */
+export interface ProfileRole {
   predicate: string
   direction: FactDirection
   /** How this end reads from the sheet: « membre », « protégé par », « enfant ». */
-  role: string
-  otherId: string | null
-  otherLabel: string | null
-  otherType: string | null
-  literalValue: string | null
-  /** The strongest status among the merged assertions — see `mergeInto`. */
+  label: string
+  /** The strongest status among the assertions folded into this rôle. */
   epistemicStatus: string
-  /** The earliest chapter at which the reader could know this. */
+  /** The earliest chapter at which the reader could know it. */
   knowledgeFromChapter: number
   /** Set when the reader will later see this belief refuted. */
   knowledgeUntilChapter: number | null
   locked: boolean
-  /** Every assertion folded into this line, oldest first. */
+  /** Every assertion behind this rôle, oldest first. */
   assertionIds: string[]
   evidenceCount: number
+}
+
+/**
+ * One *person* — or island, or crew — under one heading.
+ *
+ * The unit of a section is who it is about, not how many things were asserted.
+ * « Proches » listing « a rencontré Zoro », « protège Zoro » and « connaît
+ * Zoro » on three consecutive lines counts to three and says one thing, and a
+ * sheet with forty of those is a list to scroll rather than a page to read.
+ */
+export interface ProfileEntry {
+  /** Stable within its section: the other end of the relation. */
+  key: string
+  otherId: string | null
+  otherLabel: string | null
+  otherType: string | null
+  literalValue: string | null
+  /** Everything this entity is to the sheet, under this heading. */
+  roles: ProfileRole[]
+  /** The strongest status among the rôles — what the line's colour shows. */
+  epistemicStatus: string
+  /** The earliest chapter at which any of it could be known. */
+  knowledgeFromChapter: number
 }
 
 export interface ProfileSection {
@@ -525,10 +551,25 @@ export function buildEntityProfile(
   const defs = SECTIONS_BY_TYPE[nodeType] ?? FALLBACK_SECTIONS
   const all = [...defs, AUTRES]
 
-  // One accumulator per section, each holding its entries by merge key: the
-  // same relation asserted in three chapters is one line carrying three
-  // assertion ids, not three lines saying the same thing.
-  const buckets = all.map(() => new Map<string, ProfileEntry & { slotIndex: number }>())
+  /*
+   * One accumulator per section, holding its entries by the entity they are
+   * about.
+   *
+   * `slotIndex` rides along on the entry and on each rôle so both can be
+   * ordered by the table's own order — captain before crew member — and is
+   * stripped before the sections are returned; it is bookkeeping, not something
+   * the interface should be able to read.
+   */
+  const buckets = all.map(
+    () =>
+      new Map<
+        string,
+        Omit<ProfileEntry, 'roles'> & {
+          slotIndex: number
+          roles: Array<ProfileRole & { slotIndex: number }>
+        }
+      >(),
+  )
 
   for (const fact of facts) {
     const direction = effectiveDirection(fact)
@@ -548,33 +589,50 @@ export function buildEntityProfile(
       }
     }
 
+    // One line per person, per heading. `Zoro` under « Proches » is one entry
+    // whatever the graph has to say about him there; the rôles accumulate on it.
     const bucket = buckets[sectionIndex]!
-    const other = fact.otherId ?? `valeur:${fact.literalValue ?? ''}`
-    const key = `${fact.predicate}|${direction}|${other}`
-    const existing = bucket.get(key)
+    const key = fact.otherId ?? `valeur:${fact.literalValue ?? ''}`
+    const entry = bucket.get(key)
 
-    if (existing) {
-      mergeInto(existing, fact)
+    if (!entry) {
+      bucket.set(key, {
+        key,
+        slotIndex,
+        otherId: fact.otherId,
+        otherLabel: fact.otherLabel,
+        otherType: fact.otherType,
+        literalValue: fact.literalValue,
+        roles: [newRole(fact, direction, slotRole, slotIndex)],
+        epistemicStatus: fact.epistemicStatus,
+        knowledgeFromChapter: fact.knowledgeFromChapter,
+      })
       continue
     }
 
-    bucket.set(key, {
-      key,
-      slotIndex,
-      predicate: fact.predicate,
-      direction,
-      role: slotRole ?? roleLabel(fact.predicate, direction),
-      otherId: fact.otherId,
-      otherLabel: fact.otherLabel,
-      otherType: fact.otherType,
-      literalValue: fact.literalValue,
-      epistemicStatus: fact.epistemicStatus,
-      knowledgeFromChapter: fact.knowledgeFromChapter,
-      knowledgeUntilChapter: fact.knowledgeUntilChapter,
-      locked: fact.locked,
-      assertionIds: [fact.assertionId],
-      evidenceCount: fact.evidence.length,
-    })
+    const role = entry.roles.find(
+      (candidate) =>
+        candidate.predicate === fact.predicate && candidate.direction === direction,
+    )
+    if (role) {
+      mergeIntoRole(role, fact)
+    } else {
+      entry.roles.push(newRole(fact, direction, slotRole, slotIndex))
+    }
+
+    // The line as a whole is dated by the first thing known about this person
+    // here, and coloured by the best-supported of them. Each rôle keeps its own
+    // of both — nothing is lent from one claim to another.
+    if (fact.knowledgeFromChapter < entry.knowledgeFromChapter) {
+      entry.knowledgeFromChapter = fact.knowledgeFromChapter
+    }
+    if (
+      (STATUS_RANK[fact.epistemicStatus] ?? 0) >
+      (STATUS_RANK[entry.epistemicStatus] ?? 0)
+    ) {
+      entry.epistemicStatus = fact.epistemicStatus
+    }
+    if (slotIndex < entry.slotIndex) entry.slotIndex = slotIndex
   }
 
   const sections: ProfileSection[] = []
@@ -595,15 +653,40 @@ export function buildEntityProfile(
     sections.push({
       key: all[i]!.key,
       title: all[i]!.title,
-      entries: entries.map(({ slotIndex: _slotIndex, ...entry }) => entry),
+      entries: entries.map(({ slotIndex: _s, ...entry }) => ({
+        ...entry,
+        roles: entry.roles
+          .sort((a, b) => a.slotIndex - b.slotIndex || a.knowledgeFromChapter - b.knowledgeFromChapter)
+          .map(({ slotIndex: _r, ...role }) => role),
+      })),
     })
   }
 
   return sections
 }
 
+function newRole(
+  fact: ProfileFact,
+  direction: FactDirection,
+  slotRole: string | undefined,
+  slotIndex: number,
+): ProfileRole & { slotIndex: number } {
+  return {
+    slotIndex,
+    predicate: fact.predicate,
+    direction,
+    label: slotRole ?? roleLabel(fact.predicate, direction),
+    epistemicStatus: fact.epistemicStatus,
+    knowledgeFromChapter: fact.knowledgeFromChapter,
+    knowledgeUntilChapter: fact.knowledgeUntilChapter,
+    locked: fact.locked,
+    assertionIds: [fact.assertionId],
+    evidenceCount: fact.evidence.length,
+  }
+}
+
 /**
- * Fold a second assertion of the same relation into the line already there.
+ * Fold a second assertion of the same relation into the rôle already there.
  *
  * The chapter shown is the earliest: it is when the reader could first know
  * this, which is the question the fiche answers everywhere else. The status
@@ -613,22 +696,22 @@ export function buildEntityProfile(
  * established fact. Both are summaries of rows the record below still lists one
  * by one, each with its own status and its own evidence.
  */
-function mergeInto(entry: ProfileEntry, fact: ProfileFact): void {
-  entry.assertionIds.push(fact.assertionId)
-  entry.evidenceCount += fact.evidence.length
-  entry.locked = entry.locked || fact.locked
+function mergeIntoRole(role: ProfileRole, fact: ProfileFact): void {
+  role.assertionIds.push(fact.assertionId)
+  role.evidenceCount += fact.evidence.length
+  role.locked = role.locked || fact.locked
 
-  if (fact.knowledgeFromChapter < entry.knowledgeFromChapter) {
-    entry.knowledgeFromChapter = fact.knowledgeFromChapter
+  if (fact.knowledgeFromChapter < role.knowledgeFromChapter) {
+    role.knowledgeFromChapter = fact.knowledgeFromChapter
   }
 
   const rank = STATUS_RANK[fact.epistemicStatus] ?? 0
-  if (rank > (STATUS_RANK[entry.epistemicStatus] ?? 0)) {
-    entry.epistemicStatus = fact.epistemicStatus
+  if (rank > (STATUS_RANK[role.epistemicStatus] ?? 0)) {
+    role.epistemicStatus = fact.epistemicStatus
     // The refutation window belongs to the claim now being shown: keeping the
     // weaker assertion's window would announce a denial of something the sheet
     // no longer displays.
-    entry.knowledgeUntilChapter = fact.knowledgeUntilChapter
+    role.knowledgeUntilChapter = fact.knowledgeUntilChapter
   }
 }
 

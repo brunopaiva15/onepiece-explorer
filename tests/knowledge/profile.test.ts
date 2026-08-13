@@ -49,8 +49,8 @@ describe('a character’s sheet', () => {
     ])
 
     expect(titles(sections)).toEqual(['famille', 'appartenances'])
-    expect(sections[0]!.entries[0]!.role).toBe('parent')
-    expect(sections[1]!.entries[0]!.role).toBe('membre de')
+    expect(sections[0]!.entries[0]!.roles[0]!.label).toBe('parent')
+    expect(sections[1]!.entries[0]!.roles[0]!.label).toBe('membre de')
   })
 
   it('shows no heading for a section it has nothing to put under', () => {
@@ -108,7 +108,7 @@ describe('a character’s sheet', () => {
     ])
 
     expect(titles(sections)).toEqual(['allies'])
-    expect(sections[0]!.entries[0]!.role).toBe('protégé par')
+    expect(sections[0]!.entries[0]!.roles[0]!.label).toBe('protégé par')
   })
 })
 
@@ -120,7 +120,7 @@ describe('a group’s sheet', () => {
     ])
 
     expect(titles(sections)).toEqual(['membres'])
-    expect(sections[0]!.entries.map((e) => e.role)).toEqual(['chef', 'membre'])
+    expect(sections[0]!.entries.map((e) => e.roles[0]!.label)).toEqual(['chef', 'membre'])
   })
 
   it('orders equals by the chapter that revealed them', () => {
@@ -154,8 +154,8 @@ describe('a place’s sheet', () => {
     ])
 
     expect(titles(sections)).toEqual(['situation', 'contient'])
-    expect(sections[0]!.entries[0]!.role).toBe('fait partie de')
-    expect(sections[1]!.entries[0]!.role).toBe('comprend')
+    expect(sections[0]!.entries[0]!.roles[0]!.label).toBe('fait partie de')
+    expect(sections[1]!.entries[0]!.roles[0]!.label).toBe('comprend')
   })
 
   it('separates who stands there from what happens there', () => {
@@ -167,8 +167,8 @@ describe('a place’s sheet', () => {
     ])
 
     expect(titles(sections)).toEqual(['presents', 'evenements'])
-    expect(sections[0]!.entries[0]!.role).toBe('sur place')
-    expect(sections[1]!.entries[0]!.role).toBe('s’y déroule')
+    expect(sections[0]!.entries[0]!.roles[0]!.label).toBe('sur place')
+    expect(sections[1]!.entries[0]!.roles[0]!.label).toBe('s’y déroule')
   })
 })
 
@@ -190,9 +190,9 @@ describe('a fruit and the capacity it gives', () => {
     ])
 
     expect(titles(fruit)).toEqual(['confere'])
-    expect(fruit[0]!.entries[0]!.role).toBe('confère')
+    expect(fruit[0]!.entries[0]!.roles[0]!.label).toBe('confère')
     expect(titles(power)).toEqual(['origine'])
-    expect(power[0]!.entries[0]!.role).toBe('conféré par')
+    expect(power[0]!.entries[0]!.roles[0]!.label).toBe('conféré par')
   })
 })
 
@@ -227,7 +227,7 @@ describe('the same relation asserted twice', () => {
     const entries = sections[0]!.entries
     expect(entries).toHaveLength(1)
     expect(entries[0]!.knowledgeFromChapter).toBe(2)
-    expect(entries[0]!.assertionIds).toEqual(['a1', 'a2'])
+    expect(entries[0]!.roles[0]!.assertionIds).toEqual(['a1', 'a2'])
   })
 
   it('keeps the strongest of the two statuses, and its refutation window', () => {
@@ -250,8 +250,8 @@ describe('the same relation asserted twice', () => {
       }),
     ])
 
-    expect(sections[0]!.entries[0]!.epistemicStatus).toBe('explicit')
-    expect(sections[0]!.entries[0]!.knowledgeUntilChapter).toBeNull()
+    expect(sections[0]!.entries[0]!.roles[0]!.epistemicStatus).toBe('explicit')
+    expect(sections[0]!.entries[0]!.roles[0]!.knowledgeUntilChapter).toBeNull()
   })
 
   it('counts the evidence of every assertion it folded in', () => {
@@ -260,7 +260,70 @@ describe('the same relation asserted twice', () => {
       fact({ assertionId: 'a2', predicate: 'knows', otherId: 'nami', evidence: [{}, {}] }),
     ])
 
-    expect(sections[0]!.entries[0]!.evidenceCount).toBe(3)
+    expect(sections[0]!.entries[0]!.roles[0]!.evidenceCount).toBe(3)
+  })
+})
+
+describe('one person, under one heading', () => {
+  it('is one line carrying every rôle, not one line per rôle', () => {
+    /*
+     * « Proches » listait « a rencontré Zoro », « protège Zoro » et « connaît
+     * Zoro » sur trois lignes de suite, comptait trois, et disait une chose.
+     * Sur une fiche un peu fournie cela faisait quarante-deux lignes pour une
+     * quinzaine de personnes : une liste à faire défiler plutôt qu'une page à
+     * lire.
+     */
+    const sections = buildEntityProfile('character', [
+      fact({ predicate: 'protects', otherId: 'zoro', knowledgeFromChapter: 11 }),
+      fact({ predicate: 'protects', otherId: 'koby', knowledgeFromChapter: 2 }),
+      fact({ predicate: 'allied_with', otherId: 'zoro', knowledgeFromChapter: 3 }),
+    ])
+
+    const allies = sections.find((s) => s.key === 'allies')!
+    expect(allies.entries).toHaveLength(2)
+
+    const zoro = allies.entries.find((e) => e.otherId === 'zoro')!
+    expect(zoro.roles.map((r) => r.label)).toEqual(['allié', 'protège'])
+    // La ligne est datée du premier des deux ; chaque rôle garde le sien, car
+    // « rencontré au 3, protégé au 11 » sont deux moments et une seule date en
+    // choisirait un et cacherait l'autre.
+    expect(zoro.knowledgeFromChapter).toBe(3)
+    expect(zoro.roles.map((r) => r.knowledgeFromChapter)).toEqual([3, 11])
+  })
+
+  it('lends no rôle the certainty of another', () => {
+    // Le doute doit rester sur la déduction : la couleur du trait prend le plus
+    // fort des deux, donc c'est au rôle de porter son propre mot.
+    const sections = buildEntityProfile('character', [
+      fact({ predicate: 'protects', otherId: 'koby' }),
+      fact({
+        predicate: 'allied_with',
+        otherId: 'koby',
+        epistemicStatus: 'hypothetical',
+        knowledgeUntilChapter: 40,
+      }),
+    ])
+
+    const koby = sections[0]!.entries[0]!
+    expect(koby.epistemicStatus).toBe('explicit')
+    expect(koby.roles.map((r) => [r.label, r.epistemicStatus])).toEqual([
+      ['allié', 'hypothetical'],
+      ['protège', 'explicit'],
+    ])
+    expect(koby.roles[0]!.knowledgeUntilChapter).toBe(40)
+    expect(koby.roles[1]!.knowledgeUntilChapter).toBeNull()
+  })
+
+  it('keeps the same person apart under two headings', () => {
+    // Higuma parle à Shanks et lui est hostile : deux titres, deux lignes, et
+    // c'est bien ce qu'il faut lire.
+    const sections = buildEntityProfile('character', [
+      fact({ predicate: 'enemy_of', otherId: 'higuma' }),
+      fact({ predicate: 'speaks_to', direction: 'incoming', otherId: 'higuma' }),
+    ])
+
+    expect(titles(sections)).toEqual(['adversaires', 'rencontres'])
+    expect(sections.every((s) => s.entries.length === 1)).toBe(true)
   })
 })
 
@@ -275,7 +338,7 @@ describe('a symmetric relation', () => {
     ])
 
     expect(sections[0]!.entries).toHaveLength(1)
-    expect(sections[0]!.entries[0]!.role).toBe('ennemi')
+    expect(sections[0]!.entries[0]!.roles[0]!.label).toBe('ennemi')
   })
 })
 
@@ -290,8 +353,8 @@ describe('a predicate whose object plays two roles', () => {
       fact({ predicate: 'promises', direction: 'incoming', otherLabel: 'Shanks' }),
     ])
 
-    expect(person[0]!.entries[0]!.role).toBe('lui a promis')
-    expect(thing[0]!.entries[0]!.role).toBe('promis par')
+    expect(person[0]!.entries[0]!.roles[0]!.label).toBe('lui a promis')
+    expect(thing[0]!.entries[0]!.roles[0]!.label).toBe('promis par')
   })
 })
 
@@ -304,7 +367,7 @@ describe('nothing is lost', () => {
     ])
 
     expect(titles(sections)).toEqual(['autres'])
-    expect(sections[0]!.entries[0]!.role).toBe('drinks with')
+    expect(sections[0]!.entries[0]!.roles[0]!.label).toBe('drinks with')
   })
 
   it('files every relation the ontology permits, for every type', () => {

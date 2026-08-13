@@ -121,10 +121,19 @@ ne réclame tombe dans « Autres faits » plutôt que de disparaître — un tes
 énumère toutes les relations que l'ontologie autorise, type par type, pour
 qu'aucune n'y échoue par oubli.
 
+**Une ligne par personne, pas par fait.** L'unité d'une section est de qui elle
+parle : « a rencontré Zoro », « protège Zoro » et « connaît Zoro » étaient trois
+lignes qui comptaient trois et disaient une chose, et une fiche un peu fournie
+affichait quarante-deux lignes pour une quinzaine de personnes. Les rôles se
+rassemblent donc sous le nom, chacun avec **son** chapitre — rencontré au 3,
+protégé au 11 sont deux moments — et **son** statut : le trait de couleur prend
+le plus fort des rôles, donc c'est à chaque rôle de dire s'il n'est qu'une
+déduction. Une certitude ne se prête pas d'un fait à l'autre.
+
 Ce n'est qu'un résumé, et il ne se permet d'être court que parce que le relevé
 est sur la même page, replié dessous : chaque fait, son chapitre, son statut et
-la case qui le prouve, exactement comme avant. Le numéro de chapitre au bout de
-chaque ligne y renvoie, et le déplie au passage. Deux relations manquaient pour
+la case qui le prouve, exactement comme avant. Chaque rôle y renvoie, au fait
+qui le prouve, et le déplie au passage. Deux relations manquaient pour
 que tout cela ait un sens : un lieu **fait partie d'un lieu** — un village dans
 une île, une île dans une mer — et un objet **confère un pouvoir**, ce que
 l'ontologie distinguait déjà sans pouvoir le relier.
