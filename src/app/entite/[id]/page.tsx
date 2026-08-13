@@ -4,7 +4,9 @@ import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
+import { labelKindLabel } from '@/domains/knowledge/label-kind.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
+import { RenameEntity } from './rename-entity.tsx'
 
 export const metadata: Metadata = { title: 'Fiche' }
 export const dynamic = 'force-dynamic'
@@ -123,6 +125,20 @@ export default async function EntityPage({
             </p>
           )}
         </header>
+
+        {/*
+         * A name is the one thing on this page you can be sure of and the
+         * pipeline cannot: whether « Helmeppo » is called Hermep in French is a
+         * convention you hold, not a fact in the chapter. Under the cover
+         * rather than in it — a correction is a rare gesture, and the fiche
+         * opens on a face and a name, not on a form.
+         *
+         * A visitor reading a public library gets no button. The action checks
+         * ownership again on its own.
+         */}
+        {session.isOwner && (
+          <RenameEntity labels={sheet.labels} displayLabel={sheet.displayLabel} />
+        )}
 
         {sheet.labels.length > 1 && (
           <section className="mt-8">
@@ -290,17 +306,6 @@ function FactList({
       )}
     </section>
   )
-}
-
-function labelKindLabel(kind: string): string {
-  const labels: Record<string, string> = {
-    placeholder: 'désignation provisoire',
-    alias: 'surnom',
-    true_name: 'vrai nom',
-    epithet: 'épithète',
-    translation: 'traduction',
-  }
-  return labels[kind] ?? kind
 }
 
 function epistemicLabel(status: string): string {

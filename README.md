@@ -66,6 +66,20 @@ convention plutôt que du texte — « Straw Hat Pirates » oui, « Going Merry 
 peut-être pas — le modèle le déclare au lieu de trancher, l'entité part en revue
 avec un champ modifiable, et votre réponse sert à tous les chapitres suivants.
 
+**Et un nom se corrige après coup.** Helmeppo s'appelle Hermep en français :
+aucun chapitre ne le dit, c'est une convention que vous tenez, et le seul moment
+pour la dire était la revue de l'entité — manquée là, la mauvaise forme était
+définitive, sur la fiche comme sur chaque arête. La fiche porte donc un bouton
+« Renommer », et ce qu'il fait tient en trois refus. Le **chapitre de révélation
+ne bouge pas** : c'est le même nom, mieux écrit, et le dater d'aujourd'hui
+ouvrirait dans le curseur un trou où le personnage n'aurait pas eu de nom.
+L'ancienne graphie **reste trouvable sans jamais s'afficher** — les catalogues
+d'illustrations et les scans sont en anglais, et c'est par « Helmeppo » que le
+portrait a été rapproché. Et la correction **entre au glossaire**, pour la
+formulation source du même nœud aussi, qui est ce qu'un chapitre suivant
+contiendra : la question ne se repose pas, et les deux formes ne finissent pas
+en deux entités.
+
 Le chapitre peut être **récupéré depuis le One Piece Fandom** par son numéro :
 les deux versions arrivent d'un coup, l'anglaise comme texte citable — c'est la
 plus détaillée, et un graphe ne contient que ce que sa source affirme — et la
