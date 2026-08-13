@@ -14,6 +14,12 @@ export const dynamic = 'force-dynamic'
  * The ceiling applies to this page's server actions too, and publishing needs
  * it: closing a chapter writes a batch of decisions and then illustrates the
  * entities it opened, downloading and re-encoding pictures after the response.
+ *
+ * Since batch import, it may also start a whole pipeline run — the next chapter
+ * of a queue, released by exactly this publication. That is the same shape of
+ * work `/import` carries at the same ceiling, and it is why lowering this would
+ * not merely delay a picture: it would tear down the invocation mid-run and
+ * leave the queued chapter stuck on its first step with nothing to explain it.
  */
 export const maxDuration = 300
 

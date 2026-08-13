@@ -2,6 +2,9 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { listChapters } from '@/domains/chapters/queries.ts'
+import { queuedChapters } from '@/domains/pipeline/queue.ts'
+import { BatchForm } from './batch-form.tsx'
+import { QueuePanel } from './queue-panel.tsx'
 import { SummaryForm } from './summary-form.tsx'
 
 export const metadata: Metadata = { title: 'Importer un chapitre' }
@@ -33,7 +36,10 @@ export const maxDuration = 300
 
 export default async function ImportPage() {
   const session = await getReaderSession()
-  const existing = await listChapters(session.userId, session.workId)
+  const [existing, waiting] = await Promise.all([
+    listChapters(session.userId, session.workId),
+    queuedChapters(session.userId),
+  ])
 
   const highest = existing.reduce((max, c) => Math.max(max, c.number), 0)
   const suggested = existing.length === 0 ? 1 : highest + 1
@@ -67,7 +73,24 @@ export default async function ImportPage() {
         </div>
       </div>
 
-      <SummaryForm suggestedNumber={suggested} />
+      <QueuePanel chapters={waiting} />
+
+      <BatchForm suggestedNumber={suggested} />
+
+      {/*
+        * One chapter, kept as the primary form.
+        *
+        * The batch is for catching up; this is for the chapter that just came
+        * out, for re-pasting a summary you corrected, and for writing one
+        * yourself. Folded below the batch rather than removed — it is still the
+        * path with every control on it.
+        */}
+      <details open={waiting.length === 0} className="mt-10 border-t border-line pt-6">
+        <summary className="cursor-pointer font-display text-lg uppercase text-primary">
+          Un seul chapitre
+        </summary>
+        <SummaryForm suggestedNumber={suggested} />
+      </details>
 
       {existing.length > 0 && (
         <section className="mt-14 border-t border-line pt-8">

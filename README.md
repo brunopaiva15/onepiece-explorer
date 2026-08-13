@@ -75,6 +75,18 @@ Le champ accepte une URL par confort, mais aucune requête n'en est construite �
 seuls ses chiffres sont lus, et les points d'entrée sont des constantes. Le texte
 récupéré reste modifiable avant l'import, et l'écrire soi-même reste possible.
 
+**Jusqu'à vingt chapitres d'un coup, traités un par un.** Un intervalle est
+récupéré en une fois et vous le relisez en une fois ; en revanche le premier
+chapitre seul démarre son traitement, et **chacun des suivants démarre à la
+publication du précédent**. Ce n'est pas de la prudence : le rapprochement des
+entités ne compare une proposition qu'à ce qui est déjà dans le graphe, et seule
+une publication y met quelque chose. Les noms identiques se rejoindraient de
+toute façon à la publication ; ce qu'un lot traité en parallèle perd, c'est tout
+ce qui est plus faible qu'un nom exact — « l'homme au tablier de cuir » au
+chapitre 12 et « Kaelo Renn » au 13 deviendraient deux entités, et la question
+ne serait jamais posée. La file est visible sur `/import`, avec de quoi la
+forcer ou l'abandonner ([ADR 0010](docs/adr/0010-a-batch-is-a-queue.md)).
+
 Si vous avez le chapitre dans les deux langues, collez la seconde version au
 même endroit : elle est fournie au modèle **pour les noms seulement**. La mise
 en regard contient la réponse que ni l'un ni l'autre texte ne donne seul, donc
@@ -575,6 +587,8 @@ const graphe = await withBoundary(
   comment le coût IA est maîtrisé
 - [Illustrations externes](docs/adr/0007-external-illustrations.md) — pourquoi
   une image n'est jamais une source, et pourquoi elle attend son nom
+- [Un lot est une file](docs/adr/0010-a-batch-is-a-queue.md) — pourquoi dix
+  chapitres s'importent ensemble et se traitent un par un
 - [Importer depuis votre machine](docs/importer-en-local.md) — la marche à
   suivre complète quand l'application est hébergée ailleurs
 - [Exploitation](docs/operations.md) — déployer, surveiller, sauvegarder,

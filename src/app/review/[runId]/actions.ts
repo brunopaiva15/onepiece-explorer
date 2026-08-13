@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { requireOwner } from '@/domains/auth/session.ts'
 import { illustrateQuietly } from '@/domains/images/enrich.ts'
+import { advanceQueue } from '@/domains/pipeline/queue.ts'
 import { reopenItems } from '@/domains/review/reopen.ts'
 import { autoReview, autoReviewEnabled } from '@/domains/review/auto.ts'
 import {
@@ -70,6 +71,21 @@ export async function publishDecisionsAction(
       // No revalidation on the way out: /graph is force-dynamic, so the next
       // visit reads the pictures this just stored.
       after(() => illustrateQuietly(session.userId))
+      /*
+       * And the next chapter of a batch import, if one is waiting.
+       *
+       * This moment is the condition the queue exists for: the entities you
+       * just accepted are in the graph, so the next chapter's resolution can
+       * match against them instead of proposing them again. A minute earlier it
+       * would have been blind to every one of them.
+       *
+       * Here rather than in `publishDecisions` on purpose. That function is the
+       * one door into the graph and holds a transaction; it writes what a human
+       * said yes to and does nothing else. Starting a pipeline from inside it
+       * would put a model call in the same breath as a commit — and this is the
+       * same place, and the same `after()`, that illustration already uses.
+       */
+      after(() => advanceQueue(session.userId))
     }
 
     revalidatePath(`/review/${runId}`)
@@ -101,6 +117,9 @@ export async function markChapterReviewedAction(
     const chapterNumber = await markChapterReviewed(session.userId, runId)
 
     if (chapterNumber !== null) {
+      // A chapter opening is a chapter opening, whichever path opened it: the
+      // batch queue advances here for the same reason it advances on publication.
+      after(() => advanceQueue(session.userId))
       // No revalidation on the way out: /graph is force-dynamic, so the next
       // visit reads the pictures this just stored.
       after(() => illustrateQuietly(session.userId))
