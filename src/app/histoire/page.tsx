@@ -146,6 +146,7 @@ export default async function StoryPage({
           initialBeats={first.beats}
           initialCursor={first.nextCursor}
           boundary={session.boundaryChapter}
+          start={start}
           lastChapter={first.lastChapter}
         />
       )}
