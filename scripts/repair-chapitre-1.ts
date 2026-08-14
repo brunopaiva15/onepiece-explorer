@@ -343,13 +343,68 @@ async function shanksCrew(sql: postgres.Sql, work: Work): Promise<string | null>
 }
 
 /**
+ * Tous les nœuds qui sont cette personne, y compris ceux qui portent son nom
+ * sans le savoir.
+ *
+ * Une entité n'est pas une personne : une personne est une *composante*, celle
+ * que les relations `same_as` referment. La fiche le sait — elle lit la
+ * composante entière et affiche le meilleur libellé qu'elle y trouve, ce qui
+ * est précisément ce qui fait qu'un personnage fusionné s'affiche sous son vrai
+ * nom plutôt que sous la silhouette qui a trié première.
+ *
+ * Le revers est ce qui a été trouvé sur la fiche de Beckman : la bibliothèque
+ * le range en deux nœuds, une correction qui n'en traite qu'un laisse le nom
+ * du futur sur l'autre, et la fiche du chapitre 1 le réaffiche — exactement
+ * comme avant la correction, à un `LIMIT 1` près. Corriger un nœud n'est donc
+ * pas corriger une identité ; c'est la composante qu'il faut prendre.
+ *
+ * Récursif, et sans borne de chapitre. Le CTE est ce que `projection.ts` évite
+ * délibérément, pour une raison qui ne vaut pas ici : là-bas il faudrait
+ * redériver le prédicat de frontière à l'intérieur du CTE, au risque qu'il
+ * diverge de la politique RLS. Ce script n'a pas de frontière — il répare la
+ * donnée, pas une lecture — et une identité datée du chapitre 300 rend le nom
+ * tout aussi prématuré au chapitre 1 sur le nœud qui le porte.
+ */
+async function identityComponent(
+  sql: postgres.Sql,
+  work: Work,
+  seeds: readonly string[],
+): Promise<string[]> {
+  if (seeds.length === 0) return []
+  const rows = await sql<Array<{ id: string }>>`
+    WITH RECURSIVE component(id) AS (
+      SELECT id FROM entities WHERE id IN ${sql([...seeds])}
+      UNION
+      SELECT CASE WHEN a.subject_entity_id = c.id
+                  THEN a.object_entity_id ELSE a.subject_entity_id END
+        FROM assertions a
+        JOIN component c
+          ON c.id IN (a.subject_entity_id, a.object_entity_id)
+       WHERE a.user_id = ${work.user_id}
+         AND a.predicate = 'same_as'
+         AND a.review_status = 'accepted'
+         AND a.object_entity_id IS NOT NULL
+    )
+    SELECT id FROM component ORDER BY id
+  `
+  return rows.map((row) => row.id)
+}
+
+/**
  * Une identité remise dans l'ordre où le lecteur la reçoit.
  *
- * Cinq écritures possibles, toutes conditionnelles : l'entité, la date de son
- * entrée en scène, le libellé descriptif, la date et la source du nom, la
- * présence, l'appartenance. Chacune se relit avant d'écrire, ce qui est ce qui
- * rend le script rejouable — et ce qui permet de le lancer en `--dry-run` pour
- * lire le diagnostic sans rien risquer.
+ * Toutes les écritures sont conditionnelles et se relisent avant d'écrire, ce
+ * qui rend le script rejouable — et ce qui permet de le lancer en `--dry-run`
+ * pour lire le diagnostic sans rien risquer.
+ *
+ * Le nom est redaté sur *chaque* nœud de la composante ; la désignation
+ * descriptive, elle, n'est posée qu'une fois, sur le nœud de plus petit
+ * identifiant. Deux fois, elle s'afficherait deux fois dans « Noms connus » dès
+ * que la fusion est visible, et la fusion l'est presque toujours au même
+ * chapitre que les nœuds. Quand elle ne l'est pas, l'autre moitié se lit
+ * « entité sans nom révélé » jusqu'à ce qu'elle le devienne — ce qui est exact
+ * plutôt que commode : à ce chapitre-là, le lecteur n'a effectivement aucun nom
+ * pour cette silhouette.
  */
 async function repairIdentity(
   sql: postgres.Sql,
@@ -361,19 +416,22 @@ async function repairIdentity(
 ): Promise<void> {
   const spellings = [identity.canonical, ...identity.spellings]
 
-  const [found] = await sql<Array<{ id: string; first_seen_chapter: number }>>`
-    SELECT e.id, e.first_seen_chapter
+  const named = await sql<Array<{ id: string }>>`
+    SELECT DISTINCT e.id
       FROM entities e
       JOIN entity_labels l ON l.entity_id = e.id
      WHERE e.user_id = ${work.user_id} AND e.work_id = ${work.id}
        AND e.node_type = 'character' AND e.review_status = 'accepted'
        AND l.label IN ${sql(spellings)}
-     LIMIT 1
   `
 
-  let entityId = found?.id ?? null
+  let members = await identityComponent(
+    sql,
+    work,
+    named.map((row) => row.id),
+  )
 
-  if (!entityId) {
+  if (members.length === 0) {
     if (!identity.createIfMissing) {
       console.log(`  ! « ${identity.canonical} » introuvable`)
       return
@@ -381,52 +439,87 @@ async function repairIdentity(
     console.log(
       `  → « ${identity.canonical} » absent du graphe : créé au ch${identity.firstAppearance}`,
     )
-    if (!dryRun) {
-      const [created] = await sql<Array<{ id: string }>>`
-        INSERT INTO entities (work_id, user_id, node_type, first_seen_chapter, review_status)
-        VALUES (${work.id}, ${work.user_id}, 'character',
-                ${identity.firstAppearance}, 'accepted')
-        RETURNING id
-      `
-      entityId = created!.id
-      await sql`
-        INSERT INTO audit_log (user_id, action, subject_kind, subject_id, detail)
-        VALUES (${work.user_id}, 'entity_created', 'entity', ${entityId},
-                ${sql.json({ label: identity.canonical, chapter: identity.firstAppearance, note: NOTE })})
-      `
+    if (dryRun) {
+      // Créé seulement en écriture : la suite n'a pas de nœud où se poser, et
+      // le dry-run a déjà dit ce qu'il ferait.
+      console.log('      (dry-run : le reste de cette identité suivra la création)')
+      return
     }
+    const [created] = await sql<Array<{ id: string }>>`
+      INSERT INTO entities (work_id, user_id, node_type, first_seen_chapter, review_status)
+      VALUES (${work.id}, ${work.user_id}, 'character',
+              ${identity.firstAppearance}, 'accepted')
+      RETURNING id
+    `
+    await sql`
+      INSERT INTO audit_log (user_id, action, subject_kind, subject_id, detail)
+      VALUES (${work.user_id}, 'entity_created', 'entity', ${created!.id},
+              ${sql.json({ label: identity.canonical, chapter: identity.firstAppearance, note: NOTE })})
+    `
+    members = [created!.id]
     bump('entités')
-  } else if (found!.first_seen_chapter !== identity.firstAppearance) {
-    /*
-     * L'entrée en scène, ramenée au chapitre où on le voit.
-     *
-     * C'est l'écriture qui répare le symptôme visible : la page « Ce qu'apporte
-     * le chapitre N » liste les entités dont c'est la première apparition, et
-     * un pirate dessiné au chapitre 1 y figurait quarante et un chapitres trop
-     * tard. Le libellé, lui, ne bouge pas d'un cran — c'est tout l'intérêt de
-     * les avoir séparés.
-     */
+  } else if (members.length > 1) {
+    console.log(`  · « ${identity.canonical} » : ${members.length} nœuds joints par une identité`)
+  }
+
+  /*
+   * L'entrée en scène, ramenée au chapitre où on le voit — sur toute la
+   * composante, parce qu'une personne n'entre pas en scène deux fois.
+   *
+   * C'est l'écriture qui répare le symptôme visible : la page « Ce qu'apporte le
+   * chapitre N » liste les entités dont c'est la première apparition, et un
+   * pirate dessiné au chapitre 1 y figurait quarante et un chapitres trop tard.
+   * Le libellé, lui, ne bouge pas d'un cran — c'est tout l'intérêt de les avoir
+   * séparés.
+   */
+  const late = await sql<Array<{ id: string; first_seen_chapter: number }>>`
+    SELECT id, first_seen_chapter FROM entities
+     WHERE id IN ${sql(members)} AND first_seen_chapter <> ${identity.firstAppearance}
+  `
+  for (const row of late) {
     console.log(
       `  → « ${identity.canonical} » entre en scène : ` +
-        `ch${found!.first_seen_chapter} → ch${identity.firstAppearance}`,
+        `ch${row.first_seen_chapter} → ch${identity.firstAppearance}`,
     )
     if (!dryRun) {
       await sql`
         UPDATE entities SET first_seen_chapter = ${identity.firstAppearance}
-         WHERE id = ${entityId}
+         WHERE id = ${row.id}
       `
     }
     bump('apparitions')
   }
 
-  if (dryRun && !entityId) {
-    // Créé seulement en écriture : la suite n'a pas de nœud où se poser, et le
-    // dry-run a déjà dit ce qu'il ferait.
-    console.log('      (dry-run : le reste de cette identité suivra la création)')
-    return
+  /*
+   * Le nom d'abord, sur tous les nœuds : c'est lui qui rend la composante
+   * anonyme, et la désignation ci-dessous n'a de sens qu'une fois qu'elle l'est.
+   *
+   * Écrit au plus une fois pour toute la composante, et seulement si personne
+   * ne le porte déjà. La fiche lit la composante entière : un nom posé sur
+   * chaque moitié se lirait deux fois dans « Noms connus » au chapitre où il est
+   * révélé — ce qui est précisément ce que la première version de cette boucle a
+   * produit, et ce que son dry-run a montré.
+   */
+  const [carried] = await sql<Array<{ n: string }>>`
+    SELECT count(*)::text AS n FROM entity_labels
+     WHERE entity_id IN ${sql(members)} AND label = ${identity.canonical}
+  `
+  const alreadyNamed = carried !== undefined && carried.n !== '0'
+
+  for (const member of members) {
+    await ensureLabel(sql, work, member, {
+      label: identity.canonical,
+      kind: 'true_name',
+      precedence: 100,
+      chapter: identity.reveal.chapter,
+      source: identity.reveal.source,
+      existingOnly: alreadyNamed || member !== members[0],
+    })
+    await redateSpellings(sql, member, identity)
+    await followPortraits(sql, work, member, identity, spellings, bump)
   }
 
-  await ensureLabel(sql, work, entityId!, {
+  await ensureLabel(sql, work, members[0]!, {
     label: identity.before,
     kind: 'placeholder',
     precedence: 10,
@@ -434,20 +527,76 @@ async function repairIdentity(
     source: null,
   })
 
-  await ensureLabel(sql, work, entityId!, {
-    label: identity.canonical,
-    kind: 'true_name',
-    precedence: 100,
-    chapter: identity.reveal.chapter,
-    source: identity.reveal.source,
-  })
-
-  await redateSpellings(sql, entityId!, identity)
-
-  await ensurePresence(sql, work, chapterId, entityId!, identity)
+  await ensurePresence(sql, work, chapterId, members, identity)
 
   if (crewId && identity.crewFrom !== null) {
-    await ensureMembership(sql, work, entityId!, crewId, identity, bump)
+    await ensureMembership(sql, work, members, crewId, identity, bump)
+  }
+}
+
+/**
+ * Le visage suit le nom qui l'a trouvé.
+ *
+ * `entity_images.revealed_in_chapter` n'est pas la première apparition du
+ * personnage : c'est la révélation du *libellé qui a produit la
+ * correspondance* — la migration 0012 est explicite là-dessus, et c'est ce qui
+ * empêche un portrait trouvé par un vrai nom d'arriver avant ce nom. Déplacer
+ * le libellé sans déplacer l'image casse ce lien en silence : la fiche du
+ * chapitre 1 affichait « Pirate corpulent mangeant de la viande » au-dessus
+ * d'une illustration que seul « Lucky Roux » avait su aller chercher.
+ *
+ * Quand le nom n'a aucun chapitre, il n'y a pas de date à donner à l'image et
+ * la colonne n'accepte pas de vide. La ligne est alors supprimée, et c'est le
+ * seul endroit où ce script supprime quelque chose : une illustration n'est pas
+ * de la connaissance — la migration 0012 les sépare exprès, aucune preuve n'en
+ * cite —, elle est refabricable par `pnpm images:enrich`, et l'enrichissement
+ * ne la retrouvera plus par ce nom puisqu'il ignore désormais les libellés hors
+ * chronologie. Le retrait est tracé.
+ */
+async function followPortraits(
+  sql: postgres.Sql,
+  work: Work,
+  entityId: string,
+  identity: Identity,
+  spellings: readonly string[],
+  bump: (key: string, by?: number) => number,
+): Promise<void> {
+  const rows = await sql<
+    Array<{ id: string; matched_label: string; revealed_in_chapter: number }>
+  >`
+    SELECT id, matched_label, revealed_in_chapter FROM entity_images
+     WHERE user_id = ${work.user_id} AND entity_id = ${entityId}
+       AND matched_label IN ${sql([...spellings])}
+  `
+
+  for (const row of rows) {
+    if (identity.reveal.chapter === null) {
+      console.log(
+        `      − portrait rapproché par « ${row.matched_label} » retiré ` +
+          '(ce nom n’a aucun chapitre où le montrer)',
+      )
+      if (dryRun) continue
+      await sql`DELETE FROM entity_images WHERE id = ${row.id}`
+      await sql`
+        INSERT INTO audit_log (user_id, action, subject_kind, subject_id, detail)
+        VALUES (${work.user_id}, 'entity_image_removed', 'entity', ${entityId},
+                ${sql.json({ matchedLabel: row.matched_label, note: NOTE })})
+      `
+      bump('portraits')
+      continue
+    }
+    if (row.revealed_in_chapter === identity.reveal.chapter) continue
+
+    console.log(
+      `      → portrait rapproché par « ${row.matched_label} » : ` +
+        `ch${row.revealed_in_chapter} → ch${identity.reveal.chapter}`,
+    )
+    if (dryRun) continue
+    await sql`
+      UPDATE entity_images SET revealed_in_chapter = ${identity.reveal.chapter}
+       WHERE id = ${row.id}
+    `
+    bump('portraits')
   }
 }
 
@@ -470,6 +619,8 @@ async function ensureLabel(
     precedence: number
     chapter: number | null
     source: string | null
+    /** Redater ce libellé s'il est là, mais ne pas l'écrire s'il ne l'est pas. */
+    existingOnly?: boolean
   },
 ): Promise<void> {
   const held = await sql<
@@ -486,6 +637,7 @@ async function ensureLabel(
   `
 
   if (held.length === 0) {
+    if (wanted.existingOnly) return
     console.log(`      + « ${wanted.label} » ${at(wanted.chapter, wanted.source)}`)
     if (dryRun) return
     await sql`
@@ -582,12 +734,15 @@ async function ensurePresence(
   sql: postgres.Sql,
   work: Work,
   chapterId: string,
-  entityId: string,
+  members: readonly string[],
   identity: Identity,
 ): Promise<void> {
+  // Lue sur toute la composante, écrite sur un seul nœud. Une présence déjà
+  // tranchée sur l'autre moitié est la même réponse, et l'ajouter deux fois
+  // ferait entrer la même personne deux fois dans le fil du chapitre.
   const [existing] = await sql<Array<{ n: string }>>`
     SELECT count(*)::text AS n FROM occurrences
-     WHERE entity_id = ${entityId} AND chapter_id = ${chapterId}
+     WHERE entity_id IN ${sql([...members])} AND chapter_id = ${chapterId}
        AND stated AND kind = 'appearance'
   `
   if (existing && existing.n !== '0') {
@@ -598,7 +753,7 @@ async function ensurePresence(
   if (dryRun) return
   await sql`
     INSERT INTO occurrences (entity_id, user_id, chapter_id, kind, stated, chapter_number)
-    VALUES (${entityId}, ${work.user_id}, ${chapterId}, 'appearance', true,
+    VALUES (${members[0]!}, ${work.user_id}, ${chapterId}, 'appearance', true,
             ${identity.firstAppearance})
   `
 }
@@ -616,17 +771,20 @@ async function ensurePresence(
 async function ensureMembership(
   sql: postgres.Sql,
   work: Work,
-  entityId: string,
+  members: readonly string[],
   crewId: string,
   identity: Identity,
   bump: (key: string, by?: number) => number,
 ): Promise<void> {
   const from = identity.crewFrom!
 
+  // Cherchée sur toute la composante : une appartenance écrite sur l'autre
+  // moitié est déjà celle de cette personne, et en ajouter une seconde ferait
+  // lire « membre de l'équipage du Roux » deux fois sur la même fiche.
   const [existing] = await sql<Array<{ knowledge_from_chapter: number }>>`
     SELECT knowledge_from_chapter FROM assertions
      WHERE user_id = ${work.user_id} AND predicate = 'member_of'
-       AND subject_entity_id = ${entityId} AND object_entity_id = ${crewId}
+       AND subject_entity_id IN ${sql([...members])} AND object_entity_id = ${crewId}
        AND review_status = 'accepted'
      ORDER BY knowledge_from_chapter
      LIMIT 1
@@ -657,7 +815,7 @@ async function ensureMembership(
   await sql`
     UPDATE assertions SET review_status = 'superseded'
      WHERE user_id = ${work.user_id} AND predicate = 'member_of'
-       AND subject_entity_id = ${entityId} AND object_entity_id = ${crewId}
+       AND subject_entity_id IN ${sql([...members])} AND object_entity_id = ${crewId}
        AND review_status = 'accepted' AND knowledge_from_chapter > ${from}
   `
   await sql`
@@ -666,7 +824,7 @@ async function ensureMembership(
       knowledge_from_chapter, observed_in_chapter, confidence,
       epistemic_status, review_status, proposed_by, locked
     ) VALUES (
-      ${work.id}, ${work.user_id}, ${entityId}, 'member_of', ${crewId},
+      ${work.id}, ${work.user_id}, ${members[0]!}, 'member_of', ${crewId},
       ${from}, ${from}, 1, 'user_validated', 'accepted', 'user', true
     )
   `
@@ -677,9 +835,10 @@ async function ensureMembership(
  * Ce que la fiche affiche au chapitre 1, comparé à ce qu'elle devrait afficher.
  *
  * La règle est celle de la frontière, écrite en SQL une fois de plus : le
- * libellé le mieux classé parmi ceux révélés au chapitre 1 ou avant. Reproduite
- * ici plutôt qu'appelée, parce qu'un script de réparation qui passerait par le
- * code applicatif vérifierait que le code est d'accord avec lui-même.
+ * libellé le mieux classé parmi ceux révélés au chapitre 1 ou avant, pris sur
+ * toute la composante d'identité comme la fiche le fait. Reproduite ici plutôt
+ * qu'appelée, parce qu'un script de réparation qui passerait par le code
+ * applicatif vérifierait que le code est d'accord avec lui-même.
  */
 async function checkNamedAtOne(
   sql: postgres.Sql,
@@ -699,9 +858,11 @@ async function checkNamedAtOne(
     return
   }
 
+  const members = await identityComponent(sql, work, [entity.entity_id])
+
   const [shown] = await sql<Array<{ label: string; revealed_in_chapter: number }>>`
     SELECT label, revealed_in_chapter FROM entity_labels
-     WHERE entity_id = ${entity.entity_id}
+     WHERE entity_id IN ${sql(members)}
        AND revealed_in_chapter IS NOT NULL
        AND revealed_in_chapter <= ${CHAPTER}
      ORDER BY precedence DESC, revealed_in_chapter DESC
