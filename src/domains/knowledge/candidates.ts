@@ -33,8 +33,16 @@ export interface EntityCandidate {
   entityId: string
   label: string
   nodeType: string
-  /** The chapter that gave this name — printed, so the reader can tell two apart. */
-  revealedInChapter: number
+  /**
+   * The chapter that gave this name — printed, so the reader can tell two
+   * apart.
+   *
+   * Nullable because the column is: a name no chapter gives — an SBS answer, a
+   * databook entry — carries a source instead. The boundary policy withholds
+   * those at every chapter, so one cannot in fact arrive here; the type says so
+   * rather than the query pretending otherwise.
+   */
+  revealedInChapter: number | null
 }
 
 export interface CandidateQuery {

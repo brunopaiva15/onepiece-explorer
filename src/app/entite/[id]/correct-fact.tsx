@@ -344,8 +344,9 @@ export function CorrectFact({
 
           {target && (
             <p className="mt-2 text-sm text-[var(--epi-validated)]">
-              Nouvelle cible&nbsp;: {target.label} ({nodeTypeLabel(target.nodeType)},
-              ch. {target.revealedInChapter}).{' '}
+              Nouvelle cible&nbsp;: {target.label} ({nodeTypeLabel(target.nodeType)}
+              {target.revealedInChapter !== null && `, ch. ${target.revealedInChapter}`}
+              ).{' '}
               <button
                 type="button"
                 onClick={() => setTarget(null)}
@@ -383,8 +384,9 @@ export function CorrectFact({
                   >
                     {candidate.label}
                     <span className="ml-2 font-mono text-xs text-muted">
-                      {nodeTypeLabel(candidate.nodeType)} · ch.{' '}
-                      {candidate.revealedInChapter}
+                      {nodeTypeLabel(candidate.nodeType)}
+                      {candidate.revealedInChapter !== null &&
+                        ` · ch. ${candidate.revealedInChapter}`}
                     </span>
                   </button>
                 </li>
