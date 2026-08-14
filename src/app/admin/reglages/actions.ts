@@ -203,6 +203,7 @@ export interface EnrichPostersResult {
   considered?: number
   resolved?: number
   stored?: number
+  skipped?: number
   unresolved?: string[]
   failures?: string[]
   error?: string
@@ -247,6 +248,7 @@ export async function enrichPostersAction(): Promise<EnrichPostersResult> {
       considered: report.considered,
       resolved: report.resolved,
       stored: report.stored,
+      skipped: report.skipped,
       unresolved: report.unresolved.slice(0, UNRESOLVED_NAMED),
       failures: report.failures.map((failure) => `${failure.what} : ${failure.reason}`).slice(0, 5),
     }

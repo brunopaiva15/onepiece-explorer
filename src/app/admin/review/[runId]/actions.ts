@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { requireOwner } from '@/domains/auth/session.ts'
 import { illustrateQuietly } from '@/domains/images/enrich.ts'
+import { postersQuietly } from '@/domains/images/posters.ts'
 import { advanceQueue } from '@/domains/pipeline/queue.ts'
 import { reopenItems } from '@/domains/review/reopen.ts'
 import { autoReview, autoReviewEnabled } from '@/domains/review/auto.ts'
@@ -72,6 +73,19 @@ export async function publishDecisionsAction(
       // visit reads the pictures this just stored.
       after(() => illustrateQuietly(session.userId))
       /*
+       * And the wanted posters, on the same event and for the same reason.
+       *
+       * The chapter that opens is what can make one reachable: a poster is
+       * stored against the chapter that prints it, and a reader only ever sees
+       * the ones behind their own position. Publishing chapter 96 is the moment
+       * Luffy's thirty million becomes a thing this library can show.
+       *
+       * Cheap enough to sit here because `postersQuietly` asks the library
+       * before it asks Fandom — on the ordinary publication, where every poster
+       * is already in place, it is one query and no request.
+       */
+      after(() => postersQuietly(session.userId))
+      /*
        * And the next chapter of a batch import, if one is waiting.
        *
        * This moment is the condition the queue exists for: the entities you
@@ -123,6 +137,8 @@ export async function markChapterReviewedAction(
       // No revalidation on the way out: /graph is force-dynamic, so the next
       // visit reads the pictures this just stored.
       after(() => illustrateQuietly(session.userId))
+      // A chapter opening is a chapter opening here too, posters included.
+      after(() => postersQuietly(session.userId))
     }
 
     revalidatePath(`/admin/review/${runId}`)

@@ -41,6 +41,7 @@ process.stdout.write('\r')
 console.log(`Personnages du manifeste présents dans la bibliothèque : ${report.considered}`)
 console.log(`Tirages rattachés à un fichier : ${report.resolved}`)
 console.log(`Affiches stockées : ${report.stored}`)
+console.log(`Déjà en place : ${report.skipped}`)
 
 if (report.unresolved.length > 0) {
   console.log(`\nSans fichier (${report.unresolved.length}) :`)
