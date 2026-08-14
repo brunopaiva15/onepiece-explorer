@@ -806,6 +806,17 @@ function PublishSummary({
         {result.assertionsCreated > 0 && <li>{result.assertionsCreated} relation(s)</li>}
         {result.eventsCreated > 0 && <li>{result.eventsCreated} événement(s)</li>}
         {result.mysteriesCreated > 0 && <li>{result.mysteriesCreated} mystère(s)</li>}
+        {/*
+          Said apart from the relations that caused them: a question moving to
+          « Refermées » is the visible half of accepting « résout le mystère »,
+          and it is the half worth naming — the other is one more edge.
+        */}
+        {result.mysteriesResolved > 0 && (
+          <li>{result.mysteriesResolved} question(s) refermée(s)</li>
+        )}
+        {result.mysteriesReopened > 0 && (
+          <li>{result.mysteriesReopened} question(s) rouverte(s)</li>
+        )}
         {result.rejected > 0 && <li>{result.rejected} rejetée(s)</li>}
         {result.deferred > 0 && <li>{result.deferred} reportée(s)</li>}
       </ul>
