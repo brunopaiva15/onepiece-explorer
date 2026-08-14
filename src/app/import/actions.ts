@@ -319,16 +319,36 @@ function isImageFile(file: File): boolean {
   return /\.(jpe?g|png|webp|avif)$/i.test(file.name)
 }
 
+/**
+ * One language, as the form receives it.
+ *
+ * `noteLines` counts the chapter notes folded into `text` — « Quick Reference →
+ * Chapter Notes », « Informations → Notes ». Zero is a real answer and not an
+ * error: plenty of chapters have no notes section, and the form says which case
+ * it is rather than leaving the reader to compare character counts.
+ */
+export interface FandomTextResult {
+  language: FandomLanguage
+  text: string
+  url: string
+  noteLines: number
+}
+
 export interface FandomActionResult {
   ok: boolean
   chapterNumber?: number
   /** The citable text: French when the wiki has it, English otherwise. */
-  primary?: { language: FandomLanguage; text: string; url: string }
+  primary?: FandomTextResult
   /** The other language, for naming. Absent when the wiki has only one. */
-  parallel?: { language: FandomLanguage; text: string; url: string }
+  parallel?: FandomTextResult
   /** What was not found, in the words the reviewer needs. */
   problems?: string[]
   error?: string
+}
+
+/** How many lines the notes section contributed. */
+function noteLines(notes: string): number {
+  return notes.trim().length === 0 ? 0 : notes.trim().split(/\n{2,}/).length
 }
 
 /**
@@ -344,8 +364,8 @@ export interface FandomActionResult {
  */
 export interface FandomRangeEntryResult {
   chapterNumber: number
-  primary?: { language: FandomLanguage; text: string; url: string }
-  parallel?: { language: FandomLanguage; text: string; url: string }
+  primary?: FandomTextResult
+  parallel?: FandomTextResult
   problems?: string[]
   /** Set when this chapter came back with nothing. The others still did. */
   error?: string
@@ -393,9 +413,21 @@ export async function fetchFandomRangeAction(
         const { citable, naming } = citableAndParallel(entry.fetched)
         return {
           chapterNumber: entry.chapterNumber,
-          primary: { language: citable.language, text: citable.text, url: citable.url },
+          primary: {
+            language: citable.language,
+            text: citable.text,
+            url: citable.url,
+            noteLines: noteLines(citable.notes),
+          },
           ...(naming
-            ? { parallel: { language: naming.language, text: naming.text, url: naming.url } }
+            ? {
+                parallel: {
+                  language: naming.language,
+                  text: naming.text,
+                  url: naming.url,
+                  noteLines: noteLines(naming.notes),
+                },
+              }
             : {}),
           problems: entry.fetched.problems.map(
             (problem) =>
@@ -713,9 +745,21 @@ export async function fetchFandomAction(input: string): Promise<FandomActionResu
     return {
       ok: true,
       chapterNumber,
-      primary: { language: citable.language, text: citable.text, url: citable.url },
+      primary: {
+        language: citable.language,
+        text: citable.text,
+        url: citable.url,
+        noteLines: noteLines(citable.notes),
+      },
       ...(naming
-        ? { parallel: { language: naming.language, text: naming.text, url: naming.url } }
+        ? {
+            parallel: {
+              language: naming.language,
+              text: naming.text,
+              url: naming.url,
+              noteLines: noteLines(naming.notes),
+            },
+          }
         : {}),
       problems: fetched.problems.map(
         (problem) => `${problem.language === 'fr' ? 'Français' : 'Anglais'} : ${problem.reason}`,

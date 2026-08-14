@@ -388,4 +388,9 @@ const ACTION_PREDICATES = new Set([
   'destroys',
   'promises',
   'seeks',
+  'kills',
+  'injures',
+  'knocks_out',
+  'gives',
+  'receives',
 ])

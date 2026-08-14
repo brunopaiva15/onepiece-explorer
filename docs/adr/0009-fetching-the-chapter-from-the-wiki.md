@@ -39,6 +39,36 @@ accepté : une citation est une copie vérifiée caractère par caractère, la
 traduire la ferait ne correspondre à rien. Tout ce que le modèle rédige reste
 français.
 
+## Les notes de chapitre, ajoutées au texte citable
+
+Une page de chapitre porte une seconde chose que le récit détaillé ne contient
+pas : « Quick Reference → Chapter Notes », « Informations → Notes ». Une dizaine
+de lignes plates — qui apparaît pour la première fois, ce qu'une scène établit,
+et surtout ce que le récit dilue en trois phrases de drame. « Arlong kills
+Bell-mère » est une ligne des notes du chapitre 78 ; aucune phrase de son « Long
+Summary » ne le dit aussi nettement.
+
+**Elles sont ajoutées au texte citable, à la suite du récit.** C'est la
+conséquence directe de la règle qui gouverne tout le reste : un graphe ne
+contient que ce que son texte citable affirme. Stockées ailleurs — une colonne à
+part, un contexte donné au modèle —, elles seraient des faits que le relecteur
+peut lire et que le pipeline ne peut pas proposer, ce qui est la pire des deux
+places. Elles sont découpées en passages comme le reste, et une proposition
+devra en citer une mot pour mot.
+
+**Aucune ligne de notre invention ne les précède.** Pas de « Notes du
+chapitre : » inséré entre les deux sections, parce qu'une citation doit toujours
+tomber sur du texte que le wiki a écrit ; ce qu'un intertitre aurait apporté —
+savoir où commencent les notes — est apporté par le formulaire, qui les compte
+avant l'import.
+
+**La section est facultative, et son titre est exact.** Des chapitres n'en ont
+pas ; l'absence n'est pas une erreur et ne coûte aucune requête de plus, l'index
+des sections étant déjà en main. Le repli approximatif qui sert aux résumés est
+refusé ici : en français, « Notes » est un mot assez commun pour qu'une page
+portant « Notes et références » y réponde, et une bibliographie stockée comme un
+récit serait un passage de citations auquel un fait pourrait s'ancrer.
+
 ## Ce qui ne change pas, et pourquoi la règle tenait ailleurs
 
 **Aucune requête n'est construite depuis une adresse fournie.** C'était cela, le
