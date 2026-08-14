@@ -98,52 +98,61 @@ export async function postersFor(
 
   if (rows.length === 0) return out
 
-  const store = storage()
+  /*
+   * One round trip for the whole wall, not one per poster.
+   *
+   * `signedUrls` arrived with the portraits and applies here for the same
+   * reason: six posters and their thumbnails is twelve signatures, and twelve
+   * sequential round trips to the storage provider is most of the time the home
+   * page spends. A key that will not sign is simply absent from the map, and
+   * its poster falls back to a portrait.
+   */
+  let signed: Map<string, string>
+  try {
+    signed = await storage().signedUrls(
+      rows.flatMap((row) => (row.thumb_key ? [row.storage_key, row.thumb_key] : [row.storage_key])),
+    )
+  } catch {
+    return out
+  }
 
-  await Promise.all(
-    rows.map(async (row) => {
-      /*
-       * The figure printed on *this* picture, not the one the reader's chapter
-       * would give.
-       *
-       * The difference is the whole of it, and getting it wrong put « 1 000 ฿ »
-       * under a poster that says fifty. The wiki's gallery holds fourteen of
-       * the thirty-six printings the manifest knows, so the most recent poster
-       * a reader can see is often older than their most recent bounty: Chopper
-       * at chapter 1100 is wanted for a thousand berries and the newest picture
-       * of him anybody has is the hundred. Reading the row's own chapter shows
-       * the number that is on the paper. Stale, and true.
-       */
-      const character =
-        bountyCharacter(labels.get(row.entity_id) ?? '') ?? bountyCharacter(row.matched_label)
-      const bounty = character
-        ? (character.rows.find((entry) => entry.chapter === row.revealed_in_chapter) ??
-          bountyAtChapter(character, row.revealed_in_chapter))
-        : null
-      if (!bounty) return
+  for (const row of rows) {
+    /*
+     * The figure printed on *this* picture, not the one the reader's chapter
+     * would give.
+     *
+     * The difference is the whole of it, and getting it wrong put « 1 000 ฿ »
+     * under a poster that says fifty. The wiki's gallery holds a picture of a
+     * fraction of the printings the manifest knows, so the most recent poster a
+     * reader can see is often older than their most recent bounty: Chopper at
+     * chapter 1100 is wanted for a thousand berries and the newest picture of
+     * him anybody has is the hundred. Reading the row's own chapter shows the
+     * number that is on the paper. Stale, and true.
+     */
+    const character =
+      bountyCharacter(labels.get(row.entity_id) ?? '') ?? bountyCharacter(row.matched_label)
+    const bounty = character
+      ? (character.rows.find((entry) => entry.chapter === row.revealed_in_chapter) ??
+        bountyAtChapter(character, row.revealed_in_chapter))
+      : null
+    if (!bounty) continue
 
-      try {
-        const [url, thumbUrl] = await Promise.all([
-          store.signedUrl(row.storage_key),
-          row.thumb_key ? store.signedUrl(row.thumb_key) : null,
-        ])
+    const url = signed.get(row.storage_key)
+    if (!url) continue
 
-        out.set(row.entity_id, {
-          entityId: row.entity_id,
-          url,
-          thumbUrl: thumbUrl ?? url,
-          amount: bounty.amount,
-          berries: formatBerries(bounty.amount),
-          chapter: row.revealed_in_chapter,
-          attribution: row.attribution,
-          sourceUrl: row.source_url,
-        })
-      } catch {
-        // A key that will not sign is a picture that is gone. The wall falls
-        // back to a portrait, which is a perfectly good wall.
-      }
-    }),
-  )
+    out.set(row.entity_id, {
+      entityId: row.entity_id,
+      url,
+      /* A thumbnail that did not sign falls back to the full poster, which the
+         wall shows whole anyway. */
+      thumbUrl: (row.thumb_key ? signed.get(row.thumb_key) : null) ?? url,
+      amount: bounty.amount,
+      berries: formatBerries(bounty.amount),
+      chapter: row.revealed_in_chapter,
+      attribution: row.attribution,
+      sourceUrl: row.source_url,
+    })
+  }
 
   return out
 }

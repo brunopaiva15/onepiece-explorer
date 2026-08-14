@@ -7,6 +7,7 @@ import {
   formatBerries,
 } from '@/domains/images/bounties.ts'
 import {
+  CATEGORY,
   findPoster,
   isCanon,
   parseGallery,
@@ -94,6 +95,29 @@ describe('ce qui n’est pas une affiche de chapitre', () => {
     const higuma = gallery.find((entry) => entry.title.includes('Higuma'))!
     expect(higuma.section).toBe('East Blue Posters')
     expect(isCanon(higuma)).toBe(false)
+  })
+})
+
+describe('un fichier connu de la seule catégorie', () => {
+  /*
+   * Half the catalogue reaches us with a name and nothing else: the category
+   * lists two hundred and fifty files and carries no caption and no heading. So
+   * the non-canon check reads the name too, or a film poster walks in unlabelled.
+   */
+  it('est jugé sur son nom, faute de légende', () => {
+    const stampede = { title: "File:Kuro's Wanted Poster in Stampede.png", caption: '', section: CATEGORY }
+    const liveAction = { title: 'File:Buggy Wanted Poster Live Action.png', caption: '', section: CATEGORY }
+    const real = { title: "File:Koby's Wanted Poster.png", caption: '', section: CATEGORY }
+
+    expect(isCanon(stampede)).toBe(false)
+    expect(isCanon(liveAction)).toBe(false)
+    expect(isCanon(real)).toBe(true)
+  })
+
+  it('reste rattachable quand le manifeste le nomme', () => {
+    const gallery = [{ title: "File:Koby's Wanted Poster.png", caption: '', section: CATEGORY }]
+    const row = { chapter: 1, amount: 1, edition: 1, file: "Koby's Wanted Poster.png" }
+    expect(findPoster(gallery, luffy, row)?.entry.title).toBe("File:Koby's Wanted Poster.png")
   })
 })
 

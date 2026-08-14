@@ -200,30 +200,43 @@ const NON_CANON_SECTIONS: readonly string[] = [
 ]
 
 /**
- * Captions that place a poster outside the chapters, inside a canon heading.
+ * Words that place a poster outside the chapters, wherever they appear.
  *
- * « Higuma's wanted poster as seen in Episode of Luffy » sits under « East Blue
- * Posters », which is a canon heading, and is a special. The section is not
- * enough on its own.
+ * Checked against the caption *and* the file name, because half the catalogue
+ * has no caption: a file known only from `Category:Bounty Images` arrives as a
+ * name and nothing else, and « Kuro's Wanted Poster in Stampede.png » is a film
+ * poster whose only warning is the word « Stampede » in that name.
+ *
+ * « Higuma's wanted poster as seen in Episode of Luffy » is the other half of
+ * the rule: it sits under « East Blue Posters », which is a canonical heading,
+ * and is a television special. Neither the section nor the name is enough
+ * alone.
  */
 const NON_CANON_WORDS: readonly string[] = [
   'episode of',
   'movie',
   'film',
+  'live action',
+  'stampede',
+  'dance carnival',
+  'bounty rush',
   'video game',
   'anime only',
+  'anime wanted',
   'non-canon',
   'noncanon',
   'filler',
   'special',
   'ova',
+  'funko',
+  'eyecatcher',
 ]
 
 /** True when the entry is a poster a chapter printed. */
 export function isCanon(entry: GalleryEntry): boolean {
   if (NON_CANON_SECTIONS.includes(entry.section.trim().toLowerCase())) return false
-  const caption = entry.caption.toLowerCase()
-  return !NON_CANON_WORDS.some((word) => caption.includes(word))
+  const haystack = `${entry.caption} ${entry.title}`.toLowerCase()
+  return !NON_CANON_WORDS.some((word) => haystack.includes(word))
 }
 
 /**
@@ -311,8 +324,30 @@ export function findPoster(
   return best
 }
 
-/** The gallery page, as wikitext. One request. */
+/**
+ * Every file the wiki files as a bounty poster.
+ *
+ * Two sources, unioned, and the second one is not a fallback:
+ *
+ *   **The gallery page**, read as wikitext. It is the only one that carries a
+ *   caption and a heading, which is what tells a poster of the manga from a
+ *   poster of a film, so it stays first.
+ *
+ *   **`Category:Bounty Images`**, which holds two hundred and fifty-odd files
+ *   and is not a subset of the gallery. « Koby's Wanted Poster.png », « Kaidou's
+ *   First Wanted Poster.png » and « Ace's First Bounty.png » are all in the
+ *   category and on no gallery line, so a reader of the gallery alone concludes
+ *   the wiki does not have them. It does.
+ *
+ * A category member arrives with no caption and no section, so nothing but its
+ * file name is known about it. That is exactly why `isCanon` reads the name too:
+ * « Kuro's Wanted Poster in Stampede.png » is a film, and the caption that would
+ * have said so is not there.
+ */
 export async function fetchGallery(): Promise<GalleryEntry[]> {
+  const entries: GalleryEntry[] = []
+  const seen = new Set<string>()
+
   const url =
     `${API}?action=parse&format=json&formatversion=1&redirects=1&prop=wikitext` +
     `&page=${encodeURIComponent(GALLERY_PAGE)}`
@@ -324,7 +359,64 @@ export async function fetchGallery(): Promise<GalleryEntry[]> {
   const text = typeof wikitext === 'string' ? wikitext : (wikitext?.['*'] ?? '')
   if (!text) throw new FetchFailure(url, 'page sans wikitexte')
 
-  return parseGallery(text)
+  for (const entry of parseGallery(text)) {
+    seen.add(entry.title.toLowerCase())
+    entries.push(entry)
+  }
+
+  /*
+   * The category, added underneath. A file the gallery already described keeps
+   * the gallery's caption: a caption is evidence and an empty one is not, so
+   * the richer record wins wherever both sources hold the same picture.
+   */
+  for (const title of await fetchCategory()) {
+    if (seen.has(title.toLowerCase())) continue
+    seen.add(title.toLowerCase())
+    entries.push({ title, caption: '', section: CATEGORY })
+  }
+
+  return entries
+}
+
+/** The heading given to a file known only from the category. */
+export const CATEGORY = 'Category:Bounty Images'
+
+interface CategoryResponse {
+  query?: { categorymembers?: Array<{ title?: string }> }
+  continue?: { cmcontinue?: string }
+  error?: { info?: string }
+}
+
+/** Every file in `Category:Bounty Images`, paged to the end. */
+async function fetchCategory(): Promise<string[]> {
+  const titles: string[] = []
+  let cursor: string | undefined
+
+  /*
+   * Bounded rather than `while (true)`. A continuation the wiki keeps handing
+   * back would otherwise be an infinite loop in a job nobody is watching, and
+   * the category is two hundred and fifty files against a page size of five
+   * hundred.
+   */
+  for (let page = 0; page < 10; page += 1) {
+    const url =
+      `${API}?action=query&format=json&formatversion=2&list=categorymembers` +
+      `&cmtitle=${encodeURIComponent(CATEGORY)}&cmnamespace=6&cmtype=file&cmlimit=max` +
+      (cursor ? `&cmcontinue=${encodeURIComponent(cursor)}` : '')
+
+    const body = await fetchJson<CategoryResponse>(url)
+    if (body.error?.info) throw new FetchFailure(url, body.error.info)
+
+    for (const member of body.query?.categorymembers ?? []) {
+      if (member.title) titles.push(member.title.replace(/_/g, ' '))
+    }
+
+    cursor = body.continue?.cmcontinue
+    if (!cursor) break
+    await pause(PACE_MS)
+  }
+
+  return titles
 }
 
 /**

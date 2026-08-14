@@ -101,7 +101,7 @@ export interface BountyHistory {
 export const BOUNTY_HISTORY: readonly BountyHistory[] = [
   {
     canonical: 'Monkey D. Luffy',
-    aliases: ['monkey d luffy', 'luffy', 'chapeau de paille', 'straw hat luffy'],
+    aliases: ['monkey d luffy', 'luffy', 'luffy au chapeau de paille', 'straw hat luffy'],
     rows: [
       { chapter: 96, amount: 30_000_000, edition: 1 },
       { chapter: 234, amount: 100_000_000, edition: 2 },
@@ -143,7 +143,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
   },
   {
     canonical: 'Usopp',
-    aliases: ['usopp', 'god usopp', 'sogeking', 'pipo', 'sniper king'],
+    aliases: ['usopp', 'god usopp', 'sogeking', 'pipo', 'sniperking', 'sniper king'],
     rows: [
       { chapter: 435, amount: 30_000_000, edition: 1, file: "Usopp's Wanted Poster.png" },
       { chapter: 801, amount: 200_000_000, edition: 2, file: "God Usopp's Wanted Poster.png" },
@@ -152,7 +152,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
   },
   {
     canonical: 'Sanji',
-    aliases: ['sanji', 'vinsmoke sanji', 'black leg sanji', 'jambe noire'],
+    aliases: ['sanji', 'vinsmoke sanji', 'black leg sanji', 'sandy', 'jambe noire'],
     rows: [
       { chapter: 435, amount: 77_000_000, edition: 1, file: "Sanji's Wanted Poster.png" },
       { chapter: 801, amount: 177_000_000, edition: 2 },
@@ -243,6 +243,13 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     ],
   },
   {
+    canonical: 'Buggy',
+    aliases: ['buggy', 'baggy', 'buggy le clown', 'baggy le clown', 'buggy the clown'],
+    rows: [
+      { chapter: 96, amount: 15_000_000, edition: 1, file: "Buggy's Wanted Poster.png" },
+    ],
+  },
+  {
     canonical: 'Don Krieg',
     aliases: ['don krieg', 'krieg'],
     rows: [
@@ -263,7 +270,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
   },
   {
     canonical: 'Dracule Mihawk',
-    aliases: ['dracule mihawk', 'mihawk', 'oeil de faucon', 'hawk eyes'],
+    aliases: ['dracule mihawk', 'mihawk', 'oeil de faucon', 'œil de faucon', 'hawk eyes'],
     rows: [
       {
         chapter: 1058,
