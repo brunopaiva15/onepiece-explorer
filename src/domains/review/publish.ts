@@ -90,6 +90,16 @@ export interface PublishResult {
   assertionsCreated: number
   eventsCreated: number
   mysteriesCreated: number
+  /**
+   * Questions this chapter closed, and questions it re-opened.
+   *
+   * Counted apart from the assertions that caused them because they are not the
+   * same event to a reader: `résout le mystère` is one more edge in the graph,
+   * and « la question posée au chapitre 16 est refermée » is a line moving from
+   * one half of /mysteres to the other.
+   */
+  mysteriesResolved: number
+  mysteriesReopened: number
   labelsCreated: number
   rejected: number
   deferred: number
@@ -120,6 +130,8 @@ export function mergePublishResults(a: PublishResult, b: PublishResult): Publish
     assertionsCreated: a.assertionsCreated + b.assertionsCreated,
     eventsCreated: a.eventsCreated + b.eventsCreated,
     mysteriesCreated: a.mysteriesCreated + b.mysteriesCreated,
+    mysteriesResolved: a.mysteriesResolved + b.mysteriesResolved,
+    mysteriesReopened: a.mysteriesReopened + b.mysteriesReopened,
     labelsCreated: a.labelsCreated + b.labelsCreated,
     rejected: a.rejected + b.rejected,
     deferred: a.deferred + b.deferred,
@@ -142,6 +154,8 @@ export async function publishDecisions(
     assertionsCreated: 0,
     eventsCreated: 0,
     mysteriesCreated: 0,
+    mysteriesResolved: 0,
+    mysteriesReopened: 0,
     labelsCreated: 0,
     rejected: 0,
     deferred: 0,
@@ -989,6 +1003,32 @@ export async function publishDecisions(
       }
 
       result.assertionsCreated++
+
+      /*
+       * A question the chapter answers stops being an open question.
+       *
+       * `résout le mystère` was publishable since the ontology was written, and
+       * it went into `assertions` like any other edge and stopped there. The
+       * question's own row kept `state = 'open'` and `resolved_in_chapter` null
+       * for ever — so /mysteres, which decides open-or-closed by reading that
+       * column, showed « Ouverte » next to a question the reader had watched
+       * being answered, and « Refermées » was a heading that could never appear.
+       * The read side was complete; nothing wrote.
+       *
+       * Here rather than in a sweep afterwards because it is the same fact: the
+       * edge and the state are two ways of saying that this chapter answered
+       * this question, and writing one without the other is what created the
+       * disagreement in the first place.
+       */
+      const verdict = await applyMysteryVerdict(db, {
+        userId,
+        predicate: candidate.predicate,
+        mysteryId: objectId,
+        chapterNumber: run.chapterNumber,
+      })
+      if (verdict === 'resolved') result.mysteriesResolved++
+      if (verdict === 'reopened') result.mysteriesReopened++
+
       await recordDecision(db, userId, run.workId, item, decision)
       await db
         .update(reviewItems)
@@ -1173,6 +1213,71 @@ export async function markChapterReviewed(
  * Keyed on `(user, work, fingerprint)` rather than on the review item, because
  * the review item is per-run and would not match anything on the next pass.
  */
+/**
+ * Carry an accepted `résout le mystère` into the question's own row.
+ *
+ * The two predicates are the only ones whose acceptance changes something other
+ * than the graph, and the rule for each is about *dates*, not about the latest
+ * word winning:
+ *
+ *   Resolving records the earliest chapter that answers the question. A second
+ *   chapter saying the same thing does not push the answer later — the reader
+ *   learned it the first time — so a resolution already recorded at or before
+ *   this chapter is left alone. Re-importing a chapter therefore writes the same
+ *   value it wrote before, which is what makes publication idempotent here too.
+ *
+ *   Re-opening clears a resolution *this chapter invalidates*, meaning one dated
+ *   at or before it. A resolution recorded later is a different, later answer
+ *   and survives: « on croyait savoir au 40, on rouvre au 60, on répond au 80 »
+ *   must not lose the chapter-80 answer because the chapter-60 card was
+ *   published afterwards.
+ *
+ * Returns null when the object is not a question at all. The database trigger
+ * already refuses `résout le mystère` towards anything but a mystery, so that
+ * case means the row was deleted between the insert and here — nothing to write,
+ * and nothing worth failing a publication over.
+ */
+async function applyMysteryVerdict(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    userId: string
+    predicate: string
+    mysteryId: string | null
+    chapterNumber: number
+  },
+): Promise<'resolved' | 'reopened' | null> {
+  if (input.mysteryId === null) return null
+  if (input.predicate !== 'resolves_mystery' && input.predicate !== 'reopens_mystery') {
+    return null
+  }
+
+  const [current] = await db
+    .select({ resolvedInChapter: mysteries.resolvedInChapter })
+    .from(mysteries)
+    .where(and(eq(mysteries.entityId, input.mysteryId), eq(mysteries.userId, input.userId)))
+    .limit(1)
+
+  if (!current) return null
+
+  const recorded = current.resolvedInChapter
+
+  if (input.predicate === 'resolves_mystery') {
+    if (recorded !== null && recorded <= input.chapterNumber) return null
+    await db
+      .update(mysteries)
+      .set({ state: 'resolved', resolvedInChapter: input.chapterNumber })
+      .where(eq(mysteries.entityId, input.mysteryId))
+    return 'resolved'
+  }
+
+  if (recorded === null || recorded > input.chapterNumber) return null
+  await db
+    .update(mysteries)
+    .set({ state: 'reopened', resolvedInChapter: null })
+    .where(eq(mysteries.entityId, input.mysteryId))
+  return 'reopened'
+}
+
 async function recordDecision(
   db: Parameters<Parameters<typeof withIngest>[0]>[0],
   userId: string,
