@@ -5,6 +5,7 @@ import {
   addAssertion,
   addEvent,
   addLabel,
+  addPortrait,
   createEntity,
   raw,
   resetDatabase,
@@ -171,10 +172,29 @@ describe('la relecture du chapitre 1, appliquée', () => {
      */
     const roux = await createEntity(world, 'character', 1)
     await addLabel(world, roux, 'Lucky Roux', 'true_name', 1, 100)
+    // Un portrait rapproché par ce nom, à l'époque où il était daté du 1.
+    await addPortrait(world, roux, { matchedLabel: 'Lucky Roux', revealedIn: 1 })
 
+    /*
+     * Beckman en deux nœuds, joints par une identité — la forme que la
+     * bibliothèque a réellement, et celle qui a fait rater la correction. Le
+     * nom est sur la moitié que la recherche par libellé ne renvoie pas la
+     * première, ce qui est le seul détail qui compte ici.
+     */
     beckman = await createEntity(world, 'character', 1)
-    await addLabel(world, beckman, 'Benn Beckman', 'true_name', 1, 100)
     await addLabel(world, beckman, 'Ben Beckman', 'alias', 1, 5)
+
+    const beckmanTwin = await createEntity(world, 'character', 1)
+    await addLabel(world, beckmanTwin, 'Benn Beckman', 'true_name', 1, 100)
+    await addAssertion(world, {
+      subject: beckman,
+      predicate: 'same_as',
+      object: beckmanTwin,
+      knowledgeFrom: 1,
+      epistemic: 'user_validated',
+      proposedBy: 'user',
+      locked: true,
+    })
 
     mayor = await createEntity(world, 'character', 1)
     await addLabel(world, mayor, 'Hoop Slap', 'true_name', 1, 100)
@@ -296,6 +316,54 @@ describe('la relecture du chapitre 1, appliquée', () => {
       }),
     )
     expect(shown).toEqual(['Makino', 'Shanks', 'Higuma', 'Monkey D. Luffy', 'Gold Roger'])
+  })
+
+  it('corrige les deux moitiés d’une personne rangée en deux nœuds', async () => {
+    /*
+     * La fiche lit la composante d'identité entière et affiche le meilleur
+     * libellé qu'elle y trouve — c'est ce qui fait qu'un personnage fusionné
+     * s'affiche sous son vrai nom plutôt que sous la silhouette qui a trié
+     * première. Le revers : il suffit d'une moitié laissée en arrière pour que
+     * le nom du futur revienne, et la fiche est alors exactement aussi fausse
+     * qu'avant la correction, à un `LIMIT 1` près.
+     */
+    const [row] = await raw<Array<{ entity_id: string }>>`
+      SELECT entity_id FROM entity_labels
+       WHERE user_id = ${world.userId} AND label = 'Benn Beckman'
+    `
+    const sheet = await getEntitySheet(world.userId, 1, row!.entity_id)
+    expect(sheet?.memberIds.length).toBeGreaterThan(1)
+    expect(sheet?.displayLabel).toBe('Pirate aux cheveux noirs de l’équipage de Shanks')
+    expect(sheet?.labels.map((label) => label.label)).not.toContain('Benn Beckman')
+
+    /*
+     * Et une seule fois chacun, au chapitre où tout est lisible. Corriger deux
+     * nœuds, c'est écrire deux fois — le nom sur chaque moitié, la désignation
+     * sur chaque moitié — et « Noms connus » liste la composante entière.
+     */
+    const whole = await getEntitySheet(world.userId, 42, row!.entity_id)
+    const names = whole?.labels.map((label) => label.label) ?? []
+    expect(names.filter((name) => name === 'Benn Beckman')).toHaveLength(1)
+    expect(
+      names.filter((name) => name === 'Pirate aux cheveux noirs de l’équipage de Shanks'),
+    ).toHaveLength(1)
+  })
+
+  it('fait suivre le portrait trouvé par le nom', async () => {
+    /*
+     * Une illustration porte la révélation du *libellé qui l'a trouvée* — voir
+     * la migration 0012 —, et ce libellé vient de bouger. Le visage rapproché
+     * par « Lucky Roux » alors que ce nom était daté du chapitre 1 y serait
+     * resté : la fiche du chapitre 1 dirait « Pirate corpulent mangeant de la
+     * viande » au-dessus d'une image que seul le nom du tome 5 a su trouver.
+     */
+    const rows = await raw<Array<{ matched_label: string; revealed_in_chapter: number }>>`
+      SELECT matched_label, revealed_in_chapter FROM entity_images
+       WHERE user_id = ${world.userId}
+    `
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.matched_label).toBe('Lucky Roux')
+    expect(rows[0]!.revealed_in_chapter).toBe(42)
   })
 
   it('est rejouable : une seconde exécution n’écrit rien', async () => {
