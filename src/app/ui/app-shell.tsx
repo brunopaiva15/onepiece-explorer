@@ -260,6 +260,17 @@ export async function AppShell({
                 </>
               )}
             </p>
+            <p>
+              Made by{' '}
+              <a
+                href="https://vergasta.ch"
+                rel="noreferrer noopener"
+                target="_blank"
+                className="underline underline-offset-2 hover:text-secondary"
+              >
+                Vergasta Digital
+              </a>
+            </p>
           </div>
         </footer>
       </div>
