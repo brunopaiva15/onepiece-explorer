@@ -1,7 +1,12 @@
 import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts'
-import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
+import {
+  displayImages,
+  postersFor,
+  type DisplayImage,
+  type PosterView,
+} from '@/domains/images/index.ts'
 import { ARCS, arcOf, type Arc } from '@/domains/temporal/arcs.ts'
 import {
   castAtChapter,
@@ -78,7 +83,11 @@ export default async function HomePage({
   const { ch } = await searchParams
   let published: ChapterSummary[] = []
   let boundary = 0
-  let wall: Array<{ member: CastMember; portrait: DisplayImage | null }> = []
+  let wall: Array<{
+    member: CastMember
+    portrait: DisplayImage | null
+    poster: PosterView | null
+  }> = []
   let questions: OpenQuestion[] = []
 
   /*
@@ -138,9 +147,28 @@ export default async function HomePage({
      */
     const illustrated = drawn.filter((member) => faceOf(member) !== null)
     const rest = drawn.filter((member) => faceOf(member) === null)
-    wall = [...illustrated, ...rest]
-      .slice(0, MUR)
-      .map((member) => ({ member, portrait: faceOf(member) }))
+    const chosen = [...illustrated, ...rest].slice(0, MUR)
+
+    /*
+     * The real poster, when the reader has read the chapter that prints it.
+     *
+     * Asked only for the six on the wall, because each one is a signed URL and
+     * the other fifty-four would be minted to be thrown away. The bounty comes
+     * back with it, dated the same way, so the number under the picture is the
+     * one the reader has seen and not the one it became.
+     */
+    const posters = await postersFor(
+      session.userId,
+      boundary,
+      chosen.flatMap((member) => member.memberIds),
+      new Map(chosen.flatMap((member) => member.memberIds.map((id) => [id, member.label]))),
+    )
+
+    wall = chosen.map((member) => ({
+      member,
+      portrait: faceOf(member),
+      poster: member.memberIds.map((id) => posters.get(id)).find((found) => found) ?? null,
+    }))
 
     questions = tirage(open).slice(0, 3)
   } catch {
@@ -150,13 +178,22 @@ export default async function HomePage({
   const derniers = published.slice(0, MUR)
   const arc = arcOf(boundary)
   const route = ARCS.filter((port) => port.from <= boundary)
+  /*
+   * Every catalogue that put a picture on this wall, named.
+   *
+   * Both kinds, because both are on screen: the posters come from the wiki and
+   * the portraits from the community APIs, and crediting only the ones the
+   * first version happened to load would credit the wrong site on a wall made
+   * of wanted posters.
+   */
   const sources = [
     ...new Set(
       wall
-        .map((poster) => poster.portrait?.attribution)
+        .flatMap((poster) => [poster.poster?.attribution, poster.portrait?.attribution])
         .filter((name): name is string => name !== undefined),
     ),
   ]
+  const hasPoster = wall.some((poster) => poster.poster !== null)
 
   return (
     <main id="contenu" className="mx-auto max-w-6xl px-5 py-8 sm:py-10">
@@ -206,10 +243,29 @@ export default async function HomePage({
           </div>
 
           <ul className="mur mt-5">
-            {wall.map(({ member, portrait }) => (
+            {wall.map(({ member, portrait, poster }) => (
               <li key={member.entityId}>
-                <Link href={`/entite/${member.entityId}?ch=${boundary}`} className="affiche">
-                  {portrait ? (
+                <Link
+                  href={`/entite/${member.entityId}?ch=${boundary}`}
+                  className={`affiche ${poster ? 'affiche-vraie' : ''}`}
+                >
+                  {/*
+                   * The real poster wins, when the reader has read the chapter
+                   * that prints it.
+                   *
+                   * `object-fit: contain` rather than the portrait's crop: a
+                   * wanted poster is a document, and cropping one is throwing
+                   * away the half that says what it is.
+                   */}
+                  {poster ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={poster.url}
+                      alt={`Avis de recherche de ${member.label}`}
+                      loading="lazy"
+                      className="affiche-vue affiche-vue-entiere"
+                    />
+                  ) : portrait ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={portrait.thumbUrl}
@@ -228,18 +284,27 @@ export default async function HomePage({
                     <span className="affiche-nom">{member.label}</span>
                   </span>
                   {/*
-                   * Where a bounty would be, and it is a real number.
+                   * The band a bounty is printed on, and what may go on it.
                    *
-                   * The obvious joke was a berry amount, which this project
-                   * cannot make: an invented figure on a page whose whole claim
-                   * is that every number on it comes from a chapter would be
-                   * the one lie on the site. The chapter the reader met them in
-                   * is a fact, it moves with the cursor, and it is the number a
-                   * reader of this site actually wants.
+                   * A figure when there is a real one, dated like everything
+                   * else: the printing this reader has read, from a manifest
+                   * somebody maintains by hand. Otherwise the chapter they met
+                   * them in, which is also a fact. What never goes here is an
+                   * invented berry amount — on a page whose whole claim is that
+                   * its numbers come from chapters, that would be the one lie.
                    */}
                   <span className="affiche-prime">
-                    <span className="affiche-prime-mot">Vu au chapitre</span>
-                    <span className="chiffre text-2xl">{member.firstSeenChapter}</span>
+                    {poster ? (
+                      <>
+                        <span className="affiche-prime-mot">Mort ou vif</span>
+                        <span className="chiffre affiche-prime-somme">{poster.berries}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="affiche-prime-mot">Vu au chapitre</span>
+                        <span className="chiffre text-2xl">{member.firstSeenChapter}</span>
+                      </>
+                    )}
                   </span>
                 </Link>
               </li>
@@ -258,8 +323,11 @@ export default async function HomePage({
            */}
           {sources.length > 0 && (
             <p className="mt-4 text-xs text-muted">
-              Illustrations : {sources.join(', ')}, rapprochées par le nom. Ce
-              n&apos;est pas une preuve tirée de vos pages.
+              Illustrations : {sources.join(', ')}. Ce n&apos;est pas une preuve
+              tirée de vos pages.
+              {hasPoster
+                ? " Les primes sont celles qu'affiche l'avis de recherche, daté du chapitre qui le montre."
+                : ' Les portraits sont rapprochés de chaque personnage par le nom.'}
             </p>
           )}
         </section>

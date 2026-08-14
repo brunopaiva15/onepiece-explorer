@@ -17,9 +17,10 @@ import {
   publicLibraryOwnerId,
 } from '@/lib/env.ts'
 import { imageCoverage } from '@/domains/images/index.ts'
+import { bountyCharacterCount } from '@/domains/images/posters.ts'
 import { devilFruitsFiledAsPowers } from '@/domains/knowledge/retype.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
-import { EnrichImages } from './enrich-images.tsx'
+import { EnrichImages, EnrichPosters } from './enrich-images.tsx'
 import { ReclassifyFruits } from './reclassify-fruits.tsx'
 import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
@@ -246,6 +247,22 @@ export default async function SettingsPage() {
           la liste des personnages que vous consultez.
         </p>
         <EnrichImages coverage={coverage} />
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-lg font-semibold text-primary">Avis de recherche</h2>
+        <p className="mt-2 max-w-2xl text-sm text-secondary">
+          Les vraies affiches du manga, prises sur la galerie du One Piece Wiki.
+          Elles ne sont pas rapprochées par le nom comme les portraits : chaque
+          tirage est écrit à la main dans{' '}
+          <code className="text-primary">src/domains/images/bounties.ts</code>{' '}
+          avec le chapitre qui le montre, parce qu&apos;une prime est un chiffre
+          daté et qu&apos;une affiche prise «&nbsp;au hasard&nbsp;» raconterait à
+          un lecteur du chapitre 100 ce que vaut Luffy mille chapitres plus loin.
+          La galerie n&apos;en tient qu&apos;une partie ; le reste des
+          personnages garde son portrait.
+        </p>
+        <EnrichPosters characters={bountyCharacterCount()} />
       </section>
 
       <section className="mt-12">

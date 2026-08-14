@@ -20,6 +20,7 @@
     "fixtures:generate": "tsx scripts/generate-fixtures.ts",
     "images:catalogue": "tsx scripts/image-catalogue.ts",
     "images:enrich": "tsx scripts/enrich-images.ts",
+    "images:posters": "tsx --conditions=react-server scripts/enrich-posters.ts",
     "repair:luffy-crew": "tsx --conditions=react-server scripts/repair-luffy-crew.ts",
     "repair:chapitres-1-42": "tsx --conditions=react-server scripts/repair-chapitres-1-42.ts",
     "repair:chapitres-1-100": "tsx --conditions=react-server scripts/repair-chapitres-1-100.ts",

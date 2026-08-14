@@ -427,6 +427,14 @@ export const entityImages = pgTable(
      * boundary policy withholds a post-ellipse face below chapter 598.
      */
     era: text('era').notNull().default('unknown'),
+    /**
+     * `portrait` for an illustration of the subject, `poster` for a wanted
+     * poster. A poster is dated by the chapter that shows it and an entity
+     * holds one row per printing of its bounty, so the reader gets the figure
+     * they have read and not the one it became. See
+     * drizzle/0028_the_poster_and_the_number_on_it.sql.
+     */
+    kind: text('kind').notNull().default('portrait'),
     isPrimary: boolean('is_primary').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

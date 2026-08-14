@@ -723,6 +723,30 @@ hr.regle {
   border-bottom: 3px solid var(--ink);
 }
 
+/* A poster the work actually printed sits straight, and the wall tilts around
+   it. It is the real thing among the stand-ins, and that is worth one degree. */
+.mur > li:nth-child(odd) .affiche-vraie,
+.mur > li:nth-child(even) .affiche-vraie {
+  rotate: 0deg;
+  box-shadow: var(--shadow-hard);
+}
+
+/*
+ * A real wanted poster, which is a document rather than a picture of somebody.
+ *
+ * Contained rather than cropped, on the paper the poster is printed on: the
+ * half a crop would throw away is the half that says what the thing is, and a
+ * portrait crop of a bounty poster is a close-up of a face with the number cut
+ * off. The parchment behind it is the same value in both themes, because the
+ * poster's own paper is part of the drawing.
+ */
+.affiche-vue-entiere {
+  object-fit: contain;
+  object-position: center;
+  background: #f2e2bd;
+  padding: 0.15rem;
+}
+
 /* No picture in the catalogue for this one. An initial on deep water, rather
    than a grey box apologising for itself. */
 .affiche-vide {
@@ -772,6 +796,21 @@ hr.regle {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   opacity: 0.75;
+}
+
+/*
+ * A bounty is a long number and the poster is a narrow card, so this one shrinks
+ * with the card instead of setting a size and hoping. « 1 111 000 000 ฿ » is
+ * fourteen characters and has to fit next to « 50 ฿ » without either looking
+ * like a mistake.
+ */
+.affiche-prime-somme {
+  font-size: clamp(0.85rem, 2.1cqi + 0.55rem, 1.5rem);
+  white-space: nowrap;
+}
+
+.mur > li {
+  container-type: inline-size;
 }
 
 /* --------------------------------------------------------------------------
