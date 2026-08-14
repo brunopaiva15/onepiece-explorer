@@ -485,7 +485,7 @@ describe('the gate in front of everything', () => {
 
   it('stands down when the authentication configuration is unusable', async () => {
     /*
-     * The gate runs before every route, `/etat` included. So it must survive a
+     * The gate runs before every route, `/admin/etat` included. So it must survive a
      * configuration the rest of the application cannot use — a value that is
      * present but is not a URL threw inside createServerClient and took the
      * diagnostic page down with everything else. Letting the request through is
