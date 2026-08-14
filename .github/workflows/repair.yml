@@ -27,6 +27,13 @@ name: Réparations (production)
 # migrate.yml already uses. Nothing new to configure if migrations have ever
 # been run from here.
 #
+# One order to respect, and it is not enforced here on purpose. `chapitre-1`
+# writes a name with no revelation chapter, which the schema only accepts from
+# migration 0027 onwards — so run migrate.yml first. It is left to the operator
+# rather than chained automatically because a repair workflow that migrates on
+# its own would apply schema changes nobody asked it to; the failure, if the
+# order is wrong, is a constraint error on the first write and nothing else.
+#
 # One of them is not like the others, and it is worth knowing before pressing
 # the button. `mysteres` reads: it asks a model, once per open question, whether
 # the scenes published after it carry the answer. So it also needs
@@ -48,6 +55,7 @@ on:
         default: chapitres-1-42
         options:
           - chapitres-1-42
+          - chapitre-1
           - luffy-crew
           - mysteres
       limit:

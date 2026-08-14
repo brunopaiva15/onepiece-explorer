@@ -142,6 +142,10 @@ export async function findEcho(
   let best: Echo | null = null
   for (const candidate of candidates) {
     if (exclude.has(candidate.entityId)) continue
+    // The `lte` above already drops a name no chapter gives — an echo is a
+    // scene the reader has read, and one with no chapter is not. Restated here
+    // because the type is what tells the next reader the case exists.
+    if (candidate.revealedInChapter === null) continue
     const overlap = tokenOverlap(asSentence(input.text), asSentence(candidate.label))
     if (overlap < ECHO_WORTH_SHOWING) continue
     if (best === null || overlap > best.overlap) {

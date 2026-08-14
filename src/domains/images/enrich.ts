@@ -570,7 +570,21 @@ async function pending(userId: string, options: EnrichOptions): Promise<Row[]> {
           '[]'::jsonb
         ) AS labels
       FROM entities e
-      LEFT JOIN entity_labels l ON l.entity_id = e.id
+      /*
+       * A name no chapter gives finds no picture.
+       *
+       * The revelation chapter of the matching label is what decides when a
+       * portrait may be shown -- see drizzle/0012 -- and a name from a SBS
+       * column or a databook has no such chapter. Matching on one would produce
+       * a picture with nothing to date it: the wiki knows the mayor of Fuchsia
+       * by a name the reader has not read, and the face would arrive under it
+       * at chapter 1. So the join is on the names the chronology carries, and
+       * an entity whose only name is one of the others counts as having none --
+       * which, as far as the reader is concerned, it does.
+       */
+      LEFT JOIN entity_labels l
+             ON l.entity_id = e.id
+            AND l.revealed_in_chapter IS NOT NULL
       WHERE e.user_id = ${userId}
         AND e.review_status = 'accepted'
         AND e.node_type IN ${types}
