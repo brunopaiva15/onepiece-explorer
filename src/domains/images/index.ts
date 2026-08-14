@@ -24,12 +24,16 @@ export {
   eraAtChapter,
   eraOfFileName,
   eraOfImageUrl,
+  fileNameOfUrl,
   LAST_PRE_TIMESKIP_CHAPTER,
   type Era,
   type ReaderEra,
 } from './era.ts'
 export {
   bestPortraits,
+  illustrates,
+  infoboxFiles,
+  infoboxPortrait,
   lookupFandomImages,
   lookupFandomPortraits,
 } from './sources/fandom.ts'

@@ -67,11 +67,19 @@ const MARKERS: Readonly<Record<ReaderEra, readonly string[]>> = {
  * Underscores, hyphens and the extension all disappear, so « Pre_Timeskip »,
  * « Pre-Timeskip » and « pre timeskip » are one thing. The padding lets a
  * caller test for a whole word with `' anime '` and not match « animation ».
+ *
+ * Accents go too, and that is not cosmetic. The French wiki files « Équipage du
+ * Roux » under `Equipage_du_Roux_Jolly_Roger.png`: the article title carries the
+ * accent and the file name does not, so comparing a picture against the name
+ * that asked for it — see `illustrates` — would fail on every French title with
+ * a diacritic in it. Nothing this reads is spelled with an accent on purpose.
  */
 export function fileWords(name: string): string {
   const base = name
-    .replace(/^File:/i, '')
+    .replace(/^(?:File|Fichier|Image):/i, '')
     .replace(/\.[a-z0-9]+$/i, '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .toLowerCase()
@@ -107,10 +115,23 @@ export function eraOfFileName(name: string): Era {
  * how the lead image of an article gets dated at all.
  */
 export function eraOfImageUrl(url: string): Era {
+  const file = fileNameOfUrl(url)
+  return file ? eraOfFileName(file) : 'unknown'
+}
+
+/**
+ * The file name inside a wiki image address, decoded.
+ *
+ * `…/images/0/05/Chapitre_1018_Color%C3%A9.png/revision/latest?cb=…` yields
+ * « Chapitre_1018_Coloré.png ». The name is the only thing the address says
+ * about the picture, and everything that judges a picture on this side reads it
+ * — its date here, and whether it depicts what was asked for in fandom.ts.
+ */
+export function fileNameOfUrl(url: string): string | null {
   const path = url.split('?')[0] ?? ''
   const file = path
     .split('/')
     .reverse()
     .find((segment) => /\.[a-z0-9]+$/i.test(segment))
-  return file ? eraOfFileName(decodeURIComponent(file)) : 'unknown'
+  return file ? decodeURIComponent(file) : null
 }

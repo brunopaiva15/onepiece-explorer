@@ -1,5 +1,11 @@
 import { fetchJson, FetchFailure, pause } from '../http.ts'
-import { eraOfFileName, eraOfImageUrl, fileWords, type ReaderEra } from '../era.ts'
+import {
+  eraOfFileName,
+  eraOfImageUrl,
+  fileNameOfUrl,
+  fileWords,
+  type ReaderEra,
+} from '../era.ts'
 import type { ImageCandidate } from '../types.ts'
 
 /**
@@ -26,6 +32,16 @@ import type { ImageCandidate } from '../types.ts'
  * page's lead image — a picture of something else, captioned as if it were
  * this. The wiki is telling us it has no article for this thing; that is an
  * answer, and the answer is no.
+ *
+ * **The lead image is checked against the name that asked for it.** MediaWiki's
+ * `pageimages` does not return the article's infobox picture; it returns the
+ * image its own heuristic scores highest anywhere on the page, and on an article
+ * with a colour spread in a footnote that is the colour spread. Asked about
+ * « Équipage du Roux » on 2026-08-14 it answered `Chapitre_1018_Coloré.png` —
+ * the cover of chapter 1018, offered as the crew's portrait, which is both wrong
+ * and a spoiler a thousand chapters deep. So a lead image whose file name
+ * carries none of the subject's words is refused, and the article's own infobox
+ * is read instead. See `illustrates` and `infoboxFiles`.
  *
  * **It is also the only source that dates its pictures**, which is why it is
  * now asked about entities the catalogues *did* place. The lead image of a
@@ -64,6 +80,8 @@ interface Answer {
   title: string | null
   /** Every file the article uses, as `File:…` titles. */
   files: string[]
+  /** The files the article's own infobox carries, in the order it lists them. */
+  infobox: string[]
 }
 
 interface QueryResponse {
@@ -76,26 +94,36 @@ interface QueryResponse {
         missing?: string | boolean
         original?: { source?: string }
         images?: Array<{ title?: string }>
+        revisions?: Array<{ slots?: { main?: { '*'?: string } } }>
       }
     >
   }
 }
 
 /**
- * One request, two answers: the lead image and the article's file list.
+ * One request, three answers: the lead image, the article's file list, and the
+ * opening wikitext the infobox is written in.
  *
- * `pageimages` and `images` are separate properties of the same `query`, so
- * asking for both costs exactly what asking for one used to. That matters: the
- * era-aware portrait below would otherwise double the number of requests this
- * application makes to a wiki that owes it nothing.
+ * `pageimages`, `images` and `revisions` are separate properties of the same
+ * `query`, so asking for all three costs exactly what asking for one used to.
+ * That matters twice over: the era-aware portrait below would otherwise double
+ * the number of requests this application makes to a wiki that owes it nothing,
+ * and reading the infobox — the only place the article itself says which picture
+ * illustrates it — would have doubled them again.
+ *
+ * `rvsection=0` is the lead, which is where an infobox lives. The rest of the
+ * article is a great deal of wikitext nothing here would read.
  */
 async function ask(title: string, lang: Lang): Promise<Answer> {
   const url = `${WIKIS[lang]}?${new URLSearchParams({
     action: 'query',
     format: 'json',
-    prop: 'pageimages|images',
+    prop: 'pageimages|images|revisions',
     piprop: 'original',
     imlimit: 'max',
+    rvprop: 'content',
+    rvslots: 'main',
+    rvsection: '0',
     redirects: '1',
     titles: title,
   })}`
@@ -106,6 +134,7 @@ async function ask(title: string, lang: Lang): Promise<Answer> {
     fragmentRedirect: false,
     title: null,
     files: [],
+    infobox: [],
   }
 
   let data: QueryResponse
@@ -134,6 +163,7 @@ async function ask(title: string, lang: Lang): Promise<Answer> {
     files: (page.images ?? [])
       .map((image) => image.title ?? '')
       .filter((title) => title !== ''),
+    infobox: infoboxFiles(page.revisions?.[0]?.slots?.main?.['*'] ?? ''),
   }
 }
 
@@ -266,10 +296,29 @@ async function toCandidates(
   const candidates: ImageCandidate[] = []
 
   const dated = bestPortraits(answer.files, resolved)
-  const urls = await fileUrls(Object.values(dated), lang)
+
+  /*
+   * The lead image, weighed before it is used.
+   *
+   * `pageimages` picks by its own scoring across the whole article, and on
+   * « L'Équipage du Roux » that picked the coloured cover of chapter 1018 out of
+   * a footnote. A file name that carries none of the subject's words is the
+   * wiki telling us, in the only vocabulary it has here, that this picture is of
+   * something else — and the article's infobox, which does say what illustrates
+   * it, is asked instead. `stand` is that replacement, and it costs a request
+   * only in the case where the lead was refused.
+   */
+  const leadFile = answer.imageUrl ? fileNameOfUrl(answer.imageUrl) : null
+  const leadKept = leadFile !== null && illustrates(leadFile, resolved)
+  const stand = leadKept ? null : infoboxPortrait(answer.infobox, resolved)
+
+  const urls = await fileUrls(
+    [...Object.values(dated), ...(stand ? [stand] : [])],
+    lang,
+  )
 
   for (const [era, file] of Object.entries(dated) as Array<[ReaderEra, string]>) {
-    const url = urls.get(file)
+    const url = urls.get(fileKey(file))
     if (!url) continue
     candidates.push({
       ...base,
@@ -283,7 +332,8 @@ async function toCandidates(
   }
 
   /*
-   * The lead image, unless a dated portrait already covers its period.
+   * The article's own picture of its subject, unless a dated portrait already
+   * covers its period.
    *
    * Asked about « Nami », the wiki's lead image is her anime portrait from
    * after the ellipse — and the article also yields her manga portrait from
@@ -293,22 +343,31 @@ async function toCandidates(
    * kept whatever else was found: it is the only thing that can serve a period
    * the article did not illustrate.
    */
-  const leadEra = answer.imageUrl ? eraOfImageUrl(answer.imageUrl) : 'unknown'
+  const leadUrl = leadKept
+    ? answer.imageUrl
+    : stand
+      ? (urls.get(fileKey(stand)) ?? null)
+      : null
+  const leadEra = leadUrl ? eraOfImageUrl(leadUrl) : 'unknown'
   const redundant =
     leadEra !== 'unknown' && candidates.some((candidate) => candidate.era === leadEra)
 
-  if (
-    answer.imageUrl &&
-    !redundant &&
-    !candidates.some((c) => c.imageUrl === answer.imageUrl)
-  ) {
+  if (leadUrl && !redundant && !candidates.some((c) => c.imageUrl === leadUrl)) {
     candidates.push({
       ...base,
-      // The resolved title, not the label we asked with: two of our entities
-      // resolving to the same article are the same picture, and the unique index
-      // on (entity, source, ref) should see that.
-      sourceRef: `${lang}:${resolved}`,
-      imageUrl: answer.imageUrl,
+      /*
+       * The resolved title, not the label we asked with: two of our entities
+       * resolving to the same article are the same picture, and the unique index
+       * on (entity, source, ref) should see that.
+       *
+       * A picture taken from the infobox names its file as well, which is what
+       * makes the correction reachable: a library illustrated before the lead
+       * image was checked holds a row under the bare `lang:title` ref, and that
+       * ref is one today's lookup no longer produces. See
+       * scripts/repair-illustrations.ts.
+       */
+      sourceRef: stand ? `${lang}:${resolved}#${stand}` : `${lang}:${resolved}`,
+      imageUrl: leadUrl,
       // Read from the file name in the URL. Usually `unknown`; for a character
       // who lived through the ellipse it usually is not, and that is precisely
       // the picture this whole change exists to withhold.
@@ -317,6 +376,93 @@ async function toCandidates(
   }
 
   return candidates
+}
+
+/**
+ * The picture an article's infobox holds up as its subject's, or none.
+ *
+ * Read only when `pageimages` has already answered with something that is not
+ * of this subject, so the bar is the same one every other picture here clears:
+ * the file must name the subject, and the manga is preferred to the anime for
+ * the reason `bestPortraits` prefers it — this is a companion to a manga you
+ * are reading, and the wiki names the two apart.
+ */
+export function infoboxPortrait(files: string[], subject: string): string | null {
+  const usable = files.filter((file) => illustrates(file, subject))
+  const manga = usable.find((file) => fileWords(file).includes(' manga '))
+  return manga ?? usable[0] ?? null
+}
+
+/**
+ * Every file named inside an article's infobox, in the order it names them.
+ *
+ * The infobox is the one place an article says what illustrates it, and it says
+ * so in half a dozen shapes: `image = [[Fichier:X.png|270px]]`, a
+ * `{{Manga-Anime}}` holding one of each, and the English crew boxes' bare
+ * `jroger = Red Hair Pirates' Jolly Roger.png`. So this reads file *names*
+ * rather than parameters — anything ending in a picture extension, wherever it
+ * sits in the box — and leaves it to `illustrates` to say which of them is of
+ * the subject. Reading parameter names would mean keeping a list of two wikis'
+ * template conventions, including the misspelt ones (« Rois des Mers » files its
+ * picture under `imag`), and that list would rot silently.
+ *
+ * Bounded to the first template whose name contains « Box », which is what both
+ * wikis call their infoboxes. Without that bound this would reach the footnote
+ * the whole problem came from.
+ */
+export function infoboxFiles(wikitext: string): string[] {
+  const box = infoboxBlock(wikitext)
+  if (box === '') return []
+
+  const found: string[] = []
+  const seen = new Set<string>()
+  for (const match of box.matchAll(FILE_NAME)) {
+    const name = (match[1] ?? '')
+      .trim()
+      .replace(/^(?:File|Fichier|Image):\s*/i, '')
+      // Underscores are a spelling of the space, and the wikitext uses both for
+      // the same file. One form here means a re-run recognises the picture it
+      // already stored rather than filing a second copy under the other.
+      .replace(/_/g, ' ')
+    const key = fileKey(name)
+    if (name === '' || seen.has(key)) continue
+    seen.add(key)
+    // `File:` rather than the wiki's own namespace: MediaWiki accepts the
+    // canonical prefix everywhere and normalises it to « Fichier: » on the
+    // French wiki, which is why `fileUrls` matches its answers on `fileKey`.
+    found.push(`File:${name}`)
+  }
+  return found
+}
+
+/** A file name in wikitext, linked or bare. The extension is the whole signal. */
+const FILE_NAME = /([^|[\]{}=\n]+\.(?:png|jpe?g|gif|webp))/giu
+
+/**
+ * The first `{{… Box …}}` of a lead section, braces balanced.
+ *
+ * Balanced rather than « up to the first `}}` » because the infobox parameter
+ * that matters is routinely a template itself — `{{Manga-Anime}}` carries the
+ * two pictures of a place. An unbalanced box is not repaired: reading past its
+ * end would take in the prose, and the prose is full of pictures of other
+ * things.
+ */
+function infoboxBlock(wikitext: string): string {
+  const start = wikitext.search(/\{\{[^{}|\n]*box/i)
+  if (start === -1) return ''
+
+  let depth = 0
+  for (let i = start; i < wikitext.length - 1; i += 1) {
+    if (wikitext.startsWith('{{', i)) {
+      depth += 1
+      i += 1
+    } else if (wikitext.startsWith('}}', i)) {
+      depth -= 1
+      i += 1
+      if (depth === 0) return wikitext.slice(start, i + 1)
+    }
+  }
+  return ''
 }
 
 /**
@@ -336,8 +482,8 @@ const PORTRAIT_WORDS = ['infobox', 'portrait'] as const
 /**
  * Refused outright, whatever else the name says.
  *
- * Short, because the portrait requirement above already does most of the work.
- * These are the things that get *named* like a portrait and are not one: a
+ * Short, because the subject's own words do most of the work. These are the
+ * things that get *named* after the subject and are not a picture of it: a
  * wanted poster is a drawing of a drawing, a concept sheet is production
  * material, an outfit shot frames the clothes rather than the face.
  */
@@ -362,13 +508,29 @@ const REFUSED = [
 ] as const
 
 /**
- * The best dated portrait on each side of the ellipse, or neither.
+ * Whether a file is a picture *of* the subject, read from its name.
  *
- * `subject` is the resolved article title, and a file must carry one of its
- * words to be considered. That check is not decoration: an article's file list
- * includes what its templates drag in — `153rd Branch Infobox.png` sits in
- * Koby's — and the failure mode of taking one of those is a confident, wrong
- * face, which this domain treats as worse than no face at all.
+ * The one check standing between an article and a confident, wrong
+ * illustration, and the reason every picture on this side goes through it. A
+ * file must carry one of the subject's own words: an article drags in files
+ * through its templates and its footnotes — `153rd Branch Infobox.png` sits in
+ * Koby's, `Chapitre 1018 Coloré.png` in the Roux crew's — and the failure mode
+ * of taking one of those is a picture of something else, captioned as if it
+ * were this. Nobody re-checks an illustration they have already accepted, which
+ * is what makes it worse than no illustration at all.
+ *
+ * `subject` is the resolved article title, never the label we asked with: a
+ * French label that redirects to an English article must be judged against the
+ * English words its files are named in.
+ */
+export function illustrates(file: string, subject: string): boolean {
+  const words = fileWords(file)
+  if (REFUSED.some((word) => words.includes(word))) return false
+  return subjectWords(subject).some((mark) => words.includes(` ${mark} `))
+}
+
+/**
+ * The best dated portrait on each side of the ellipse, or neither.
  *
  * Manga over anime, deliberately. This is a companion to a manga you are
  * reading; the panel art is what the pages you just turned look like. The wiki
@@ -378,7 +540,6 @@ export function bestPortraits(
   files: string[],
   subject: string,
 ): Partial<Record<ReaderEra, string>> {
-  const marks = subjectWords(subject)
   const best: Partial<Record<ReaderEra, { file: string; score: number }>> = {}
 
   for (const file of files) {
@@ -387,8 +548,7 @@ export function bestPortraits(
 
     const words = fileWords(file)
     if (!PORTRAIT_WORDS.some((word) => words.includes(word))) continue
-    if (REFUSED.some((word) => words.includes(word))) continue
-    if (!marks.some((mark) => words.includes(` ${mark} `))) continue
+    if (!illustrates(file, subject)) continue
 
     const score =
       (words.includes(' manga ') ? 50 : 0) +
@@ -417,6 +577,23 @@ function subjectWords(subject: string): string[] {
   const words = fileWords(subject).trim().split(' ').filter(Boolean)
   const long = words.filter((word) => word.length >= 4)
   return long.length > 0 ? long : words
+}
+
+/**
+ * One file, named the same way whoever is asking spelled it.
+ *
+ * The wiki normalises `File:Equipage_du_Roux_Jolly_Roger.png` to
+ * « Fichier:Equipage du Roux Jolly Roger.png » and answers under the second, so
+ * a map keyed on what we asked with would miss every answer on the French wiki.
+ * The namespace, the underscores and the capital MediaWiki forces on the first
+ * letter all come off; what is left identifies the file on either wiki.
+ */
+function fileKey(title: string): string {
+  return title
+    .replace(/^(?:File|Fichier|Image):\s*/i, '')
+    .replace(/_/g, ' ')
+    .trim()
+    .toLowerCase()
 }
 
 /** Addresses for a handful of `File:` titles, in one request. Empty on failure. */
@@ -464,7 +641,7 @@ async function fileUrls(
     // these and store.ts downsizes to 512 px anyway. `thumburl` is the original
     // when the file is already narrower than that.
     const address = info?.thumburl ?? info?.url
-    if (page.title && address) urls.set(page.title, address)
+    if (page.title && address) urls.set(fileKey(page.title), address)
   }
 
   return urls

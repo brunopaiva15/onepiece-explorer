@@ -26,6 +26,7 @@
     "repair:chapitres-1-100": "tsx --conditions=react-server scripts/repair-chapitres-1-100.ts",
     "repair:chapitre-1": "tsx --conditions=react-server scripts/repair-chapitre-1.ts",
     "repair:details": "tsx --conditions=react-server scripts/repair-details.ts",
+    "repair:illustrations": "tsx --conditions=react-server scripts/repair-illustrations.ts",
     "repair:mysteres": "tsx --conditions=react-server scripts/close-mysteries.ts",
     "fixtures:graph": "tsx scripts/generate-graph.ts",
     "demo": "TEST_DB=1 tsx scripts/demo.ts",
