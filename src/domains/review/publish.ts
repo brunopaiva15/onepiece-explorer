@@ -939,6 +939,32 @@ export async function publishDecisions(
       }
 
       /*
+       * The two ends, once resolved, must still be two.
+       *
+       * The extraction refuses a relation whose two ends carry the same
+       * identifier, and that is not the same check as this one. Here the
+       * identifiers have been resolved, and resolution is where a loop is
+       * *made*: a proposal joins an entity already in the graph by its
+       * normalised label, so a question re-proposed in the chapter that answers
+       * it becomes the very node the relation points at — two identifiers on the
+       * card, one row underneath.
+       *
+       * Refused before the insert rather than left to the trigger, so the reason
+       * reads in French and names the loop instead of arriving as a raised
+       * exception the reviewer has to decode.
+       */
+      if (objectId !== null && objectId === subjectId) {
+        result.failures.push({
+          reviewItemId: item.id,
+          reason:
+            `« ${candidate.predicate} » relie cette entité à elle-même : ` +
+            `les deux bouts désignent la même fiche. Une question ne se résout pas ` +
+            `elle-même — le sujet doit être ce qui apporte la réponse, en général la scène.`,
+        })
+        continue
+      }
+
+      /*
        * The ontology's last word, and the only place it is enforced.
        *
        * A trigger refuses an edge whose ends do not match the predicate —
