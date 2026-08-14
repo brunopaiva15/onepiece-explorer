@@ -42,6 +42,9 @@ function stub(routes: Record<string, unknown>): Fetcher & { calls: string[] } {
 }
 
 const sections = (line: string) => ({ parse: { sections: [{ index: '2', line }] } })
+const manySections = (...lines: Array<[index: string, line: string]>) => ({
+  parse: { sections: lines.map(([index, line]) => ({ index, line })) },
+})
 const body = (html: string) => ({ parse: { text: { '*': html } } })
 
 describe('reading a chapter number', () => {
@@ -125,6 +128,115 @@ describe('fetching both languages', () => {
   })
 })
 
+describe('the chapter notes', () => {
+  /**
+   * « Quick Reference → Chapter Notes », « Informations → Notes ».
+   *
+   * The bullets the retelling dilutes: « Arlong kills Bell-mère » is one line of
+   * chapter 78's notes and no sentence of its Long Summary says it that plainly.
+   * They are appended to the citable text rather than stored beside it, because
+   * the graph can only ever hold what its citable text states — notes kept
+   * anywhere else would be facts the reviewer can read and the pipeline cannot
+   * propose.
+   */
+  const englishPage = manySections(['3', 'Long Summary'], ['5', 'Chapter Notes'])
+
+  it('appends them to the citable text, after the retelling', async () => {
+    const fetcher = stub({
+      'com/api.php?action=parse&page=Chapter+78&prop=sections': englishPage,
+      'page=Chapter+78&section=3': body('<p>Arlong points his rifle at her.</p>'),
+      'page=Chapter+78&section=5': body(
+        '<ul><li>Nami’s flashback continues.<ul><li>Arlong kills Bell-mère.</li></ul></li></ul>',
+      ),
+    })
+
+    const result = await fetchChapterSummaries(78, fetcher)
+    const english = result.summaries.find((summary) => summary.language === 'en')!
+
+    expect(english.text).toBe(
+      'Arlong points his rifle at her.\n\n' +
+        'Nami’s flashback continues.\n\n' +
+        'Arlong kills Bell-mère.',
+    )
+    expect(english.notes).toContain('Arlong kills Bell-mère.')
+    expect(english.notesSection).toBe('Chapter Notes')
+  })
+
+  it('reads « Informations → Notes » on the French wiki', async () => {
+    const fetcher = stub({
+      'fr/api.php?action=parse&page=Chapitre+42&prop=sections': manySections(
+        ['4', 'Résumé approfondi'],
+        ['6', 'Notes'],
+      ),
+      'page=Chapitre+42&section=4': body('<p>Luffy hisse le pavillon.</p>'),
+      'page=Chapitre+42&section=6': body(
+        '<ul><li>Johnny et Yosaku font leur première apparition.</li></ul>',
+      ),
+    })
+
+    const result = await fetchChapterSummaries(42, fetcher)
+    const french = result.summaries.find((summary) => summary.language === 'fr')!
+
+    expect(french.notesSection).toBe('Notes')
+    expect(french.text).toContain('première apparition')
+  })
+
+  it('leaves a page without notes exactly as it was, and asks nothing extra', async () => {
+    const fetcher = stub({
+      'com/api.php?action=parse&page=Chapter+1&prop=sections': sections('Long Summary'),
+      'page=Chapter+1&section=2': body('<p>Shanks refuses.</p>'),
+    })
+
+    const result = await fetchChapterSummaries(1, fetcher)
+    const english = result.summaries.find((summary) => summary.language === 'en')!
+
+    expect(english.text).toBe('Shanks refuses.')
+    expect(english.notes).toBe('')
+    expect(english.notesSection).toBeNull()
+    // Two requests for this language and no third: a page with no notes costs
+    // nothing, because the heading list was already in hand.
+    const english_calls = fetcher.calls.filter((call) => !call.includes('/fr/'))
+    expect(english_calls).toHaveLength(2)
+  })
+
+  it('refuses a heading that merely contains the word', async () => {
+    // « Notes et références » is a bibliography. Stored as chapter notes it
+    // would be a passage of citations that a fact could be anchored to.
+    const fetcher = stub({
+      'fr/api.php?action=parse&page=Chapitre+7&prop=sections': manySections(
+        ['4', 'Résumé approfondi'],
+        ['9', 'Notes et références'],
+      ),
+      'page=Chapitre+7&section=4': body('<p>Zoro accepte de le suivre.</p>'),
+      'page=Chapitre+7&section=9': body('<ul><li>Oda, SBS volume 4.</li></ul>'),
+    })
+
+    const result = await fetchChapterSummaries(7, fetcher)
+    const french = result.summaries.find((summary) => summary.language === 'fr')!
+
+    expect(french.notesSection).toBeNull()
+    expect(french.text).toBe('Zoro accepte de le suivre.')
+  })
+
+  it('keeps the summary when the notes themselves fail', async () => {
+    // The section is listed and its body does not come back. A summary lost
+    // over an optional section would be a bad trade.
+    const fetcher = stub({
+      'com/api.php?action=parse&page=Chapter+9&prop=sections': manySections(
+        ['3', 'Long Summary'],
+        ['5', 'Chapter Notes'],
+      ),
+      'page=Chapter+9&section=3': body('<p>Buggy fires the cannon.</p>'),
+    })
+
+    const result = await fetchChapterSummaries(9, fetcher)
+    const english = result.summaries.find((summary) => summary.language === 'en')!
+
+    expect(english.text).toBe('Buggy fires the cannon.')
+    expect(english.notes).toBe('')
+  })
+})
+
 describe('which text becomes the source', () => {
   /**
    * English is citable and French only names things, which is the opposite of
@@ -139,6 +251,8 @@ describe('which text becomes the source', () => {
     url: 'https://onepiece.fandom.com/',
     section: language === 'fr' ? 'Résumé approfondi' : 'Long Summary',
     text,
+    notes: '',
+    notesSection: null,
   })
 
   it('cites the English and names from the French', () => {
@@ -190,6 +304,23 @@ describe('turning wiki markup into passages', () => {
   it('decodes the entities the renderer escapes', () => {
     expect(decodeEntities('Fruit&nbsp;du D&eacute;mon &amp; co &#8212; &#x201C;oui&#x201D;')).toBe(
       'Fruit du D&eacute;mon & co — “oui”',
+    )
+  })
+
+  it('cuts a nested list where the eye cuts it', () => {
+    // The shape of every Chapter Notes section: a bullet, and under it the
+    // things it covers. The outer <li> closes after its children, so a block
+    // that ended at its own </li> would swallow the first child and leave the
+    // others standing alone.
+    const html =
+      '<ul><li>Nami’s flashback continues.' +
+      '<ul><li>Arlong declares a tribute.</li>' +
+      '<li>Arlong kills Bell-mère.</li></ul></li></ul>'
+
+    expect(htmlToParagraphs(html)).toBe(
+      'Nami’s flashback continues.\n\n' +
+        'Arlong declares a tribute.\n\n' +
+        'Arlong kills Bell-mère.',
     )
   })
 

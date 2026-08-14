@@ -38,6 +38,8 @@ interface Editable {
   parallelText: string
   language: 'fr' | 'en' | null
   url: string | null
+  /** Chapter notes folded into `text`. Zero when the page has no such section. */
+  noteLines: number
   problems: string[]
   error: string | null
   /** Unticked rows are not imported. */
@@ -51,6 +53,7 @@ function toEditable(entry: FandomRangeEntryResult): Editable {
     parallelText: entry.parallel?.text ?? '',
     language: entry.primary?.language ?? null,
     url: entry.primary?.url ?? null,
+    noteLines: entry.primary?.noteLines ?? 0,
     problems: entry.problems ?? [],
     error: entry.error ?? null,
     include: entry.primary !== undefined,
@@ -270,6 +273,11 @@ function BatchRow({
             <span className="text-sm text-secondary">
               {trimmed.length} caractères · {passages.length} passage
               {passages.length > 1 ? 's' : ''}
+            </span>
+            <span className="text-sm text-muted">
+              {entry.noteLines > 0
+                ? `${entry.noteLines} note${entry.noteLines > 1 ? 's' : ''} de chapitre`
+                : 'pas de notes'}
             </span>
             <span className="text-sm text-muted">
               {entry.parallelText.trim().length > 0

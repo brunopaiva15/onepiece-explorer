@@ -257,6 +257,13 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'fights:out',
       'captures:out',
       'captures:in',
+      // `kills` outgoing here, incoming under « Mort »: on the victim's sheet
+      // the killer is not one more adversary, it is the end of the story.
+      'kills:out',
+      'injures:out',
+      'injures:in',
+      'knocks_out:out',
+      'knocks_out:in',
     ]),
     section('rencontres', 'Rencontres', [
       'knows:out',
@@ -272,6 +279,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'leaves:out:place',
     ]),
     section('avoir', 'Possessions et pouvoirs', ['owns:out', 'uses:out']),
+    section('dons', 'Dons', ['gives:out', 'receives:out']),
     section('faconne', 'Créations et destructions', ['creates:out', 'destroys:out']),
     section('objectifs', 'Ce qu’il ou elle cherche', ['seeks:out']),
     section('recherche-par', 'Recherché par', ['seeks:in']),
@@ -280,7 +288,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'causes:out',
       'prevents:out',
     ]),
-    section('mort', 'Mort', ['dies_at:out']),
+    section('mort', 'Mort', ['dies_at:out', 'kills:in']),
     MYSTERES,
     IDENTITE,
     RECIT,
@@ -306,6 +314,14 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'captures:out',
       'captures:in',
       'destroys:in',
+      // A group has no « Mort » section: wiped out, it is wiped out by an
+      // adversary, and that is the heading anyone looks under.
+      'kills:out',
+      'kills:in',
+      'injures:out',
+      'injures:in',
+      'knocks_out:out',
+      'knocks_out:in',
     ]),
     section('rencontres', 'Rencontres', ['speaks_to:in']),
     section('promesses', 'Promesses', ['promises:in']),
@@ -316,6 +332,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'leaves:out:place',
     ]),
     section('avoir', 'Possessions', ['owns:out', 'uses:out']),
+    section('dons', 'Dons', ['gives:out', 'receives:out']),
     section('faconne', 'Créations et destructions', ['creates:out', 'destroys:out']),
     section('objectifs', 'Ce que le groupe cherche', ['seeks:out']),
     section('evenements', 'Événements', [
@@ -353,7 +370,15 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
   ],
 
   object: [
-    section('detenteurs', 'Détenteurs', ['owns:in', 'uses:in', 'captures:in']),
+    section('detenteurs', 'Détenteurs', [
+      'owns:in',
+      'uses:in',
+      'captures:in',
+      // Both ends of a gift meet here and nowhere else: « donné par · Shanks »,
+      // « reçu par · Luffy ».
+      'gives:in',
+      'receives:in',
+    ]),
     section('confere', 'Ce qu’il confère', ['grants_power:out']),
     section('situation', 'Où il se trouve', [
       'located_at:out',
@@ -449,6 +474,9 @@ const ROLES: Record<string, readonly [outgoing: string, incoming: string]> = {
   fights: ['affronte', 'affronte'],
   protects: ['protège', 'protégé par'],
   captures: ['a capturé', 'capturé par'],
+  kills: ['tue', 'tué par'],
+  injures: ['blesse', 'blessé par'],
+  knocks_out: ['assomme', 'assommé par'],
 
   knows: ['connaît', 'connaît'],
   meets: ['a rencontré', 'a rencontré'],
@@ -456,6 +484,8 @@ const ROLES: Record<string, readonly [outgoing: string, incoming: string]> = {
 
   owns: ['possède', 'propriétaire'],
   uses: ['utilise', 'utilisé par'],
+  gives: ['donne', 'donné par'],
+  receives: ['reçoit', 'reçu par'],
   creates: ['a créé', 'créé par'],
   destroys: ['a détruit', 'détruit par'],
 

@@ -97,8 +97,13 @@ export interface RenameResult {
  * Below every kind in LABEL_PRECEDENCE, so such a row can never become the
  * displayed name. Same value, and the same reason, as the source wordings
  * publication stores next to a label it translated.
+ *
+ * Exported because « can never be displayed » is a fact other readers of the
+ * table need. The story thread announces a name landing on someone who already
+ * had one, and it announced these too — « Yasopp » and « Yassop » on the same
+ * chapter, twice the same reveal at one letter's distance.
  */
-const SEARCH_ONLY_PRECEDENCE = 5
+export const SEARCH_ONLY_PRECEDENCE = 5
 
 /** Long enough for « Village de Fuchsia », short enough to stay a name. */
 const MAX_LABEL = 200

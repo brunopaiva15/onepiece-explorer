@@ -314,6 +314,50 @@ export const PREDICATES = [
     description: 'Prend de force et retient.',
   },
 
+  // --- Violence, by what it leaves behind ----------------------------------
+  //
+  // Three verbs rather than one, because the difference between them is the
+  // whole of what a reader remembers of the scene. `fights` is symmetric and
+  // says nothing about who prevailed; `dies_at` places a death without naming
+  // who caused it. What the wiki's chapter notes state in so many words —
+  // « Arlong kills Bell-mère » — had no edge at all until now.
+  {
+    key: 'kills',
+    labelFr: 'tue',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ACTORS,
+    objectTypes: ACTORS,
+    requiresExplicitReview: true,
+    description:
+      'Donne la mort. Revue obligatoire pour la même raison que « meurt à » : ' +
+      'une mort fausse ou annoncée trop tôt corrompt toutes les vues ' +
+      'ultérieures. Les deux se disent et ne disent pas la même chose — ' +
+      'celui-ci nomme le coupable, « meurt à » situe la mort dans une scène.',
+  },
+  {
+    key: 'injures',
+    labelFr: 'blesse',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ACTORS,
+    objectTypes: ACTORS,
+    description:
+      'Blesse sans tuer. Si la victime meurt de cette blessure dans la même ' +
+      'scène, c’est « tue ».',
+  },
+  {
+    key: 'knocks_out',
+    labelFr: 'assomme',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ACTORS,
+    objectTypes: ACTORS,
+    description:
+      'Met hors de combat sans blesser durablement : évanouissement, K.-O., ' +
+      'sommeil forcé. Le vaincu se relève au chapitre suivant.',
+  },
+
   // --- Acquaintance --------------------------------------------------------
   {
     key: 'knows',
@@ -373,6 +417,43 @@ export const PREDICATES = [
       'Ce qu’un objet donne à qui s’en sert : un fruit du démon et la capacité ' +
       'qu’il confère. Le fruit est l’objet, la capacité est le pouvoir — sans ' +
       'ce lien, rien ne relie les deux.',
+  },
+  /*
+   * A gift has three terms; a relation joins two.
+   *
+   * « Shanks donne son chapeau à Luffy » names the giver, the thing and the
+   * receiver, and there is no third column to put the last one in. So the gift
+   * is written from both sides — « Shanks donne le chapeau de paille », « Luffy
+   * reçoit le chapeau de paille » — and the object is what joins them: its
+   * sheet shows who gave it and who received it, which is exactly what anyone
+   * asks of an object.
+   *
+   * Not a pair of inverses: `inverseKey` means the same fact read from the
+   * other end, and here the subjects differ. The model proposes two, the review
+   * accepts two, and accepting one without the other stays coherent — a chapter
+   * sometimes shows the gesture without showing who catches it.
+   */
+  {
+    key: 'gives',
+    labelFr: 'donne',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ACTORS,
+    objectTypes: ['object'],
+    description:
+      'Remet un objet à quelqu’un. Le destinataire se dit avec « reçoit », ' +
+      'sur le même objet : une relation ne joint que deux choses.',
+  },
+  {
+    key: 'receives',
+    labelFr: 'reçoit',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ACTORS,
+    objectTypes: ['object'],
+    description:
+      'Reçoit un objet de quelqu’un. L’autre moitié de « donne », côté ' +
+      'destinataire.',
   },
   {
     key: 'creates',

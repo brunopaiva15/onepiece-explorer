@@ -227,6 +227,9 @@ export function SummaryForm({ suggestedNumber }: Props) {
                 Chapitre {fetched.chapterNumber} · texte citable en{' '}
                 {fetched.primary.language === 'fr' ? 'français' : 'anglais'} (
                 {fetched.primary.text.length} caractères)
+                {fetched.primary.noteLines > 0
+                  ? ` · notes du chapitre incluses (${fetched.primary.noteLines} ligne${fetched.primary.noteLines > 1 ? 's' : ''})`
+                  : ' · pas de notes de chapitre sur cette page'}
                 {fetched.parallel
                   ? ` · version ${fetched.parallel.language === 'fr' ? 'française' : 'anglaise'} en regard pour les noms`
                   : ' · pas de seconde langue'}
