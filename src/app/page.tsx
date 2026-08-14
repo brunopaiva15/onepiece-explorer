@@ -265,19 +265,40 @@ export default async function HomePage({
                       loading="lazy"
                       className="affiche-vue affiche-vue-entiere"
                     />
-                  ) : portrait ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={portrait.thumbUrl}
-                      alt={`Illustration de ${member.label}`}
-                      loading="lazy"
-                      className="affiche-vue"
-                    />
                   ) : (
-                    <span className="affiche-vide" aria-hidden="true">
-                      <span className="chiffre text-4xl opacity-70">
-                        {member.label.slice(0, 1).toUpperCase()}
-                      </span>
+                    /*
+                     * No poster the reader has reached, so the site prints one.
+                     *
+                     * The wall promised avis de recherche and handed back six
+                     * portrait crops, because the gallery holds fourteen
+                     * printings and none of them is visible before chapter 398.
+                     * That is most readers, most of the time, and « we have no
+                     * picture of the paper » is a poor reason to stop drawing
+                     * the paper: the heading, the rules and the plate are this
+                     * site's own, printed around whatever illustration the
+                     * catalogues had.
+                     *
+                     * What the frame never carries is a figure. A bounty is a
+                     * fact with a chapter attached, and it goes on a card only
+                     * when it comes off a poster the reader has read.
+                     */
+                    <span className="affiche-papier">
+                      <span className="affiche-entete">Avis de recherche</span>
+                      {portrait ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={portrait.thumbUrl}
+                          alt={`Illustration de ${member.label}`}
+                          loading="lazy"
+                          className="affiche-vue"
+                        />
+                      ) : (
+                        <span className="affiche-vide" aria-hidden="true">
+                          <span className="chiffre text-4xl">
+                            {member.label.slice(0, 1).toUpperCase()}
+                          </span>
+                        </span>
+                      )}
                     </span>
                   )}
                   <span className="affiche-corps">

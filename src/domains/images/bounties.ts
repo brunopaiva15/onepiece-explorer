@@ -81,12 +81,22 @@ export interface BountyHistory {
 }
 
 /**
- * The crew, and nobody else, for now.
+ * The crew, and the handful of others the wiki has a poster for.
  *
- * Ten characters is not an arbitrary stopping point: their bounties are the
- * ones every reader knows the chapter of, which is exactly what makes this list
- * auditable. Warlords and Emperors are the obvious next block, and every one of
- * them needs the same treatment, one line at a time.
+ * Not a stopping point anybody chose: it is where the evidence runs out. The
+ * gallery holds a picture of about a quarter of the printings listed here, so
+ * the rest of the manifest exists to say what is missing rather than to hide
+ * it, and `pnpm images:posters` prints that list every run.
+ *
+ * The five outside the crew were added because their posters cover the early
+ * chapters, where the crew's own are still hundreds of chapters away: Arlong at
+ * 69 and Krieg at 96 are the first two real posters anybody reading in order
+ * ever sees on this site. Every one of them was verified the same way, by
+ * opening the picture and reading the figure off it, and their chapters come
+ * from the wiki's own citations rather than from memory.
+ *
+ * Whoever extends this next: the Warlords and the Emperors are the obvious
+ * block, and the work per line is small and dull and cannot be skipped.
  */
 export const BOUNTY_HISTORY: readonly BountyHistory[] = [
   {
@@ -107,7 +117,12 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     aliases: ['roronoa zoro', 'zoro', 'zorro', 'pirate hunter zoro'],
     rows: [
       { chapter: 234, amount: 60_000_000, edition: 1 },
-      { chapter: 435, amount: 120_000_000, edition: 2 },
+      {
+        chapter: 435,
+        amount: 120_000_000,
+        edition: 2,
+        file: "Zoro's Wanted Poster.png",
+      },
       {
         chapter: 801,
         amount: 320_000_000,
@@ -121,7 +136,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Nami',
     aliases: ['nami', 'cat burglar nami', 'chatte voleuse'],
     rows: [
-      { chapter: 435, amount: 16_000_000, edition: 1 },
+      { chapter: 435, amount: 16_000_000, edition: 1, file: "Nami's Wanted Poster.png" },
       { chapter: 801, amount: 66_000_000, edition: 2, file: "Nami's Current Wanted Poster.png" },
       { chapter: 1058, amount: 366_000_000, edition: 3 },
     ],
@@ -130,7 +145,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Usopp',
     aliases: ['usopp', 'god usopp', 'sogeking', 'pipo', 'sniper king'],
     rows: [
-      { chapter: 435, amount: 30_000_000, edition: 1 },
+      { chapter: 435, amount: 30_000_000, edition: 1, file: "Usopp's Wanted Poster.png" },
       { chapter: 801, amount: 200_000_000, edition: 2, file: "God Usopp's Wanted Poster.png" },
       { chapter: 1058, amount: 500_000_000, edition: 3 },
     ],
@@ -139,7 +154,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Sanji',
     aliases: ['sanji', 'vinsmoke sanji', 'black leg sanji', 'jambe noire'],
     rows: [
-      { chapter: 435, amount: 77_000_000, edition: 1 },
+      { chapter: 435, amount: 77_000_000, edition: 1, file: "Sanji's Wanted Poster.png" },
       { chapter: 801, amount: 177_000_000, edition: 2 },
       { chapter: 903, amount: 330_000_000, edition: 3 },
       {
@@ -169,7 +184,12 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     aliases: ['nico robin', 'robin', "l'enfant démon", 'devil child'],
     rows: [
       { chapter: 398, amount: 79_000_000, edition: 1 },
-      { chapter: 435, amount: 80_000_000, edition: 2 },
+      {
+        chapter: 435,
+        amount: 80_000_000,
+        edition: 2,
+        file: "Nico Robin's Wanted Poster.png",
+      },
       {
         chapter: 801,
         amount: 130_000_000,
@@ -183,7 +203,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Franky',
     aliases: ['franky', 'iron man franky', 'cyborg franky', 'cutty flam'],
     rows: [
-      { chapter: 435, amount: 44_000_000, edition: 1 },
+      { chapter: 435, amount: 44_000_000, edition: 1, file: "Franky's Wanted Poster.png" },
       { chapter: 801, amount: 94_000_000, edition: 2 },
       { chapter: 1058, amount: 394_000_000, edition: 3 },
     ],
@@ -192,7 +212,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Brook',
     aliases: ['brook', 'soul king brook', 'humming brook', 'soul king'],
     rows: [
-      { chapter: 489, amount: 33_000_000, edition: 1 },
+      { chapter: 489, amount: 33_000_000, edition: 1, file: 'Brook Alive Bounty Poster.png' },
       {
         chapter: 801,
         amount: 83_000_000,
@@ -212,6 +232,56 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
         amount: 1_100_000_000,
         edition: 4,
         file: "Jinbe's Current Wanted Poster.png",
+      },
+    ],
+  },
+  {
+    canonical: 'Arlong',
+    aliases: ['arlong', 'arlong la scie'],
+    rows: [
+      { chapter: 69, amount: 20_000_000, edition: 1, file: "Arlong's Wanted Poster.png" },
+    ],
+  },
+  {
+    canonical: 'Don Krieg',
+    aliases: ['don krieg', 'krieg'],
+    rows: [
+      { chapter: 96, amount: 17_000_000, edition: 1, file: "Krieg's Wanted Poster.png" },
+    ],
+  },
+  {
+    canonical: 'Portgas D. Ace',
+    aliases: ['portgas d ace', 'ace', 'ace aux poings ardents', 'fire fist ace'],
+    rows: [
+      {
+        chapter: 551,
+        amount: 550_000_000,
+        edition: 1,
+        file: "Portgas D. Ace's Wanted Poster.png",
+      },
+    ],
+  },
+  {
+    canonical: 'Dracule Mihawk',
+    aliases: ['dracule mihawk', 'mihawk', 'oeil de faucon', 'hawk eyes'],
+    rows: [
+      {
+        chapter: 1058,
+        amount: 3_590_000_000,
+        edition: 1,
+        file: "Mihawk's Wanted Poster.png",
+      },
+    ],
+  },
+  {
+    canonical: 'Crocodile',
+    aliases: ['crocodile', 'sir crocodile', 'mr 0'],
+    rows: [
+      {
+        chapter: 1058,
+        amount: 1_965_000_000,
+        edition: 1,
+        file: "Crocodile's Wanted Poster.png",
       },
     ],
   },

@@ -117,10 +117,17 @@ describe('rattacher un tirage à un fichier', () => {
   })
 
   it('refuse un fichier qui nomme le personnage sans dire quel tirage', () => {
-    // « Zoro's Wanted Poster.png » is in the gallery and names Zoro. Which of
-    // his four posters it is, nobody can say, so he keeps his portrait.
+    /*
+     * « Zoro's Wanted Poster.png » names Zoro and says nothing about which of
+     * his four posters it is. It happens to be the hundred-and-twenty-million
+     * printing, which is why the manifest pins it — but that was a person
+     * opening the picture and reading the figure, and the pin is stripped here
+     * so the assertion is about the matcher's own judgement. Left to itself it
+     * must decline, because the name supports no answer.
+     */
     for (const row of zoro.rows) {
-      const match = findPoster(gallery, zoro, row)
+      const { file: _pinned, ...unpinned } = row
+      const match = findPoster(gallery, zoro, unpinned)
       expect(match?.entry.title ?? '').not.toBe("File:Zoro's Wanted Poster.png")
     }
   })
