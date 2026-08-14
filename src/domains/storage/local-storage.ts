@@ -75,6 +75,27 @@ export class LocalFsStorage implements StorageAdapter {
     const params = new URLSearchParams({ exp: String(expires), sig: signature })
     return `/api/assets/${key.split('/').map(encodeURIComponent).join('/')}?${params}`
   }
+
+  /**
+   * A loop, and honestly so: signing here is one HMAC and touches no network.
+   *
+   * The interface exists for the driver where it is a round trip. Pretending
+   * this one batches anything would be theatre.
+   */
+  async signedUrls(
+    keys: string[],
+    ttlSeconds?: number,
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>()
+    for (const key of new Set(keys)) {
+      try {
+        out.set(key, await this.signedUrl(key, ttlSeconds))
+      } catch {
+        /* An unsafe key signs nothing, and costs the page nothing else. */
+      }
+    }
+    return out
+  }
 }
 
 export function signKey(secret: string, key: string, expires: number): string {

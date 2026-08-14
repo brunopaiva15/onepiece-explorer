@@ -72,19 +72,6 @@ const QUOTE_MAX = 240
  */
 const EVENTS_PER_CHAPTER = 5
 
-/**
- * Faces signed per chapter.
- *
- * Signing is a round trip per file against the storage provider, and a window
- * covers six chapters, so this cannot be unbounded. It counts entities that
- * *have* a picture rather than candidates — capping the candidate list first
- * spent the whole budget on events and groups that no catalogue illustrates,
- * and returned a chapter with no faces at all. A chapter introducing more than
- * sixteen illustrated entities will still lose the tail, silently; that is the
- * one thing here that is a trade rather than a fix.
- */
-const PORTRAITS_PER_CHAPTER = 16
-
 export type BeatKind =
   | 'chapitre'
   | 'citation'
@@ -632,12 +619,7 @@ async function withPortraits(
   const components = await identityComponents(userId, chapter, ids)
   const candidates = [...new Set(ids.flatMap((id) => components.get(id) ?? [id]))]
 
-  const found = await displayImages(
-    userId,
-    chapter,
-    candidates,
-    PORTRAITS_PER_CHAPTER,
-  )
+  const found = await displayImages(userId, chapter, candidates)
   if (found.size === 0) return beats
 
   const faceOf = (entityId: string): DisplayImage | null => {
@@ -855,8 +837,45 @@ async function readMentions(
     for (const entityId of claimants) out.push({ label, entityId })
   }
 
+  /*
+   * Then only the names the sentences really say.
+   *
+   * SQL answers with `position()`, which is a substring test, and the page cuts
+   * on whole words — so the two do not agree, and everything in the gap is a
+   * candidate that can never become a face. « Officier de la Marine capturé »
+   * is claimed by a sentence containing « capturés »; « Belle femme observée
+   * par Sanji » is claimed by any sentence naming Sanji, through the last-word
+   * arm of the query. Both are answers to « which labels might be in this
+   * text », and neither is a name the reader will see.
+   *
+   * Filtering them here rather than leaving it to splitOnNames is not tidiness.
+   * These entities are illustrated — walk-ons and crews have portraits like
+   * anyone else — so every one of them used to be looked up and signed for
+   * nothing, and under the old per-chapter allowance they were looked up
+   * *first*, being the longest labels. The chapter ran out of faces before
+   * reaching the names in the sentence.
+   */
+  const said = out.filter((mention) => wholeWord(mention.label).test(blob))
+
   // Longest first, so « Monkey D. Luffy » wins over « Luffy » at the same spot.
-  return out.sort((a, b) => b.label.length - a.label.length)
+  return said.sort((a, b) => b.label.length - a.label.length)
+}
+
+/**
+ * What separates a name from the word it happens to sit inside.
+ *
+ * Without these, « Luffy » matches inside « Luffytaro ». They are constants
+ * rather than two literals because both places that ask « does this text say
+ * this name » must ask it the same way: one decides which names a chapter will
+ * illustrate, the other decides where the line is cut. Two spellings that could
+ * drift apart is exactly how a face gets promised and not delivered.
+ */
+const BEFORE_NAME = '(?<![\\p{L}\\p{N}])'
+const AFTER_NAME = '(?![\\p{L}\\p{N}])'
+
+/** Does this line name this entity — as a name, not as a fragment of a word? */
+function wholeWord(label: string): RegExp {
+  return new RegExp(`${BEFORE_NAME}${escapeRegExp(label)}${AFTER_NAME}`, 'u')
 }
 
 /**
@@ -875,7 +894,7 @@ function splitOnNames(
   if (mentions.length === 0 || line === '') return null
 
   const pattern = new RegExp(
-    `(?<![\\p{L}\\p{N}])(${mentions.map((m) => escapeRegExp(m.label)).join('|')})(?![\\p{L}\\p{N}])`,
+    `${BEFORE_NAME}(${mentions.map((m) => escapeRegExp(m.label)).join('|')})${AFTER_NAME}`,
     'gu',
   )
 
