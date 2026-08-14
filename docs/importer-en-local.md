@@ -182,7 +182,7 @@ redémarré dit « à l'écoute » et rien n'avance. `pnpm queue` montre la file
 
 ## 5. Importer un chapitre
 
-1. http://localhost:3000/import
+1. http://localhost:3000/admin/import
 2. Numéro du chapitre. **Il compte** : c'est lui qui date tout ce que le chapitre
    apprend, et donc ce qui restera caché derrière le curseur.
 3. Le fichier — PDF, CBZ/ZIP, ou les images de pages. Un PDF **avec couche
@@ -201,7 +201,7 @@ plus basse, ou passez les pages en WebP avant d'importer.
 
 **Et surveillez le total** : 1 Go de stockage sur le plan gratuit, soit de
 l'ordre de 25 à 60 chapitres selon la résolution. C'est le vrai plafond de ce
-projet, bien avant la question de l'envoi. `/reglages` montre ce que chaque
+projet, bien avant la question de l'envoi. `/admin/reglages` montre ce que chaque
 chapitre occupe, et la suppression d'un chapitre efface réellement les octets.
 
 ---
@@ -210,7 +210,7 @@ chapitre occupe, et la suppression d'un chapitre efface réellement les octets.
 
 **Le modèle se choisit au lancement**, sur la fiche du chapitre, quand plus d'un
 est configuré : « Par défaut », « Anthropic », « Mon modèle ». Le choix est
-enregistré sur le traitement et rappelé sur `/runs/[id]`, ce qui rend la
+enregistré sur le traitement et rappelé sur `/admin/runs/[id]`, ce qui rend la
 comparaison lisible après coup — sans ça, deux traitements du même chapitre sont
 deux séries de chiffres dont on ne sait plus ce qui les a produits.
 
@@ -220,14 +220,14 @@ propositions à revoir, propositions en quarantaine, raison de quarantaine
 dominante.
 
 
-**Lancez le traitement** depuis la fiche du chapitre. Suivez-le sur `/runs/[id]`,
+**Lancez le traitement** depuis la fiche du chapitre. Suivez-le sur `/admin/runs/[id]`,
 étape par étape, avec la durée et le coût réel de chacune.
 
 Coût attendu : **0,08 à 0,45 $ par chapitre**. L'estimation affichée avant
 lancement vient d'un comptage de tokens réel, pas d'une constante.
 
 **Rien n'entre dans le graphe sans votre accord.** Un traitement réussi laisse le
-chapitre « à revoir », jamais « publié ». Allez sur `/review/[runId]` : chaque
+chapitre « à revoir », jamais « publié ». Allez sur `/admin/review/[runId]` : chaque
 proposition arrive avec la case source, l'extrait, la description, les entités
 candidates et leurs raisons. Raccourcis : `a` accepter, `r` rejeter, `f`
 fusionner, `s` séparer, `d` reporter.
@@ -246,7 +246,7 @@ pnpm images:catalogue    # une fois par mois : ~1 000 illustrations, trois API g
 pnpm images:enrich       # rapproche vos entités, télécharge, range dans le bucket
 ```
 
-Ou le bouton dans `/reglages`, qui montre d'abord la couverture par type.
+Ou le bouton dans `/admin/reglages`, qui montre d'abord la couverture par type.
 
 Le stockage suit `STORAGE_DRIVER`. Avec `supabase`, les portraits vont dans votre
 bucket privé et Vercel les sert. Une entité sans image reste parfaitement
@@ -254,19 +254,24 @@ lisible.
 
 ---
 
-## 8. Ouvrir la lecture au public, si vous voulez
+## 8. Le site public, qui l'est déjà
 
-Sur `/reglages`, section « Lecture publique », copiez votre identifiant de
-bibliothèque. Dans Vercel, ajoutez :
+Rien à faire : dès qu'un chapitre est publié, `/`, `/histoire`, `/graph`,
+`/chronologie`, `/mysteres`, `/recherche` et les fiches sont lisibles par
+n'importe qui, chacun avec son propre curseur de chapitre. Votre atelier —
+connexion, import, traitement, revue, réglages — vit sous `/admin` et n'est
+lisible que par vous. **Pas les images de pages** non plus : elles restent
+derrière l'authentification, et un visiteur ne voit que la référence de la case
+et l'extrait cité.
+
+Une seule situation demande un réglage : plusieurs comptes sur la même
+installation. Il faut alors dire laquelle publier, sinon aucune ne l'est. Sur
+`/admin/reglages`, section « Lecture publique », copiez votre identifiant de
+bibliothèque et ajoutez dans Vercel :
 
 ```
 PUBLIC_LIBRARY_OWNER_ID=<cet identifiant>
 ```
-
-Redéployez. N'importe qui pourra alors explorer le graphe, la chronologie, les
-fiches et la recherche, avec son propre curseur de chapitre. **Pas les images de
-pages** : elles restent derrière l'authentification, et un visiteur ne voit que
-la référence de la case et l'extrait cité.
 
 Et pensez à couper les inscriptions dans Supabase (Authentication → Sign In /
 Providers → « Allow new users to sign up »), sinon n'importe qui peut créer un
@@ -287,8 +292,8 @@ compte.
 | L'import réussit, Vercel n'affiche pas les images | `STORAGE_DRIVER=local` | Mettez `supabase` et réimportez |
 | `SUPABASE_SERVICE_ROLE_KEY est requis` | La clé manque dans `.env.local` | Copiez-la depuis Vercel |
 | `DIRECT_URL n'est pas configuré` | Idem, pour le worker | Le pooler en mode session, port 5432 |
-| Le traitement échoue sur une page | Page corrompue ou trop grande | `/runs/[id]` nomme l'étape et la raison ; les limites sont dans `.env.local` |
-| Beaucoup de propositions en quarantaine | Voir `/reglages` | Une raison qui domine = problème systématique, pas une mauvaise passe |
+| Le traitement échoue sur une page | Page corrompue ou trop grande | `/admin/runs/[id]` nomme l'étape et la raison ; les limites sont dans `.env.local` |
+| Beaucoup de propositions en quarantaine | Voir `/admin/reglages` | Une raison qui domine = problème systématique, pas une mauvaise passe |
 
 Windows : les commandes de ce document sont portables. Seuls `pnpm db:push:test`
 et `pnpm demo` posent une variable en ligne et échoueraient sous PowerShell — vous

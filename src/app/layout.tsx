@@ -9,8 +9,13 @@ export const metadata: Metadata = {
     template: '%s · One Piece Explorer',
   },
   description:
-    "Graphe de connaissances temporel et anti-spoiler, construit chapitre après chapitre à partir de vos propres fichiers.",
-  robots: { index: false, follow: false },
+    "Graphe de connaissances de One Piece, daté chapitre par chapitre : posez le curseur où vous en êtes de votre lecture, le site oublie tout le reste.",
+  /*
+   * The reading routes are public and meant to be found; `/admin` sets its own
+   * `noindex` on the segment, so the workshop stays out of search results while
+   * the site itself is in them.
+   */
+  robots: { index: true, follow: true },
 }
 
 export const viewport: Viewport = {

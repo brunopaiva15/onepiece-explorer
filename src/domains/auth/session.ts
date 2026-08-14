@@ -2,7 +2,7 @@ import 'server-only'
 import { cache } from 'react'
 import { eq, and, max } from 'drizzle-orm'
 import { getCurrentUser, requireUser } from './server.ts'
-import { withIngest } from '@/db/boundary.ts'
+import { withIngest, type BoundaryDb } from '@/db/boundary.ts'
 import { chapters, profiles, works } from '@/db/schema/index.ts'
 import { resolveBoundary } from '@/db/boundary.ts'
 import { publicLibraryOwnerId } from '@/lib/env.ts'
@@ -134,14 +134,14 @@ export async function persistBoundary(
  * Two shapes, and the difference is a single boolean that every write path
  * checks:
  *
- *   signed in            → the owner. Everything, including writes.
- *   anonymous + open      → a visitor, read-only, over the owner's library.
- *   anonymous + not open  → sent to the sign-in page, as before.
+ *   signed in   → the owner. Everything, including writes.
+ *   anonymous   → a visitor, read-only, over the published library.
  *
- * The third case is the default. Public reading exists only when
- * PUBLIC_LIBRARY_OWNER_ID is set to a well-formed id — absent or malformed, the
- * site is exactly as private as it was, and the failure direction of a typo is
- * "nobody gets in" rather than "everybody does".
+ * The reading routes are public — the site is a fan wiki with a chapter slider,
+ * and the workshop that fills it lives behind /admin. Which library a visitor
+ * reads is resolved by `publicLibrary()` below; if there is none to resolve,
+ * they get an empty one rather than an error, because "nothing published yet"
+ * is a true and useful answer and a 500 is neither.
  *
  * A visitor gets the boundary slider, unrestricted. That is not a concession,
  * it is the point: someone still reading the series sets it where they are and
@@ -159,6 +159,79 @@ export interface ViewerSession extends ReaderSession {
   isOwner: boolean
 }
 
+/**
+ * A syntactically valid uuid that owns nothing.
+ *
+ * `userId` is threaded into queries whose column is a uuid, and every read that
+ * matters is filtered by it, so the empty session needs a value that parses and
+ * matches no row. The all-zero uuid is both, and unlike an empty string it does
+ * not turn "there is no public library" into a Postgres syntax error three call
+ * frames away.
+ */
+const EMPTY_OWNER = '00000000-0000-4000-8000-000000000000'
+
+/** Nothing to read: a true answer for a deployment with no published chapter. */
+function emptyLibrary(ownerId: string): ViewerSession {
+  return {
+    userId: ownerId,
+    email: null,
+    workId: '',
+    maxChapter: 0,
+    boundaryChapter: 0,
+    followingLatest: true,
+    isOwner: false,
+  }
+}
+
+/**
+ * Whose library the public site shows.
+ *
+ * Two ways to answer, in order, and the order matters:
+ *
+ *   1. `PUBLIC_LIBRARY_OWNER_ID`, when it is set to a well-formed id. Naming it
+ *      explicitly is the only way to be unambiguous once an instance has more
+ *      than one account, and it is what the settings page tells you to paste.
+ *
+ *   2. Otherwise, the instance's *only* library. Almost every deployment of
+ *      this is one person publishing one library, and asking them to copy a
+ *      uuid into an environment variable to make their own site work is a
+ *      configuration step that exists to restate the obvious.
+ *
+ * Two or more libraries and no variable set resolves to nothing, deliberately:
+ * picking one of them would be guessing whose reading someone else's account
+ * publishes, and that is not a guess this function gets to make.
+ *
+ * Never creates anything. `getReaderSession()` provisions a profile and a work
+ * on first sign-in, which is right for a person and wrong for a stranger: an
+ * anonymous request must not be able to write a row.
+ */
+async function publicLibrary(
+  db: BoundaryDb,
+): Promise<{ ownerId: string; workId: string } | null> {
+  const named = publicLibraryOwnerId()
+
+  if (named) {
+    const [work] = await db
+      .select()
+      .from(works)
+      .where(and(eq(works.userId, named), eq(works.slug, 'one-piece')))
+      .limit(1)
+    // A mistyped id points at a user with no work row: an empty site, not a
+    // fallback onto somebody else's.
+    return work ? { ownerId: named, workId: work.id } : null
+  }
+
+  // Two rows asked for, one expected. The second is what tells us to abstain.
+  const candidates = await db
+    .select()
+    .from(works)
+    .where(eq(works.slug, 'one-piece'))
+    .limit(2)
+
+  if (candidates.length !== 1) return null
+  return { ownerId: candidates[0]!.userId, workId: candidates[0]!.id }
+}
+
 export const getViewerSession = cache(async function getViewerSession(
   requestedBoundary?: unknown,
 ): Promise<ViewerSession> {
@@ -169,47 +242,17 @@ export const getViewerSession = cache(async function getViewerSession(
     return { ...session, isOwner: true }
   }
 
-  const ownerId = publicLibraryOwnerId()
-  if (!ownerId) {
-    // Unchanged behaviour: no public library, so read your own or sign in.
-    const session = await getReaderSession(requestedBoundary)
-    return { ...session, isOwner: true }
-  }
-
   return withIngest(async (db) => {
-    /*
-     * Look the library up. Never create it.
-     *
-     * getReaderSession() provisions a profile and a work on first sign-in,
-     * which is right for a person and wrong for a stranger: an anonymous
-     * request must not be able to write a row, and a mistyped owner id must
-     * produce an empty site rather than a second empty library.
-     */
-    const [work] = await db
-      .select()
-      .from(works)
-      .where(and(eq(works.userId, ownerId), eq(works.slug, 'one-piece')))
-      .limit(1)
-
-    if (!work) {
-      return {
-        userId: ownerId,
-        email: null,
-        workId: '',
-        maxChapter: 0,
-        boundaryChapter: 0,
-        followingLatest: true,
-        isOwner: false,
-      }
-    }
+    const library = await publicLibrary(db)
+    if (!library) return emptyLibrary(publicLibraryOwnerId() ?? EMPTY_OWNER)
 
     const [row] = await db
       .select({ maxNumber: max(chapters.number) })
       .from(chapters)
       .where(
         and(
-          eq(chapters.workId, work.id),
-          eq(chapters.userId, ownerId),
+          eq(chapters.workId, library.workId),
+          eq(chapters.userId, library.ownerId),
           eq(chapters.status, 'published'),
         ),
       )
@@ -229,9 +272,9 @@ export const getViewerSession = cache(async function getViewerSession(
         : resolveBoundary(requestedBoundary, maxChapter)
 
     return {
-      userId: ownerId,
+      userId: library.ownerId,
       email: null,
-      workId: work.id,
+      workId: library.workId,
       maxChapter,
       boundaryChapter,
       followingLatest: boundaryChapter >= maxChapter,

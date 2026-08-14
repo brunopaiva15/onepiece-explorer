@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { publicLibraryOwnerId } from '@/lib/env.ts'
 import { projectGraph } from '@/domains/temporal/projection.ts'
@@ -81,17 +81,24 @@ async function seedLibrary(): Promise<{ early: string; late: string }> {
   return { early, late }
 }
 
-describe('the switch is off until it is deliberately set', () => {
-  it('reports no public library by default', () => {
+describe('which library the public site shows', () => {
+  it('names none by default, leaving the sole library to be resolved', () => {
+    /*
+     * Absent is the normal case, not the closed one. The site is public; the
+     * variable exists to disambiguate an installation with more than one
+     * account, and `getViewerSession()` falls back to the only library there
+     * is. Null here means "nobody named one", not "nobody may read".
+     */
     delete process.env.PUBLIC_LIBRARY_OWNER_ID
     expect(publicLibraryOwnerId()).toBeNull()
   })
 
-  it('refuses a malformed id rather than half-opening', () => {
+  it('refuses a malformed id rather than half-designating', () => {
     /*
-     * A typo must make the site private, not crash it and not open it. Failing
-     * closed is the only safe direction for a setting whose whole job is to
-     * decide whether strangers may read.
+     * A typo must not resolve to a *different* library. Returning null hands
+     * the decision back to the sole-library fallback, which abstains as soon as
+     * there is more than one candidate — so the failure direction of a bad
+     * value is "nothing published", never "somebody else's reading published".
      */
     for (const value of ['oui', 'true', '1', 'not-a-uuid', '   ', '']) {
       process.env.PUBLIC_LIBRARY_OWNER_ID = value
@@ -147,6 +154,134 @@ describe('what a visitor may read', () => {
     // A mistyped id points at a user with no work row. That must read as "there
     // is nothing here", not as a 500 blaming the application.
     await expect(listChapters(randomUUID(), '')).resolves.toEqual([])
+  })
+})
+
+describe('which library an anonymous visitor lands on', () => {
+  /**
+   * The session for someone with no account.
+   *
+   * `getViewerSession()` asks the auth server who is calling; a visitor is
+   * nobody, and that is the only thing these tests need from it. Stubbing the
+   * verified-user lookup is what lets the rest — resolving a library, refusing
+   * to guess between two, reading the published ceiling — be exercised against
+   * the real database rather than asserted about in prose.
+   */
+  async function visitorSession(requestedBoundary?: unknown) {
+    vi.resetModules()
+    vi.doMock('@/domains/auth/server.ts', () => ({
+      getCurrentUser: async () => null,
+      requireUser: async () => {
+        throw new Error('un visiteur anonyme ne doit jamais atteindre requireUser')
+      },
+    }))
+    const { getViewerSession } = await import('@/domains/auth/session.ts')
+    return getViewerSession(requestedBoundary)
+  }
+
+  afterEach(() => {
+    vi.doUnmock('@/domains/auth/server.ts')
+    vi.resetModules()
+  })
+
+  it('reads the sole library of the installation with nothing configured', async () => {
+    /*
+     * The common deployment: one person, one library, and no environment
+     * variable pasted anywhere. Requiring a uuid in the settings to make your
+     * own public site show anything is a configuration step that exists to
+     * restate the obvious, and getting it wrong used to mean an anonymous
+     * visitor hit requireUser() and was bounced to a sign-in page.
+     */
+    delete process.env.PUBLIC_LIBRARY_OWNER_ID
+    await seedLibrary()
+
+    const session = await visitorSession()
+
+    expect(session.isOwner).toBe(false)
+    expect(session.userId).toBe(world.userId)
+    expect(session.workId).toBe(world.workId)
+    // The ceiling is the last *published* chapter, and the visitor starts there.
+    expect(session.maxChapter).toBe(40)
+    expect(session.boundaryChapter).toBe(40)
+  })
+
+  it('takes the boundary from the request, clamped to what is published', async () => {
+    delete process.env.PUBLIC_LIBRARY_OWNER_ID
+    await seedLibrary()
+
+    expect((await visitorSession('5')).boundaryChapter).toBe(5)
+    // Asking past the end of the library gets the end of the library.
+    expect((await visitorSession('9000')).boundaryChapter).toBe(40)
+  })
+
+  it('abstains rather than guessing when there is more than one library', async () => {
+    /*
+     * Two accounts and nothing designating one of them: picking either would be
+     * publishing somebody else's reading on their behalf. An empty session is
+     * the only honest answer, and the settings page says which variable ends
+     * the ambiguity.
+     */
+    delete process.env.PUBLIC_LIBRARY_OWNER_ID
+    await seedLibrary()
+    const other = randomUUID()
+    await raw`INSERT INTO profiles (id) VALUES (${other})`
+    await raw`
+      INSERT INTO works (id, user_id, slug, title)
+      VALUES (${randomUUID()}, ${other}, 'one-piece', 'One Piece')
+    `
+
+    const session = await visitorSession()
+
+    expect(session.workId).toBe('')
+    expect(session.maxChapter).toBe(0)
+    expect(session.isOwner).toBe(false)
+  })
+
+  it('obeys the configured id when one is set, even with several libraries', async () => {
+    await seedLibrary()
+    const other = randomUUID()
+    await raw`INSERT INTO profiles (id) VALUES (${other})`
+    await raw`
+      INSERT INTO works (id, user_id, slug, title)
+      VALUES (${randomUUID()}, ${other}, 'one-piece', 'One Piece')
+    `
+    process.env.PUBLIC_LIBRARY_OWNER_ID = world.userId
+
+    const session = await visitorSession()
+
+    expect(session.userId).toBe(world.userId)
+    expect(session.workId).toBe(world.workId)
+  })
+
+  it('publishes nothing when the configured id matches no library', async () => {
+    // Failing closed on a typo: an empty site, never a fallback onto whichever
+    // library happens to be there.
+    await seedLibrary()
+    process.env.PUBLIC_LIBRARY_OWNER_ID = randomUUID()
+
+    const session = await visitorSession()
+
+    expect(session.workId).toBe('')
+    expect(session.maxChapter).toBe(0)
+  })
+
+  it('never provisions a row for an anonymous visitor', async () => {
+    /*
+     * `getReaderSession()` creates a profile and a work on first sign-in, which
+     * is right for a person and wrong for a stranger. A visitor arriving at an
+     * installation with no library at all must leave it exactly as empty as
+     * they found it.
+     */
+    delete process.env.PUBLIC_LIBRARY_OWNER_ID
+    await resetDatabase()
+
+    const session = await visitorSession()
+    expect(session.workId).toBe('')
+
+    const works = await raw<Array<{ count: string }>>`SELECT count(*) FROM works`
+    const profiles = await raw<Array<{ count: string }>>`SELECT count(*) FROM profiles`
+    expect(works[0]?.count).toBe('0')
+    expect(profiles[0]?.count).toBe('0')
   })
 })
 
@@ -265,15 +400,7 @@ describe('what a visitor may not do', () => {
 })
 
 describe('the gate in front of everything', () => {
-  it('sends an anonymous visitor to sign in when no public library is set', async () => {
-    const { decide } = await import('@/proxy.ts')
-
-    for (const path of ['/', '/graph', '/recherche', '/entite/abc', '/chronologie']) {
-      expect(decide(path, false, false)).toBe('sign-in')
-    }
-  })
-
-  it('lets an anonymous visitor read when a public library is set', async () => {
+  it('lets an anonymous visitor read the public site', async () => {
     /*
      * The test that should have existed first.
      *
@@ -287,60 +414,73 @@ describe('the gate in front of everything', () => {
 
     for (const path of [
       '/',
+      '/histoire',
       '/graph',
       '/graph/table',
       '/recherche',
       '/entite/abc',
       '/chronologie',
+      '/mysteres',
       '/delta/12',
+      '/mentions-legales',
+      '/api/histoire',
     ]) {
-      expect(decide(path, false, true)).toBe('allow')
+      expect(decide(path, false)).toBe('allow')
     }
   })
 
-  it('keeps the owner’s routes shut even when reading is public', async () => {
-    const { decide } = await import('@/proxy.ts')
-
-    for (const path of [
-      '/import',
-      '/chapitres',
-      '/chapitres/abc',
-      '/runs/abc',
-      '/review/abc',
-      '/reglages',
-      '/ask',
-      '/api/export',
-    ]) {
-      expect(decide(path, false, true)).toBe('sign-in')
-    }
-  })
-
-  it('treats an unknown route as private, whatever the mode', async () => {
-    // A denylist for owner routes and an allowlist for reading ones, so a route
-    // nobody has classified yet is private rather than accidentally public.
-    const { decide } = await import('@/proxy.ts')
-
-    expect(decide('/quelque-chose-de-neuf', false, true)).toBe('sign-in')
-    expect(decide('/quelque-chose-de-neuf', false, false)).toBe('sign-in')
-  })
-
-  it('always lets the diagnostic page through', async () => {
+  it('shuts the whole /admin prefix to an anonymous visitor', async () => {
     /*
-     * `/etat` reports which variable is missing, and the failure it diagnoses
-     * takes down the sign-in page too. Gating it behind the thing it explains
-     * would make it useless in the only situation it exists for.
+     * One prefix, not a list of six paths somebody has to remember to extend.
+     * The last entry is the point: a route nobody has thought about yet is
+     * private because of where it lives.
      */
     const { decide } = await import('@/proxy.ts')
 
-    expect(decide('/etat', false, false)).toBe('allow')
-    expect(decide('/connexion', false, false)).toBe('allow')
+    for (const path of [
+      '/admin',
+      '/admin/import',
+      '/admin/chapitres',
+      '/admin/chapitres/abc',
+      '/admin/runs/abc',
+      '/admin/review/abc',
+      '/admin/reglages',
+      '/admin/ask',
+      '/admin/quelque-chose-de-neuf',
+      '/api/export',
+    ]) {
+      expect(decide(path, false)).toBe('sign-in')
+    }
   })
 
-  it('sends a signed-in owner away from the sign-in page', async () => {
+  it('treats an unknown route as private', async () => {
+    // The public site is an allowlist, so a page nobody has classified yet is
+    // private rather than accidentally public.
     const { decide } = await import('@/proxy.ts')
 
-    expect(decide('/connexion', true, false)).toBe('home')
-    expect(decide('/reglages', true, false)).toBe('allow')
+    expect(decide('/quelque-chose-de-neuf', false)).toBe('sign-in')
+    expect(decide('/histoire-secrete', false)).toBe('sign-in')
+  })
+
+  it('lets the two pages that must answer before a session through', async () => {
+    /*
+     * `/admin/etat` reports which variable is missing, and the failure it
+     * diagnoses takes down the sign-in page too. Gating it behind the thing it
+     * explains would make it useless in the only situation it exists for — and
+     * gating the sign-in page itself is a redirect loop.
+     */
+    const { decide } = await import('@/proxy.ts')
+
+    expect(decide('/admin/etat', false)).toBe('allow')
+    expect(decide('/admin/connexion', false)).toBe('allow')
+  })
+
+  it('sends a signed-in owner from the sign-in page to the workshop', async () => {
+    const { decide } = await import('@/proxy.ts')
+
+    expect(decide('/admin/connexion', true)).toBe('admin')
+    expect(decide('/admin/reglages', true)).toBe('allow')
+    expect(decide('/', true)).toBe('allow')
   })
 
   it('stands down when the authentication configuration is unusable', async () => {

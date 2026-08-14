@@ -41,7 +41,7 @@ export default function ErrorBoundary({
           Si toutes les pages échouent
         </strong>{' '}
         : c&apos;est la configuration ou le schéma de la base.{' '}
-        <Link href="/etat" className="text-accent underline">
+        <Link href="/admin/etat" className="text-accent underline">
           L&apos;état du déploiement
         </Link>{' '}
         ne dépend de rien de ce qu&apos;il contrôle, donc il répond même
@@ -67,7 +67,7 @@ export default function ErrorBoundary({
           Réessayer
         </button>
         <Link
-          href="/etat"
+          href="/admin/etat"
           className="rounded-sm bg-accent px-4 py-2 text-sm font-medium text-inverted hover:bg-accent-strong"
         >
           État du déploiement

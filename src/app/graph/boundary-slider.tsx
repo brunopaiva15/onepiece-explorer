@@ -34,6 +34,8 @@ interface Props {
   maxChapter: number
   /** Chapters actually imported, for the tick marks. */
   chapters: number[]
+  /** Only changes the wording: a visitor did not import any of this. */
+  isOwner: boolean
 }
 
 /**
@@ -52,7 +54,12 @@ interface Props {
  */
 const SETTLE_MS = 300
 
-export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props) {
+export function BoundarySlider({
+  boundaryChapter,
+  maxChapter,
+  chapters,
+  isOwner,
+}: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
@@ -212,11 +219,21 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
         )}
       </div>
 
+      {/*
+       * Who the banner is talking to.
+       *
+       * « tout ce que vous avez importé » is true for the person who imported
+       * it and false for everyone else, and the site is public: a visitor read
+       * it as a claim about their own files, which they have none of. The
+       * control is identical either way — only the sentence changes.
+       */}
       {atPresent && maxChapter > 0 && (
         <p className="border-t border-line px-6 py-1 text-center text-xs text-muted">
-          Vue compl&egrave;te : tout ce que vous avez import&eacute; jusqu&apos;au
-          chapitre {maxChapter}. Reculez le curseur pour retrouver un &eacute;tat
-          ant&eacute;rieur de vos connaissances.
+          {isOwner
+            ? `Vue complète : tout ce que vous avez importé jusqu'au chapitre ${maxChapter}.`
+            : `Vue complète : tout ce qui est publié, jusqu'au chapitre ${maxChapter}.`}{' '}
+          Reculez le curseur pour retrouver un &eacute;tat ant&eacute;rieur des
+          connaissances.
         </p>
       )}
 
@@ -225,7 +242,7 @@ export function BoundarySlider({ boundaryChapter, maxChapter, chapters }: Props)
           role="status"
           className="border-t border-[var(--accent-soft)] bg-[var(--accent-soft)] px-6 py-1.5 text-center text-sm text-[var(--text-primary)]"
         >
-          Vous consultez l&apos;état de vos connaissances{' '}
+          Vous lisez ce que l&apos;on sait{' '}
           <strong>à la fin du chapitre {shown}</strong>. Tout ce qui est révélé
           après est masqué — y compris rétroactivement.
         </p>

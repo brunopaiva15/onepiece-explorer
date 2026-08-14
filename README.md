@@ -18,12 +18,15 @@ une croyance réfutée reste visible dans le passé où elle était tenue pour v
 C'est ce qui rend le grand graphe sûr à construire pendant qu'on lit encore :
 rien ne vous gâche la lecture, et rien n'est perdu non plus.
 
-> **Outil privé.** L'application ne récupère un résumé que si vous le demandez,
-> chapitre par chapitre, auprès de l'API publique d'un seul wiki dont l'adresse
-> est codée en dur ; elle ne contourne aucune protection et ne publie rien. Le
+> **Un atelier privé, un site public.** L'application ne récupère un résumé que
+> si vous le demandez, chapitre par chapitre, auprès de l'API publique d'un seul
+> wiki dont l'adresse est codée en dur ; elle ne contourne aucune protection. Le
 > récit détaillé d'un chapitre — récupéré ou écrit par vous — est la seule
 > source : ce qui n'y est pas écrit n'entre pas dans le graphe, même si le
-> modèle le sait par ailleurs. Le dépôt ne contient aucune page de manga.
+> modèle le sait par ailleurs. Ce qui est publié, c'est le graphe : des faits,
+> des relations et des références de chapitre, sourcés (One Piece Wiki / Fandom,
+> CC BY-SA 3.0) et attribués en pied de page. Jamais les planches — le dépôt ne
+> contient aucune page de manga, et le site n'en sert aucune.
 
 ---
 
@@ -199,7 +202,7 @@ une publication y met quelque chose. Les noms identiques se rejoindraient de
 toute façon à la publication ; ce qu'un lot traité en parallèle perd, c'est tout
 ce qui est plus faible qu'un nom exact — « l'homme au tablier de cuir » au
 chapitre 12 et « Kaelo Renn » au 13 deviendraient deux entités, et la question
-ne serait jamais posée. La file est visible sur `/import`, avec de quoi la
+ne serait jamais posée. La file est visible sur `/admin/import`, avec de quoi la
 forcer ou l'abandonner ([ADR 0010](docs/adr/0010-a-batch-is-a-queue.md)).
 
 Si vous avez le chapitre dans les deux langues, collez la seconde version au
@@ -283,7 +286,7 @@ pnpm dev      # interface → http://localhost:3000
 ```
 
 **Un seul processus.** L'import lance le traitement lui-même : vous collez le
-chapitre, vous validez, et `/runs/[id]` montre les étapes défiler. Le travail
+chapitre, vous validez, et `/admin/runs/[id]` montre les étapes défiler. Le travail
 continue après le départ de la réponse, sur la même invocation, via `after()`.
 Il n'y a ni file de jobs ni worker à penser à démarrer.
 
@@ -307,9 +310,9 @@ seconde facture.
 ## Le parcours, de l'import au graphe
 
 ```
-/import          →  /runs/[id]        →  /review/[runId]   →  graphe
-importer            suivre le pipeline    trancher            interroger
-                    étape par étape       chaque proposition
+/admin/import  →  /admin/runs/[id]  →  /admin/review/[runId]  →  graphe public
+importer          suivre le pipeline   trancher                  interroger
+                  étape par étape      chaque proposition
 ```
 
 **Rien n'entre dans le graphe sans votre accord.** Un traitement réussi laisse
@@ -366,7 +369,7 @@ pnpm images:catalogue   # récupère les ~1 000 illustrations disponibles, une f
 pnpm images:enrich      # rapproche, télécharge, range dans votre bucket privé
 ```
 
-Ou le bouton dans `/reglages`, qui montre d'abord la couverture par type. En
+Ou le bouton dans `/admin/reglages`, qui montre d'abord la couverture par type. En
 temps normal vous n'aurez ni l'un ni l'autre à lancer : chaque chapitre ouvert
 à la lecture illustre une quinzaine d'entités au passage, après la réponse. Une
 illustration n'est pas une connaissance — elle ne demande pas de décision,
@@ -496,23 +499,34 @@ l'histoire court de 1 à 45.
 
 ---
 
-## Ouvrir la lecture au public
+## Le site public et l'atelier
 
-Par défaut le site est privé : chaque page exige une connexion. Vous pouvez
-ouvrir la **lecture** sans ouvrir l'écriture, en posant votre identifiant de
-bibliothèque (affiché dans `/reglages`) :
+Une seule règle, portée par l'URL : **tout ce qui est sous `/admin` est à vous,
+tout le reste est public.**
 
 ```
-PUBLIC_LIBRARY_OWNER_ID=<votre identifiant>
+public                       /admin (connexion requise)
+──────────────────────       ───────────────────────────
+/                accueil     /admin            poste de commandement
+/histoire        le fil      /admin/connexion  entrer
+/graph           le réseau   /admin/import     importer un chapitre
+/chronologie     deux axes   /admin/chapitres  la bibliothèque, brute
+/mysteres        ouvert /    /admin/runs/[id]  suivre un traitement
+                 résolu      /admin/review/…   trancher les propositions
+/recherche       chercher    /admin/reglages   coûts, santé, export
+/entite/[id]     une fiche   /admin/ask        l'assistant, à la question
+/delta/[n]       un chapitre /admin/etat       diagnostic de déploiement
+/mentions-legales sources
 ```
 
-Ce qui devient public : le graphe, la chronologie, le mode histoire, les fiches
+Ce qui est public : le graphe, la chronologie, le mode histoire, les fiches
 d'entité, la recherche, les mystères, les extraits de dialogue cités et leurs
-références de chapitre, page et case. Un visiteur dispose du **curseur**, librement — c'est
-tout l'intérêt de rendre ça public plutôt que de renvoyer vers un wiki : il le
-pose où il en est de sa lecture et explore sans se faire gâcher la suite.
+références de chapitre, page et case. Un visiteur dispose du **curseur**,
+librement — c'est tout l'intérêt de publier ça plutôt que de renvoyer vers un
+wiki : il le pose où il en est de sa lecture et explore sans se faire gâcher la
+suite.
 
-Ce qui ne le devient pas, et ne le deviendra pas : **les images de pages et de
+Ce qui ne l'est pas, et ne le deviendra pas : **les images de pages et de
 cases**. Elles restent servies par une route authentifiée, à URL signée courte,
 sous le préfixe de leur propriétaire. Publier le graphe, c'est ce que fait un
 wiki de fans ; publier les scans serait de la redistribution, et le projet le
@@ -523,16 +537,42 @@ Restent également à vous seul : l'import, la revue, la publication, la
 suppression, l'export, l'enrichissement d'images et l'assistant — ce dernier
 parce qu'un visiteur y dépenserait votre argent à la question.
 
-Un identifiant absent ou mal formé est traité comme absent. Une faute de frappe
-rend le site privé ; elle ne l'ouvre jamais à moitié.
+Une route ajoutée sous `/admin` est privée sans que personne ait à y penser ;
+une page ajoutée ailleurs est privée aussi, jusqu'à être inscrite explicitement
+dans la liste de lecture de `src/proxy.ts`. Les deux défauts vont dans le sens
+sûr.
+
+### Quelle bibliothèque le site public montre-t-il ?
+
+Celle de l'installation, résolue toute seule tant qu'il n'y en a qu'une — le cas
+de presque tous les déploiements, et rien à configurer. Dès qu'il existe
+plusieurs comptes, désignez celle à publier :
+
+```
+PUBLIC_LIBRARY_OWNER_ID=<votre identifiant>   # affiché dans /admin/reglages
+```
+
+Plusieurs bibliothèques et aucune variable : rien n'est publié. Deviner laquelle
+reviendrait à publier la lecture de quelqu'un d'autre. Une valeur mal formée est
+traitée comme absente, et un identifiant qui ne correspond à rien donne un site
+vide plutôt qu'un repli sur la première venue.
+
+### Sources et droits
+
+Le pied de page porte l'attribution sur **toutes** les pages, et
+`/mentions-legales` en donne la version longue : le contenu textuel s'appuie sur
+le One Piece Wiki (Fandom), sous licence CC BY-SA 3.0 ; les éléments visuels
+issus de ONE PIECE appartiennent à leurs ayants droit (© Eiichiro Oda/Shueisha,
+Toei Animation) ; et le projet est non officiel, sans lien avec Eiichiro Oda,
+Shueisha ou Toei Animation.
 
 ---
 
 ## Chercher, et poser des questions
 
 ```
-/recherche   plein texte · orthographe approchante · voisinage · sens
-/ask         une question, une réponse sourcée — ou « données insuffisantes »
+/recherche     plein texte · orthographe approchante · voisinage · sens
+/admin/ask     une question, une réponse sourcée — ou « données insuffisantes »
 ```
 
 ### La recherche dit comment elle a trouvé
@@ -564,7 +604,7 @@ regarder.
 
 ### L'assistant est éteint par défaut
 
-`/ask` se facture à la question, indéfiniment. Un explorateur de graphe n'a pas
+`/admin/ask` se facture à la question, indéfiniment. Un explorateur de graphe n'a pas
 besoin de ça, et une clé Anthropic posée pour que le pipeline lise vos pages ne
 doit pas ouvrir en silence une boîte à compteur. L'interrupteur est donc
 distinct : `ASSISTANT_ENABLED=1`, et rien d'autre ne l'allume.
@@ -612,7 +652,7 @@ ce qui est une affirmation sur votre bibliothèque, et elle serait fausse.
 
 ## Quand ça ne démarre pas
 
-`/etat` répond même quand tout le reste renvoie une erreur serveur : elle ne
+`/admin/etat` répond même quand tout le reste renvoie une erreur serveur : elle ne
 dépend ni de la configuration validée, ni d'une session, ni du client Supabase,
 et elle dit quelle variable manque sans jamais afficher une valeur.
 

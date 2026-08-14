@@ -136,7 +136,7 @@ export function hasLocalModel(): boolean {
  *
  * A separate switch from the model key, and off by default, because the two
  * spend money in completely different shapes. Processing a chapter is one
- * deliberate act with a known cost; `/ask` bills per question, forever, at the
+ * deliberate act with a known cost; `/admin/ask` bills per question, forever, at the
  * speed someone can type. Having a key so the pipeline can read your pages must
  * not silently open a metered box.
  *

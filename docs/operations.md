@@ -117,7 +117,7 @@ fonctionnelle tout en fuyant. S'ils échouent, arrêtez-vous là.
 
 ## Surveiller
 
-Tout est dans `/reglages`, qui est une page d'exploitation déguisée en page de
+Tout est dans `/admin/reglages`, qui est une page d'exploitation déguisée en page de
 réglages.
 
 **Coût de l'IA.** Total, moyenne par chapitre, répartition par étape, écart
@@ -143,7 +143,7 @@ apparaît ici a donc déjà échoué trois fois.
 restent dans le graphe mais ne sont plus vérifiables. Un réimport du chapitre
 les recolle automatiquement — voir « Réimport » plus bas.
 
-Pour un chapitre en particulier, `/runs/[id]` donne la progression étape par
+Pour un chapitre en particulier, `/admin/runs/[id]` donne la progression étape par
 étape, en direct, avec durée et coût réel.
 
 ---
@@ -161,7 +161,7 @@ copie de votre graphe.
 d'origine, que vous avez déjà : leur perte coûte un réimport, pas une
 connaissance. C'est délibérément la partie non critique.
 
-**L'export JSON** (`/api/export`, ou le bouton dans `/reglages`) contient tout
+**L'export JSON** (`/api/export`, ou le bouton dans `/admin/reglages`) contient tout
 ce qui a été appris : chapitres, entités, assertions, preuves, théories,
 décisions de revue. Il ne contient **pas** les pages — ce sont vos fichiers, et
 un export qui les embarquerait ferait de cet outil un canal de redistribution.
@@ -185,7 +185,7 @@ pas qu'on déclenche par un clic.
 
 | Donnée | Conservation | Comment l'effacer |
 |---|---|---|
-| Pages et dérivés (stockage) | Jusqu'à suppression explicite | `/reglages` → supprimer un chapitre |
+| Pages et dérivés (stockage) | Jusqu'à suppression explicite | `/admin/reglages` → supprimer un chapitre |
 | Faits, preuves, décisions de revue | Indéfiniment, en ajout seul | Suppression de chapitre en cochant « supprimer aussi les faits » |
 | Illustrations externes (bucket + lignes) | Jusqu'à suppression de l'entité | Cascade depuis l'entité ; `purgeReader` pour tout |
 | Compteurs de limitation de débit | 24 h | Manuel : plus de passe de ménage automatique |
@@ -209,7 +209,7 @@ L'import ne pouvait donc pas tourner sur l'hébergeur.
 
 **Cette contrainte a disparu avec le fichier.** Un chapitre écrit fait quelques
 milliers de caractères ; le plafond de transport n'est plus jamais approché, et
-`/import` fonctionne sur Vercel comme ailleurs.
+`/admin/import` fonctionne sur Vercel comme ailleurs.
 
 Ce qui reste à surveiller n'est plus la taille mais la **durée**. Le traitement
 s'exécute après le départ de la réponse, sur la même invocation, et une
@@ -233,7 +233,7 @@ sentir en premier, avant toute question d'architecture d'envoi.
 `pnpm images:catalogue` récupère les trois catalogues (~1 000 illustrations) et
 les met en cache dans `var/cache/image-catalogue.json`, valable un mois.
 `pnpm images:enrich` rapproche vos entités, télécharge et range dans le bucket
-privé. Le bouton de `/reglages` fait la même chose, plafonné sous le compteur
+privé. Le bouton de `/admin/reglages` fait la même chose, plafonné sous le compteur
 `start_run` — non pour l'argent, il n'y en a pas, mais pour ne pas marteler
 trois services gratuits.
 
@@ -255,9 +255,9 @@ Points d'exploitation :
   sans image. Pour réexaminer les autres, `includeIllustrated`.
 - **Une image sans correspondance est normale.** Un personnage secondaire, une
   désignation provisoire, un lieu absent des 31 îles du catalogue : ce sont des
-  absences, pas des erreurs. La couverture par type est dans `/reglages`.
+  absences, pas des erreurs. La couverture par type est dans `/admin/reglages`.
 - **Les entités sans image sont nommées, pas seulement comptées.** Le résultat du
-  bouton de `/reglages` les liste sous « Voir lesquelles » (200 au plus, le
+  bouton de `/admin/reglages` les liste sous « Voir lesquelles » (200 au plus, le
   reste est annoncé), et `pnpm images:enrich` en imprime vingt. Un nom lié à sa
   fiche est actionnable : renommer une entité vers la graphie du catalogue suffit
   souvent, là où un total ne dit rien.
@@ -268,17 +268,28 @@ Points d'exploitation :
 
 ## Lecture publique
 
-`PUBLIC_LIBRARY_OWNER_ID` sur l'identifiant affiché dans `/reglages`, puis
-redéploiement. Absente, le site est privé — c'est le défaut et l'état de repli
-de toute erreur de saisie.
+Le site est public par construction : `/`, `/histoire`, `/graph`,
+`/chronologie`, `/mysteres`, `/recherche`, `/entite/[id]`, `/delta/[n]` et
+`/mentions-legales` répondent sans session. Tout `/admin` exige la vôtre —
+`/admin/connexion` et `/admin/etat` exceptés, le premier parce qu'on y est
+envoyé, le second parce qu'il diagnostique les pannes qui emportent le premier.
+La règle vit dans `src/proxy.ts` et se teste directement
+(`decide()`, `tests/antispoiler/public-reading.test.ts`).
+
+Quelle bibliothèque les visiteurs lisent : la seule de l'installation, résolue
+automatiquement. `PUBLIC_LIBRARY_OWNER_ID` ne sert qu'à trancher quand il y en a
+plusieurs — sans elle, dans ce cas, rien n'est publié plutôt qu'une bibliothèque
+tirée au sort. Une valeur mal formée est traitée comme absente.
 
 - **Le graphe est public, les pages ne le sont pas.** C'est la ligne, et elle
   est structurelle : les images passent par une route authentifiée qui vérifie
   aussi que la clé est sous le préfixe de l'appelant. Aucun visiteur ne la
   franchit, connecté ou non.
-- **`/ask` reste réservé au propriétaire**, même quand l'assistant est activé.
+- **`/admin/ask` reste réservé au propriétaire**, même quand l'assistant est activé.
   Un visiteur y dépenserait votre argent à la question, et le compteur de débit
   est indexé sur votre identifiant.
+- **Les pages publiques sont indexables, `/admin` ne l'est pas** : le segment
+  pose son propre `noindex`, donc l'atelier reste hors des moteurs.
 - **Coupez les inscriptions Supabase** (Authentication → Sign In / Providers →
   « Allow new users to sign up »), sinon n'importe qui crée un compte. Il
   obtiendrait sa propre bibliothèque vide — pas la vôtre, la RLS cloisonne —
@@ -301,9 +312,9 @@ Trois actions sont plafonnées par heure glissante, par lecteur :
 L'assistant conversationnel a en plus son propre interrupteur,
 `ASSISTANT_ENABLED`, **éteint par défaut**. C'est délibérément indépendant de la
 clé Anthropic : traiter un chapitre est un acte volontaire au coût connu, tandis
-que `/ask` facture à la question, indéfiniment. Poser une clé pour que le
+que `/admin/ask` facture à la question, indéfiniment. Poser une clé pour que le
 pipeline lise vos pages ne doit pas ouvrir une boîte à compteur. Sans lui,
-`/ask` le dit et renvoie vers la recherche, qui couvre les mêmes données
+`/admin/ask` le dit et renvoie vers la recherche, qui couvre les mêmes données
 gratuitement.
 
 La lecture, la navigation, le graphe et la recherche ne sont jamais comptés :
@@ -321,7 +332,7 @@ déverrouillage.
 
 ## Toutes les pages renvoient une erreur serveur
 
-Ouvrez **`/etat`**. Cette page ne dépend d'aucune des choses qu'elle contrôle —
+Ouvrez **`/admin/etat`**. Cette page ne dépend d'aucune des choses qu'elle contrôle —
 ni configuration validée, ni session, ni client Supabase — donc elle répond
 quand rien d'autre ne répond, et elle dit quelle variable manque. Elle
 n'affiche jamais une valeur.
@@ -333,7 +344,7 @@ déploiement ne change rien à ce qui tourne : il faut **redéployer**. Vérifie
 aussi qu'elles couvrent l'environnement servi — Production et Preview sont
 distincts.
 
-Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répond
+Reproduit et vérifié : bundle construit sans ces deux variables, `/admin/etat` répond
 200 et nomme les six manques, toutes les autres pages renvoient 500.
 
 ---
@@ -342,7 +353,7 @@ Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répo
 
 | Symptôme | Cause probable | Que faire |
 |---|---|---|
-| **Toutes** les pages en erreur serveur | Variables absentes au moment du build | `/etat`, puis redéployez après les avoir enregistrées |
+| **Toutes** les pages en erreur serveur | Variables absentes au moment du build | `/admin/etat`, puis redéployez après les avoir enregistrées |
 | Une seule page en erreur serveur | Schéma en retard sur cette table | `pnpm db:push` avec le `DIRECT_URL` de production |
 | Run coupé en plein traitement, sans erreur de pipeline | Invocation tuée au plafond de durée | Relancez : les tranches déjà payées sont rejouées, pas rachetées |
 | 429 « Limite atteinte » | Garde-fou de dépense | Attendez le délai indiqué. S'il se déclenche sans action de votre part, cherchez la boucle avant de relever le plafond |
@@ -353,7 +364,7 @@ Reproduit et vérifié : bundle construit sans ces deux variables, `/etat` répo
 | Un réglage de session fuit d'un utilisateur à l'autre | `SET` au lieu de `SET LOCAL` | Toute variable de session doit être posée par `set_config(..., true)` dans une transaction |
 | `pnpm build` réclame une base | Un module se connecte à l'import | Les clients sont des fabriques paresseuses ; une connexion au chargement du module casse le build |
 | Recherche sémantique « désactivée » | Aucun fournisseur d'embeddings | Attendu. Le plein texte, l'approchant et le graphe fonctionnent sans |
-| `/ask` répond qu'il est désactivé | `ASSISTANT_ENABLED` absent | Attendu, et voulu. `ASSISTANT_ENABLED=1` pour l'activer, en sachant que chaque question se facture |
+| `/admin/ask` répond qu'il est désactivé | `ASSISTANT_ENABLED` absent | Attendu, et voulu. `ASSISTANT_ENABLED=1` pour l'activer, en sachant que chaque question se facture |
 | « Aucun catalogue d'images en cache » | `pnpm images:catalogue` jamais lancé | Lancez-le. L'erreur est explicite plutôt que « 0 image trouvée », qui ressemblerait à un rapprochement raté |
 | Beaucoup d'entités sans image | Couverture des catalogues, pas un bug | 369 personnages et 31 îles côté onepieceapi. Un personnage secondaire n'y est pas |
 | Un portrait manifestement faux | Rapprochement par nom trop permissif | La légende dit quel nom l'a trouvé. « Revérifier les rapprochements » (Réglages) repasse les rapprochements par ressemblance sous les règles du jour, retire ceux qu'elles refusent et réexamine les entités dans la foulée. Une passe ordinaire ne le fera jamais : elle saute ce qui a déjà un visage |
@@ -381,7 +392,7 @@ elle-même. C'est pourquoi « réimportez le chapitre » est une réponse valabl
 **Changer un prompt ou une version de pipeline** invalide le cache par
 empreinte des étapes : les étapes concernées se rejouent et se repaient. Faites-
 le sur un chapitre avant de le faire sur cent, et comparez le coût par étape
-dans `/reglages` avant et après.
+dans `/admin/reglages` avant et après.
 
 ---
 

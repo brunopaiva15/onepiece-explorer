@@ -58,7 +58,7 @@ Mesurée contre la vérité-terrain des fixtures synthétiques :
 - [ ] Précision et rappel OCR enregistrés à chaque exécution, régression signalée. Le contrôle exact ci-dessus est binaire ; il n'y a pas encore de métrique suivie dans le temps, et elle ne vaudra que le jour où la transcription passera par `tesseract.js` ou par un modèle plutôt que par la couche texte.
 - [x] Ordre de lecture des cases : conforme au sens choisi — `tests/ingestion/panel-detection.test.ts`, droite-vers-gauche et gauche-vers-droite.
 - [x] Exactitude des citations : l'extrait cité est bien dans le bloc cité — l'ancrage est un filtre de code doublé d'un déclencheur en base.
-- [x] Taux d'hallucination consultable : la quarantaine est affichée par raison dans `/reglages`, et c'est la distribution qui diagnostique.
+- [x] Taux d'hallucination consultable : la quarantaine est affichée par raison dans `/admin/reglages`, et c'est la distribution qui diagnostique.
 - [ ] Taux d'hallucination suivi **dans le temps**. Aujourd'hui c'est un instantané ; comparer deux versions de prompt demande de le relever à la main.
 - [x] Stabilité : retraiter deux fois le même chapitre ne duplique rien et ne repose pas les questions déjà tranchées — `tests/pipeline/run-chapter.test.ts`.
 - [x] Un chapitre peut porter sa version dans l'autre langue. Elle est fournie à l'extraction pour le nommage — « source_term » et « naming_confident » lus dans la mise en regard plutôt que devinés — et n'est **jamais** citable : elle n'a pas de passages, donc pas de références, donc rien qui puisse l'ancrer — `tests/ingestion/summary.test.ts`, `tests/ai/providers.test.ts`.
@@ -108,13 +108,13 @@ Mesurée contre la vérité-terrain des fixtures synthétiques :
 ## Coût
 
 - [x] L'estimation affichée avant lancement provient d'un `countTokens()` réel, jamais d'une constante.
-- [x] Le coût réel est enregistré par étape et consultable dans `/reglages`, avec l'écart à l'estimation.
+- [x] Le coût réel est enregistré par étape et consultable dans `/admin/reglages`, avec l'écart à l'estimation.
 
 ## Suppression de chapitre
 
 - [x] Avertit clairement des faits et résumés qui en dépendent, avant confirmation, avec les comptes.
 - [x] Recalcule proprement, ou marque les assertions orphelines pour revue. L'état d'orphelin est **dérivé** — acceptée, sans preuve — jamais stocké : un état stocké se désynchronise d'un réimport.
-- [x] Ne laisse jamais silencieusement un fait sans preuve : ils sont listés dans `/reglages`, et un réimport les recolle.
+- [x] Ne laisse jamais silencieusement un fait sans preuve : ils sont listés dans `/admin/reglages`, et un réimport les recolle.
 
 ## Illustrations externes
 
@@ -131,19 +131,23 @@ Les images viennent de trois catalogues publics ; la connaissance, jamais.
 - [x] Les fichiers sont recopiés dans le bucket privé, servis par URL signée courte, jamais chargés depuis un tiers.
 - [x] L'enrichissement est rejouable : ni doublon, ni portrait principal en double.
 - [x] Les tests n'ouvrent aucune connexion réseau ; le catalogue est une fixture.
-- [ ] Couverture complète. Impossible : les catalogues gratuits plafonnent à 369 personnages, 94 fruits, 16 navires et 31 îles. Les absences sont affichées par type dans `/reglages` plutôt que passées sous silence.
+- [ ] Couverture complète. Impossible : les catalogues gratuits plafonnent à 369 personnages, 94 fruits, 16 navires et 31 îles. Les absences sont affichées par type dans `/admin/reglages` plutôt que passées sous silence.
 
 ## Lecture publique
 
-Ouverte seulement si `PUBLIC_LIBRARY_OWNER_ID` est posée sur une bibliothèque existante.
+Les routes de lecture sont publiques ; tout `/admin` demande la session du propriétaire.
 
 - [x] **Bloquant** — un visiteur ne peut atteindre aucune image de page ni de case : la route d'assets exige une authentification et une clé sous le préfixe de l'appelant — `tests/antispoiler/public-reading.test.ts`.
 - [x] **Bloquant** — aucun chemin d'écriture ne passe par la session visiteur : vérifié structurellement sur les sept actions et routes, avec garde contre un glob qui ne trouverait rien.
 - [x] La frontière s'applique au visiteur exactement comme au propriétaire — même politique RLS, même colonne, pas de second chemin plus permissif.
-- [x] Éteinte par défaut, et une valeur mal formée est traitée comme absente. Une faute de frappe rend le site privé, jamais à moitié ouvert.
+- [x] **Bloquant** — la règle d'accès est une fonction pure et testée comme telle : `/admin/**` est fermé aux visiteurs, y compris une route que personne n'a encore écrite, et une page publique inconnue est privée jusqu'à inscription explicite — `decide()`, `tests/antispoiler/public-reading.test.ts`.
+- [x] La bibliothèque publiée est la seule de l'installation, résolue sans configuration. `PUBLIC_LIBRARY_OWNER_ID` ne tranche que s'il y en a plusieurs ; sans elle, dans ce cas, rien n'est publié plutôt qu'une bibliothèque devinée. Une valeur mal formée est traitée comme absente, et un identifiant qui ne correspond à rien donne un site vide.
+- [x] Une session visiteur ne crée jamais de ligne : arriver sur une installation vide la laisse vide.
 - [x] La position de lecture du propriétaire n'est jamais exposée : celle du visiteur vient de l'URL.
 - [x] Un identifiant qui ne correspond à rien donne un site vide, pas une erreur 500.
-- [x] Import, revue, publication, suppression, export, enrichissement et assistant restent réservés au propriétaire.
+- [x] Import, revue, publication, suppression, export, enrichissement et assistant restent réservés au propriétaire, et vivent sous `/admin`.
+- [x] Les sources et les droits sont cités là où on les lit : attribution CC BY-SA 3.0 du One Piece Wiki / Fandom et droits des ayants droit de ONE PIECE dans le pied de page de chaque page, en version longue sur `/mentions-legales`.
+- [x] Les pages publiques sont indexables ; `/admin` pose son propre `noindex`.
 
 ## Exploitation
 

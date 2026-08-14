@@ -1,255 +1,229 @@
 import Link from 'next/link'
-import { getCurrentUser } from '@/domains/auth/server.ts'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts'
-import { StatusBadge } from '@/app/ui/status-badge.tsx'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * The command deck.
+ * The public front door.
  *
- * What this replaced: a page explaining, to the person who built the library,
- * what the library is for. Three paragraphs of concept and a row of links. A
- * brochure — useful exactly once, and in the way of the work every day after.
+ * There was not one. `/` was the workshop's command deck with a four-card
+ * consolation prize bolted underneath for anyone not signed in — a page that
+ * opened on "Ça vous attend" for a visitor who has never been here and has
+ * nothing waiting. The workshop moved to `/admin`, and this is what took its
+ * place.
  *
- * A tool opens on **state**. The first thing on screen is what is waiting for
- * you: a chapter whose proposals nobody has reviewed, a run that failed, a
- * chapter imported but never processed. Each is a card carrying the one button
- * that clears it. Below, the library at a glance.
+ * It has one job, and it is not to list features: it is to say what this thing
+ * is and why it is not the wiki you already have open in another tab. The
+ * answer is the slider — every page is read *at a chapter*, so someone who is
+ * on chapter 300 can explore a graph built from a thousand and be told only
+ * what a reader of 300 knows. That claim is the whole product, so it is the
+ * first thing on the page, not a footnote under the navigation.
  *
- * A visitor has no queue — nothing waits for someone who cannot act — so they
- * get the ways in instead.
+ * Everything here is read through `getViewerSession()`, which resolves the
+ * published library for an anonymous visitor. Nothing on this page requires an
+ * account, and nothing on it can write.
  */
 
-function pending(chapters: ChapterSummary[]) {
-  return {
-    aRelire: chapters.filter((c) => c.status === 'review'),
-    aTraiter: chapters.filter((c) => c.status === 'draft' || c.status === 'uploaded'),
-    enEchec: chapters.filter((c) => c.status === 'failed'),
-    enCours: chapters.filter((c) => c.status === 'processing'),
-    publies: chapters.filter((c) => c.status === 'published'),
-  }
-}
-
-/** A task card: what is waiting, how much of it, and the one way to clear it. */
-function Tache({
+function Carte({
   titre,
-  compte,
   href,
-  action,
-  ton,
   detail,
 }: {
   titre: string
-  compte: number
   href: string
-  action: string
-  ton: 'or' | 'mer' | 'rouge'
   detail: string
 }) {
-  const fond = { or: 'var(--accent)', mer: 'var(--sea)', rouge: 'var(--coral)' }[ton]
-  const encre = ton === 'or' ? 'var(--ink)' : '#fff'
-
   return (
-    <li className="panneau flex flex-col">
-      <div
-        className="flex items-center gap-3 border-b-[3px] border-ink px-3 py-2"
-        style={{ background: fond, color: encre }}
-      >
-        <span className="chiffre text-4xl leading-none">{compte}</span>
-        <span className="font-display text-base uppercase leading-tight">{titre}</span>
-      </div>
-      <div className="flex flex-1 flex-col justify-between gap-3 px-3 py-2.5">
-        <p className="text-sm text-secondary">{detail}</p>
-        <Link href={href} className="bouton bouton-primaire self-start !py-1 !text-sm">
-          {action}
-        </Link>
-      </div>
-    </li>
+    <Link href={href} className="panneau no-underline">
+      <p className="panneau-titre panneau-titre-vedette">{titre}</p>
+      <p className="panneau-corps text-sm text-secondary">{detail}</p>
+    </Link>
   )
 }
 
-export default async function HomePage() {
-  const user = await getCurrentUser()
-  const isOwner = user !== null
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ch?: string }>
+}) {
+  const { ch } = await searchParams
+  let published: ChapterSummary[] = []
+  let boundary = 0
 
-  let chapters: ChapterSummary[] = []
+  /*
+   * Degrades rather than throws. A visitor arriving at a deployment whose
+   * database is unreachable should read what the site is, not a stack trace —
+   * the pages that need data say so themselves.
+   */
   try {
-    const session = await getViewerSession()
-    chapters = await listChapters(session.userId, session.workId)
+    const session = await getViewerSession(ch)
+    boundary = session.boundaryChapter
+    const chapters = await listChapters(session.userId, session.workId)
+    /*
+     * Bounded like every other page, and for the same reason.
+     *
+     * A chapter title is a spoiler — "La mort de X" is the whole event — so the
+     * list stops where the reader stopped. The home page is the one screen where
+     * it would be easy to forget that and show « les derniers chapitres » of a
+     * library a thousand chapters ahead of the person reading.
+     */
+    published = chapters
+      .filter((chapter) => chapter.status === 'published' && chapter.number <= boundary)
+      .sort((a, b) => b.number - a.number)
   } catch {
-    chapters = []
+    published = []
   }
 
-  const p = pending(chapters)
-  const derniers = [...chapters].sort((a, b) => b.number - a.number).slice(0, 6)
-  const taches: React.ReactNode[] = []
-
-  if (isOwner) {
-    if (p.aRelire.length > 0) {
-      taches.push(
-        <Tache
-          key="relire"
-          titre="à relire"
-          compte={p.aRelire.length}
-          ton="or"
-          href={`/chapitres/${p.aRelire[0]!.id}`}
-          action={`Ouvrir le ${p.aRelire[0]!.number}`}
-          detail="Le traitement a produit des propositions. Rien n'entre dans le graphe avant votre décision."
-        />,
-      )
-    }
-    if (p.enEchec.length > 0) {
-      taches.push(
-        <Tache
-          key="echec"
-          titre="en échec"
-          compte={p.enEchec.length}
-          ton="rouge"
-          href={`/chapitres/${p.enEchec[0]!.id}`}
-          action="Voir la raison"
-          detail="Le traitement s'est arrêté. Les étapes réussies sont conservées : relancer reprend où ça s'est arrêté."
-        />,
-      )
-    }
-    if (p.enCours.length > 0) {
-      taches.push(
-        <Tache
-          key="cours"
-          titre="en cours"
-          compte={p.enCours.length}
-          ton="mer"
-          href={`/chapitres/${p.enCours[0]!.id}`}
-          action="Suivre"
-          detail="Le traitement est en cours. La progression montre chaque étape, sa durée et son coût réel."
-        />,
-      )
-    }
-    if (p.aTraiter.length > 0) {
-      taches.push(
-        <Tache
-          key="traiter"
-          titre="à traiter"
-          compte={p.aTraiter.length}
-          ton="mer"
-          href={`/chapitres/${p.aTraiter[0]!.id}`}
-          action="Lancer"
-          detail="Importés, pas encore analysés. Le coût est estimé avant lancement, pas après."
-        />,
-      )
-    }
-  }
+  const derniers = published.slice(0, 6)
 
   return (
     <main id="contenu" className="mx-auto max-w-6xl px-5 py-6">
-      {isOwner && (
-        <section>
-          <h1 className="sr-only">Poste de commandement</h1>
-          {taches.length > 0 ? (
-            <>
-              <h2 className="font-display text-xl uppercase text-primary">Ça vous attend</h2>
-              <ul className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{taches}</ul>
-            </>
-          ) : (
-            <div
-              className="border-[4px] border-ink bg-[var(--epi-validated)] px-4 py-3 text-white"
-              style={{ boxShadow: 'var(--shadow-hard)' }}
-            >
-              <p className="font-display text-2xl uppercase leading-none">Rien en attente</p>
-              <p className="mt-1.5 text-sm text-white/90">
-                {chapters.length === 0
-                  ? 'La bibliothèque est vide. Importez le premier chapitre que vous avez lu.'
-                  : 'Tout est traité, relu et publié. Le chapitre suivant vous attend.'}
-              </p>
-              <Link href="/import" className="bouton mt-3 !py-1 !text-sm">
-                Importer un chapitre
-              </Link>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* The library, in four numbers. */}
-      <section className={isOwner ? 'mt-8' : ''}>
-        <h2 className="font-display text-xl uppercase text-primary">La bibliothèque</h2>
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            ['Chapitres', chapters.length],
-            ['Publiés', p.publies.length],
-            ['Passages', chapters.reduce((s, c) => s + c.passageCount + c.pageCount, 0)],
-            ['Dernier', chapters.length > 0 ? Math.max(...chapters.map((c) => c.number)) : 0],
-          ].map(([label, value]) => (
-            <div
-              key={String(label)}
-              className="border-[3px] border-ink bg-surface-raised px-3 py-2"
-              style={{ boxShadow: 'var(--shadow-hard-sm)' }}
-            >
-              <p className="cartouche">{label}</p>
-              <p className="chiffre chiffre-l mt-0.5">{value}</p>
-            </div>
-          ))}
+      {/* --- What this is ------------------------------------------------ */}
+      <section
+        className="border-[4px] border-ink bg-[var(--sea-deep)] px-5 py-6 text-white sm:px-8 sm:py-8"
+        style={{ boxShadow: 'var(--shadow-hard)' }}
+      >
+        <h1 className="font-display text-4xl uppercase leading-none sm:text-6xl">
+          One Piece Explorer
+        </h1>
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-white/90 sm:text-lg">
+          Un graphe de connaissances de One Piece qui <strong>ne vous spoile pas</strong>.
+          Chaque fait, chaque nom, chaque relation est daté du chapitre qui l&apos;a
+          révélé. Dites où vous en êtes, et le site oublie tout le reste.
+        </p>
+        <p className="mt-3 max-w-2xl text-sm text-white/75">
+          Le curseur en haut de l&apos;écran est le réglage : posez-le sur votre
+          chapitre. Les personnages n&apos;y portent que les noms que vous leur
+          connaissez, les mystères y sont ouverts tant que vous n&apos;avez pas lu
+          leur résolution, et la chronologie s&apos;arrête où vous vous êtes arrêté.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link href="/histoire" className="bouton bouton-primaire">
+            Commencer par l&apos;histoire
+          </Link>
+          <Link href="/graph" className="bouton">
+            Ouvrir le graphe
+          </Link>
         </div>
       </section>
 
-      {derniers.length > 0 && (
-        <section className="mt-8">
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 className="font-display text-xl uppercase text-primary">Derniers chapitres</h2>
-            <Link
-              href="/chapitres"
-              className="font-display text-sm uppercase text-accent-strong hover:underline"
-            >
-              Tous →
-            </Link>
-          </div>
-          <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {derniers.map((chapter) => (
-              <li key={chapter.id} className="panneau flex items-stretch">
-                <Link
-                  href={`/chapitres/${chapter.id}`}
-                  className="flex w-20 shrink-0 items-center justify-center border-r-[3px] border-ink bg-[var(--sea-deep)] text-white no-underline"
-                >
-                  <span className="chiffre text-3xl">{chapter.number}</span>
-                </Link>
-                <div className="min-w-0 flex-1 px-3 py-2">
-                  <p className="truncate font-display text-base uppercase text-primary">
-                    {chapter.title ?? `Chapitre ${chapter.number}`}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <StatusBadge status={chapter.status} />
-                    <span className="tabular text-xs text-muted">
-                      {chapter.sourceKind === 'summary'
-                        ? `${chapter.passageCount} passages`
-                        : `${chapter.pageCount} p.`}
-                    </span>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* --- The ways in -------------------------------------------------- */}
+      <section className="mt-8">
+        <h2 className="font-display text-xl uppercase text-primary">Explorer</h2>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Carte
+            titre="L'histoire"
+            href="/histoire"
+            detail="Depuis le chapitre 1, en défilant : ce qui arrive, qui entre en scène, ce qui tombe."
+          />
+          <Carte
+            titre="Le graphe"
+            href="/graph"
+            detail="Tout le réseau : personnages, équipages, îles, fruits, promesses."
+          />
+          <Carte
+            titre="La chronologie"
+            href="/chronologie"
+            detail="Deux axes jamais confondus : l'ordre où vous l'avez appris, et l'ordre où c'est arrivé."
+          />
+          <Carte
+            titre="Les mystères"
+            href="/mysteres"
+            detail="Ce qui est ouvert, ce qui a été résolu, et au bout de combien de chapitres."
+          />
+          <Carte
+            titre="La recherche"
+            href="/recherche"
+            detail="Un nom, une phrase, un lieu — ou le chemin le plus court entre deux personnages."
+          />
+          <Carte
+            titre="Les sources"
+            href="/mentions-legales"
+            detail="D'où vient le contenu, sous quelle licence, et à qui appartiennent les images."
+          />
+        </div>
+      </section>
 
-      {!isOwner && (
-        <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            [
-              "L'histoire",
-              '/histoire',
-              'Depuis le chapitre 1, en défilant : ce qui arrive, qui entre en scène, ce qui tombe.',
-            ],
-            ['Le graphe', '/graph', 'Tout le réseau : personnages, équipages, îles, fruits, promesses.'],
-            ['La chronologie', '/chronologie', "Dates exactes, ordres relatifs, flashbacks, et l'incertitude assumée."],
-            ['Les mystères', '/mysteres', 'Ce qui est ouvert, ce qui a été résolu, et au bout de combien de chapitres.'],
-          ].map(([label, href, detail]) => (
-            <Link key={href} href={href!} className="panneau no-underline">
-              <p className="panneau-titre panneau-titre-vedette">{label}</p>
-              <p className="panneau-corps text-sm text-secondary">{detail}</p>
-            </Link>
-          ))}
-        </section>
-      )}
+      {/* --- The state of the library ------------------------------------- */}
+      <section className="mt-8">
+        <h2 className="font-display text-xl uppercase text-primary">La bibliothèque</h2>
+
+        {published.length === 0 ? (
+          <p className="mt-3 border-[3px] border-ink bg-surface-raised px-4 py-3 text-secondary">
+            {boundary === 0
+              ? "Rien à lire pour l'instant : le curseur est au chapitre 0, ou aucun chapitre n'a encore été publié. Le graphe se remplit chapitre après chapitre, et rien n'y entre avant d'avoir été relu."
+              : `Aucun chapitre publié jusqu'au ${boundary}. Avancez le curseur en haut de l'écran pour lire plus loin.`}
+          </p>
+        ) : (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[
+                ['Chapitres lisibles', published.length],
+                ['Vous en êtes au', boundary],
+                [
+                  'Unités citables',
+                  published.reduce((sum, c) => sum + c.passageCount + c.pageCount, 0),
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={String(label)}
+                  className="border-[3px] border-ink bg-surface-raised px-3 py-2"
+                  style={{ boxShadow: 'var(--shadow-hard-sm)' }}
+                >
+                  <p className="cartouche">{label}</p>
+                  <p className="chiffre chiffre-l mt-0.5">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {derniers.map((chapter) => (
+                <li key={chapter.id} className="panneau flex items-stretch">
+                  <Link
+                    href={`/delta/${chapter.number}`}
+                    className="flex w-20 shrink-0 items-center justify-center border-r-[3px] border-ink bg-[var(--sea-deep)] text-white no-underline"
+                  >
+                    <span className="chiffre text-3xl">{chapter.number}</span>
+                  </Link>
+                  <div className="min-w-0 flex-1 px-3 py-2">
+                    <p className="truncate font-display text-base uppercase text-primary">
+                      {chapter.title ?? `Chapitre ${chapter.number}`}
+                    </p>
+                    <Link
+                      href={`/delta/${chapter.number}`}
+                      className="text-sm text-accent-strong hover:underline"
+                    >
+                      Ce qu&apos;il apporte →
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      {/* --- The honest small print ---------------------------------------- */}
+      <section className="mt-8 border-[3px] border-ink bg-surface-raised px-4 py-3">
+        <h2 className="font-display text-base uppercase text-primary">
+          Un projet de fan, et rien d&apos;autre
+        </h2>
+        <p className="mt-1.5 text-sm text-secondary">
+          Le contenu textuel s&apos;appuie sur le One Piece Wiki (Fandom), sous
+          licence CC BY-SA 3.0. Aucune page de manga n&apos;est publiée ici : vous
+          lisez des faits, des relations et des références de chapitre, jamais les
+          planches. One Piece Explorer est un projet non officiel, sans lien avec
+          Eiichiro Oda, Shueisha ou Toei Animation.{' '}
+          <Link
+            href="/mentions-legales"
+            className="text-accent-strong underline underline-offset-2"
+          >
+            Sources et droits
+          </Link>
+          .
+        </p>
+      </section>
     </main>
   )
 }

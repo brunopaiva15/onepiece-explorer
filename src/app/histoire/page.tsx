@@ -127,15 +127,25 @@ export default async function StoryPage({
                   </Link>
                 </>
               ) : (
+                /*
+                 * Two audiences, two dead ends.
+                 *
+                 * The owner can fix this and the button says how. A visitor
+                 * cannot, and offering them « Importer un chapitre » — a page
+                 * they would be bounced from — turns an empty thread into a
+                 * broken site.
+                 */
                 <>
                   <p className="text-secondary">
-                    Le fil suit ce que vos chapitres publiés ont mis dans le
-                    graphe. Aucun ne l&apos;est encore — importez-en un, puis
-                    revoyez ses propositions.
+                    {session.isOwner
+                      ? 'Le fil suit ce que vos chapitres publiés ont mis dans le graphe. Aucun ne l’est encore — importez-en un, puis revoyez ses propositions.'
+                      : 'Le fil suit les chapitres publiés. Aucun ne l’est encore : revenez quand le premier sera relu.'}
                   </p>
-                  <Link href="/import" className="bouton bouton-primaire mt-4">
-                    Importer un chapitre
-                  </Link>
+                  {session.isOwner && (
+                    <Link href="/admin/import" className="bouton bouton-primaire mt-4">
+                      Importer un chapitre
+                    </Link>
+                  )}
                 </>
               )}
             </div>

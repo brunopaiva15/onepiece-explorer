@@ -38,9 +38,15 @@ export default async function DeltaPage({
 
   return (
     <main id="contenu" className="mx-auto max-w-3xl px-6 py-12">
+      {/* A public page: the way back is the public site, not the workshop the
+          chapter was imported in. */}
       <nav className="flex flex-wrap items-center gap-2 text-sm">
-        <Link href="/chapitres" className="text-muted hover:text-primary">
-          Chapitres
+        <Link href="/chronologie" className="text-muted hover:text-primary">
+          Chronologie
+        </Link>
+        <span className="text-muted">/</span>
+        <Link href="/histoire" className="text-muted hover:text-primary">
+          Histoire
         </Link>
       </nav>
 
@@ -53,8 +59,9 @@ export default async function DeltaPage({
 
       {nothing && (
         <p className="mt-8 rounded-sm border border-line bg-surface-raised p-6 text-secondary">
-          Rien n&apos;a encore été publié pour ce chapitre. Lancez le traitement,
-          puis revoyez les propositions.
+          {session.isOwner
+            ? "Rien n'a encore été publié pour ce chapitre. Lancez le traitement, puis revoyez les propositions."
+            : "Rien n'a encore été publié pour ce chapitre."}
         </p>
       )}
 

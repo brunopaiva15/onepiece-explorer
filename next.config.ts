@@ -36,6 +36,37 @@ const nextConfig: NextConfig = {
     remotePatterns: [],
   },
 
+  /**
+   * The workshop's old addresses, kept working.
+   *
+   * `/import`, `/chapitres`, `/reglages` and the rest moved under `/admin` when
+   * the reading site was opened to the public. Every one of them is in
+   * somebody's bookmarks and in the browser's address bar autocomplete, and
+   * without this they would land on the sign-in page and then on a 404 — the
+   * proxy sends an anonymous request to `?suite=/import`, which no longer
+   * exists. Permanent, because the move is.
+   */
+  async redirects() {
+    const moved = [
+      'connexion',
+      'import',
+      'chapitres',
+      'runs',
+      'review',
+      'reglages',
+      'ask',
+      'etat',
+    ]
+    return moved.flatMap((segment) => [
+      { source: `/${segment}`, destination: `/admin/${segment}`, permanent: true },
+      {
+        source: `/${segment}/:path*`,
+        destination: `/admin/${segment}/:path*`,
+        permanent: true,
+      },
+    ])
+  },
+
   async headers() {
     return [
       {

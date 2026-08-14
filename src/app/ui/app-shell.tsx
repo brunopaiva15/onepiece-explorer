@@ -24,7 +24,7 @@ import { StickyChrome } from './sticky-chrome.tsx'
  *      from the rest, so what you saw depended on which route you happened to
  *      be on. It belongs to the frame, above everything, permanently.
  *
- * Everything here degrades rather than throws: the shell renders above `/etat`,
+ * Everything here degrades rather than throws: the shell renders above `/admin/etat`,
  * whose promise is answering when nothing else does.
  */
 
@@ -43,10 +43,10 @@ const EXPLORER = [
 ]
 
 const ATELIER = [
-  { href: '/chapitres', label: 'Chapitres', icon: 'book' as const },
-  { href: '/import', label: 'Importer', icon: 'upload' as const },
-  { href: '/ask', label: 'Demander', icon: 'ask' as const },
-  { href: '/reglages', label: 'Réglages', icon: 'gear' as const },
+  { href: '/admin/chapitres', label: 'Chapitres', icon: 'book' as const },
+  { href: '/admin/import', label: 'Importer', icon: 'upload' as const },
+  { href: '/admin/ask', label: 'Demander', icon: 'ask' as const },
+  { href: '/admin/reglages', label: 'Réglages', icon: 'gear' as const },
 ]
 
 /** Drawn here, not borrowed: no official mark of any work is used. */
@@ -154,13 +154,27 @@ export async function AppShell({
           )}
         </nav>
 
-        {!isOwner && (
-          <div className="px-3 pb-4">
-            <Link href="/connexion" className="bouton bouton-primaire w-full !text-sm">
-              Se connecter
+        <div className="px-3 pb-4">
+          {isOwner ? (
+            <Link href="/admin" className="bouton w-full !text-sm">
+              Poste de commandement
             </Link>
-          </div>
-        )}
+          ) : (
+            /*
+             * One link to the workshop, and it is deliberately quiet.
+             *
+             * The site is public; the sign-in form serves exactly one person. It
+             * stays reachable because a bookmark is not a navigation plan, and it
+             * stays small because a visitor has no account to sign in with.
+             */
+            <Link
+              href="/admin/connexion"
+              className="block px-2 py-1 text-xs text-white/60 no-underline hover:text-white"
+            >
+              Espace d&apos;administration
+            </Link>
+          )}
+        </div>
       </aside>
 
       {/* --- Content ---------------------------------------------------- */}
@@ -185,20 +199,68 @@ export async function AppShell({
               boundaryChapter={boundary.boundaryChapter}
               maxChapter={boundary.maxChapter}
               chapters={boundary.chapters}
+              isOwner={isOwner}
             />
           )}
         </StickyChrome>
 
         <div className="min-w-0 flex-1">{children}</div>
 
-        <footer className="mt-10 border-t-[3px] border-ink px-5 py-4">
-          <p className="text-xs text-muted">
-            Bibliothèque privée · pages derrière authentification · direction
-            artistique originale, aucun asset officiel ·{' '}
-            <Link href="/etat" className="underline underline-offset-2 hover:text-secondary">
-              état du déploiement
-            </Link>
-          </p>
+        {/*
+         * The footer is where the attribution lives, on every page.
+         *
+         * A site built on somebody else's wiki and about somebody else's manga
+         * owes three statements — the source and its licence, the rights holders
+         * of the work, and that this is not affiliated with them — and owes them
+         * where a reader lands rather than only on a page they must think to
+         * look for. The long form is /mentions-legales; this is the short one,
+         * and it is not optional chrome.
+         */}
+        <footer className="mt-10 border-t-[3px] border-ink px-5 py-5">
+          <div className="mx-auto max-w-4xl space-y-2 text-xs leading-relaxed text-muted">
+            <p>
+              Source : One Piece Wiki / Fandom — contenu sous{' '}
+              <a
+                href="https://creativecommons.org/licenses/by-sa/3.0/deed.fr"
+                rel="noreferrer noopener nofollow"
+                target="_blank"
+                className="underline underline-offset-2 hover:text-secondary"
+              >
+                CC BY-SA 3.0
+              </a>
+              . Illustrations : onepieceapi.com, api-onepiece.com, AniList.
+            </p>
+            <p>
+              Les illustrations, captures, personnages et autres éléments visuels
+              issus de ONE PIECE sont la propriété de leurs ayants droit
+              respectifs, notamment Eiichiro Oda, Shueisha Inc. et Toei
+              Animation. © Eiichiro Oda/Shueisha, Toei Animation.
+            </p>
+            <p>
+              One Piece Explorer est un projet non officiel et n&apos;est ni
+              affilié, ni approuvé, ni sponsorisé par Eiichiro Oda, Shueisha ou
+              Toei Animation. Aucune planche de manga n&apos;est publiée ici.
+            </p>
+            <p>
+              <Link
+                href="/mentions-legales"
+                className="underline underline-offset-2 hover:text-secondary"
+              >
+                Mentions légales
+              </Link>
+              {isOwner && (
+                <>
+                  {' · '}
+                  <Link
+                    href="/admin/etat"
+                    className="underline underline-offset-2 hover:text-secondary"
+                  >
+                    état du déploiement
+                  </Link>
+                </>
+              )}
+            </p>
+          </div>
         </footer>
       </div>
     </div>

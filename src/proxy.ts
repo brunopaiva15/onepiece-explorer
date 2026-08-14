@@ -1,53 +1,57 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-/** Reachable with no session, always: signing in, and diagnosing. */
-const PUBLIC_PATHS = ['/connexion', '/inscription', '/auth', '/etat']
+/**
+ * One prefix holds everything private.
+ *
+ * The site used to be a single space where each route argued its own case, and
+ * the argument was a list of six paths nobody remembered to extend. Now the URL
+ * carries the rule: `/admin/**` is the workshop — importing, processing,
+ * reviewing, settings, the assistant, and the sign-in form that leads to them —
+ * and everything outside it is either an explicitly public reading route or
+ * private by default.
+ *
+ * The value of the prefix is that a route added under it next month is private
+ * without anybody deciding so.
+ */
+const ADMIN_PREFIX = '/admin'
 
 /**
- * Owner-only, even when the library is open to readers.
+ * The two pages under /admin that must answer without a session.
  *
- * Everything that writes, everything that spends money, and everything that
- * shows a page image. The list is deliberately a denylist rather than the
- * reading routes being an allowlist: a route added next month should be private
- * until somebody decides otherwise, not public because nobody remembered it.
+ * `/admin/connexion` is where an anonymous request is *sent*, so gating it
+ * behind a session is a redirect loop. `/admin/etat` reports which variable is
+ * missing, and the failures it diagnoses take the sign-in page down with them —
+ * gating it behind the thing it explains makes it useless in the only situation
+ * it exists for.
  */
-const OWNER_PATHS = [
-  '/import',
-  '/chapitres',
-  '/runs',
-  '/review',
-  '/reglages',
-  '/ask',
-  '/api/export',
-]
+const OPEN_ADMIN_PATHS = ['/admin/connexion', '/admin/etat']
 
-/** The reading routes, open when a public library is configured. */
+/** Signing in, and the OAuth callback. */
+const PUBLIC_PATHS = ['/auth']
+
+/**
+ * The public site: everything a visitor may read without an account.
+ *
+ * An allowlist, deliberately. A page added next month is private until somebody
+ * decides otherwise, rather than public because nobody remembered it.
+ *
+ * What is *not* here is as considered as what is. Page and panel images stay
+ * behind `/api/assets`, which refuses an anonymous caller: publishing the graph
+ * is what a fan wiki does, publishing the scans would be redistribution.
+ */
 const READER_PATHS = [
   '/',
+  '/histoire',
   '/graph',
   '/entite',
   '/chronologie',
-  '/delta',
+  '/mysteres',
   '/recherche',
+  '/delta',
+  '/mentions-legales',
+  '/api/histoire',
 ]
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-/**
- * Is a public library configured?
- *
- * Duplicated from `publicLibraryOwnerId()` rather than imported, because that
- * module is `server-only` and this file runs in the proxy runtime. The check is
- * four lines and both sides fail closed on a malformed value, which is the
- * property that matters; sharing it would cost a runtime boundary crossing to
- * save nothing.
- */
-function publiclyOpen(): boolean {
-  const value = process.env.PUBLIC_LIBRARY_OWNER_ID?.trim()
-  return Boolean(value && UUID_RE.test(value))
-}
 
 /**
  * The two values this file needs, if they are usable at all.
@@ -80,7 +84,7 @@ function matches(pathname: string, paths: string[]): boolean {
   )
 }
 
-export type Decision = 'allow' | 'sign-in' | 'home'
+export type Decision = 'allow' | 'sign-in' | 'admin'
 
 /**
  * Who may see what, as a pure function.
@@ -90,23 +94,26 @@ export type Decision = 'allow' | 'sign-in' | 'home'
  * open at the domain level and this file still bouncing every anonymous visitor
  * to the sign-in page. Every test passed. A rule about who gets in needs a test
  * of the rule, not of the thing it guards.
+ *
+ * Four lines, in order, and the order is the policy:
+ *
+ *   signed in            → everything, except the sign-in page they no longer
+ *                          need, which sends them to the workshop.
+ *   /admin/**            → the workshop. Sign in, apart from the two pages that
+ *                          have to answer before you can.
+ *   a reading route      → the public site.
+ *   anything else        → private, because nobody has said otherwise.
  */
-export function decide(
-  pathname: string,
-  hasUser: boolean,
-  isPubliclyOpen: boolean,
-): Decision {
+export function decide(pathname: string, hasUser: boolean): Decision {
   if (hasUser) {
     // Already signed in: the sign-in page has nothing to offer.
-    return pathname === '/connexion' ? 'home' : 'allow'
+    return pathname === '/admin/connexion' ? 'admin' : 'allow'
   }
 
+  if (matches(pathname, OPEN_ADMIN_PATHS)) return 'allow'
+  if (matches(pathname, [ADMIN_PREFIX])) return 'sign-in'
   if (matches(pathname, PUBLIC_PATHS)) return 'allow'
-
-  // Owner-only paths stay owner-only whether or not reading is public.
-  if (matches(pathname, OWNER_PATHS)) return 'sign-in'
-
-  if (isPubliclyOpen && matches(pathname, READER_PATHS)) return 'allow'
+  if (matches(pathname, READER_PATHS)) return 'allow'
 
   return 'sign-in'
 }
@@ -119,9 +126,9 @@ export function decide(
  * This is a convenience layer, not the security boundary. Row-level security
  * is: even a request that slipped past this file would read zero rows, because
  * `app.boundary_chapter` is unset outside withBoundary() and `auth.uid()` would
- * not match any row's owner. This exists so the user gets a sign-in page
- * instead of an empty one — and, when a public library is configured, so a
- * visitor gets the graph instead of a sign-in page.
+ * not match any row's owner. This exists so the owner gets a sign-in page
+ * instead of an empty one, and so a visitor gets the graph instead of a sign-in
+ * page they have no account for.
  */
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next({ request })
@@ -132,7 +139,7 @@ export async function proxy(request: NextRequest) {
    * either.
    *
    * The shape check is not decoration. This file runs before every route,
-   * including /etat — the one page written to answer when everything else fails.
+   * including /admin/etat — the one page written to answer when everything else fails.
    * An earlier version tested only for presence, so a variable holding something
    * that was not a URL threw inside createServerClient, and the diagnostic page
    * went down with the rest. A guard whose whole purpose is to survive a broken
@@ -180,18 +187,18 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  switch (decide(pathname, user !== null, publiclyOpen())) {
+  switch (decide(pathname, user !== null)) {
     case 'sign-in': {
       const signIn = request.nextUrl.clone()
-      signIn.pathname = '/connexion'
+      signIn.pathname = '/admin/connexion'
       signIn.searchParams.set('suite', pathname)
       return NextResponse.redirect(signIn)
     }
-    case 'home': {
-      const home = request.nextUrl.clone()
-      home.pathname = '/'
-      home.search = ''
-      return NextResponse.redirect(home)
+    case 'admin': {
+      const admin = request.nextUrl.clone()
+      admin.pathname = '/admin'
+      admin.search = ''
+      return NextResponse.redirect(admin)
     }
     default:
       return response
