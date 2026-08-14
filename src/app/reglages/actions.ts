@@ -90,6 +90,14 @@ export interface EnrichImagesResult {
   considered?: number
   stored?: number
   unmatched?: number
+  /**
+   * The entities that came back without a picture, named.
+   *
+   * Capped — see UNMATCHED_NAMED. `unmatched` stays the true total, so the page
+   * can say how many it is not showing rather than pretending the list is
+   * complete.
+   */
+  unmatchedEntities?: Array<{ entityId: string; label: string; nodeType: string }>
   /** Of the pictures found, how many came from the wiki fallback. */
   fromWiki?: number
   /** Of the pictures found, how many the wiki dates to before the ellipse. */
@@ -101,6 +109,17 @@ export interface EnrichImagesResult {
   notes?: string[]
   error?: string
 }
+
+/**
+ * How many nameless-in-the-report entities get named back to the page.
+ *
+ * A first run on a library that was never illustrated can leave hundreds of
+ * entities without a picture, and every one of them would cross the wire in the
+ * action's result. Two hundred is already more than anyone reads in one sitting,
+ * and the count beside the list says how many were left out — a truncated list
+ * that admits it beats a complete one nobody can scroll.
+ */
+const UNMATCHED_NAMED = 200
 
 /**
  * Fetch illustrations for the entities that have none.
@@ -163,6 +182,7 @@ export async function enrichImagesAction(
       considered: report.considered,
       stored: report.stored,
       unmatched: report.unmatched,
+      unmatchedEntities: report.unmatchedEntities.slice(0, UNMATCHED_NAMED),
       fromWiki: report.fromWiki,
       preTimeskip: report.preTimeskip,
       dropped: report.dropped,
