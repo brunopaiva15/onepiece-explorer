@@ -3,6 +3,7 @@ import { and, asc, eq, gte, lte, sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
+import { sameBeat } from '@/domains/knowledge/beats.ts'
 import { OCCURRENCE_TYPES } from '@/domains/knowledge/ontology.ts'
 import {
   nodeTypeLabel,
@@ -401,26 +402,16 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
    */
   const refuted = await readRefutations(userId, chapter)
 
-  /*
-   * Deduplicated on what the reader actually sees.
-   *
-   * Entity resolution does not always merge two rows that carry the same
-   * name, and a thread is the one place where that shows: the same line,
-   * twice, one bead apart. Two rows may well be two entities; two identical
-   * beads are never two beats.
-   */
-  const seen = new Set<string>()
-  const beats: StoryBeat[] = []
+  const composed: StoryBeat[] = []
   for (const [index, row] of (rows as unknown as Row[]).entries()) {
     const beat = compose(row, chapter, index)
     // A name landing with nothing to replace is an introduction, and `entree`
     // has already made it.
     if (beat.kind === 'nom' && beat.detail === null) continue
-    const key = `${beat.kind}|${beat.text}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    beats.push(beat)
+    composed.push(beat)
   }
+
+  const beats = oneBeadPerBeat(composed)
 
   /*
    * Past the fifth event, folded rather than dropped.
@@ -442,6 +433,68 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
   beats.splice(at, 0, ...refuted)
 
   return withPortraits(userId, chapter, beats)
+}
+
+/** The two kinds that are a scene: one told now, one remembered. */
+const SCENE_KINDS = new Set<BeatKind>(['evenement', 'souvenir'])
+
+/**
+ * One bead per beat, on what the reader actually sees.
+ *
+ * Two rules, and the second is the one a real library hit.
+ *
+ * **The same line twice.** Entity resolution does not always merge two rows
+ * that carry the same name, and a thread is the one place where that shows: the
+ * same line, one bead apart. Two rows may well be two entities; two identical
+ * beads are never two beats.
+ *
+ * **The same scene, written twice.** A chapter processed a second time is read
+ * by a model that does not phrase a scene the way it phrased it before, so the
+ * fingerprints differ, the exact twin check at publication sees nothing, and
+ * each copy becomes its own entity — an event *is* an entity here. Chapter 2
+ * came out with « Luffy et Koby prennent la mer ensemble, Koby lui parlant de
+ * Zoro que Luffy décide de recruter » and, six beads later, « Luffy et Koby
+ * prennent la mer ensemble ; Koby parle de Zoro à Luffy qui décide de le
+ * recruter ». One thing happened. The thread said it twice.
+ *
+ * So a scene that recounts one already told in this chapter is dropped, by the
+ * same rule the review centre groups a run's proposals with — `sameBeat`, one
+ * definition in `knowledge/beats.ts`. Across both scene kinds rather than within
+ * each, because the two runs are also free to disagree about whether the scene
+ * is a memory, and a beat classified `souvenir` here and `evenement` there is
+ * still one beat.
+ *
+ * The first telling is the one kept: the thread's order is narrative order, and
+ * a retelling has no claim to a place the story did not give it.
+ *
+ * What this does not do is decide anything about the graph. Both entities are
+ * still there, still on the fiches, still in the search — nothing is destroyed
+ * to make the thread read straight, and a rule that dropped a real beat would
+ * be doing exactly what this whole product exists not to do. Which is why the
+ * threshold is the strict one and stays there: it folds a rephrasing, and it
+ * cannot fold « une petite embarcation » onto « un petit canot ». That pair
+ * needs a reader, and a reader is who this is shown to.
+ */
+export function oneBeadPerBeat(beats: StoryBeat[]): StoryBeat[] {
+  const seen = new Set<string>()
+  const kept: StoryBeat[] = []
+
+  for (const beat of beats) {
+    const key = `${beat.kind}|${beat.text}`
+    if (seen.has(key)) continue
+
+    if (
+      SCENE_KINDS.has(beat.kind) &&
+      kept.some((told) => SCENE_KINDS.has(told.kind) && sameBeat(told.text, beat.text))
+    ) {
+      continue
+    }
+
+    seen.add(key)
+    kept.push(beat)
+  }
+
+  return kept
 }
 
 /** A row of the union, turned into the line the page shows. */
