@@ -34,6 +34,12 @@ name: Réparations (production)
 # its own would apply schema changes nobody asked it to; the failure, if the
 # order is wrong, is a constraint error on the first write and nothing else.
 #
+# One more, softer. `chapitres-1-100` reads scenes that `chapitres-1-42` writes —
+# the chapter 33 summary that gives Zoro his swords back is where a question
+# opened at 31 is re-answered — so run the shorter one first. Out of order it
+# does not fail: the lines that cannot find their scene say « introuvable » and
+# a second run picks them up.
+#
 # One of them is not like the others, and it is worth knowing before pressing
 # the button. `mysteres` reads: it asks a model, once per open question, whether
 # the scenes published after it carry the answer. So it also needs
@@ -55,6 +61,7 @@ on:
         default: chapitres-1-42
         options:
           - chapitres-1-42
+          - chapitres-1-100
           - chapitre-1
           - details
           - luffy-crew
