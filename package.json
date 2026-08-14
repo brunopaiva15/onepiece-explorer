@@ -22,6 +22,7 @@
     "images:enrich": "tsx scripts/enrich-images.ts",
     "repair:luffy-crew": "tsx --conditions=react-server scripts/repair-luffy-crew.ts",
     "repair:chapitres-1-42": "tsx --conditions=react-server scripts/repair-chapitres-1-42.ts",
+    "repair:chapitres-1-100": "tsx --conditions=react-server scripts/repair-chapitres-1-100.ts",
     "repair:chapitre-1": "tsx --conditions=react-server scripts/repair-chapitre-1.ts",
     "repair:details": "tsx --conditions=react-server scripts/repair-details.ts",
     "repair:mysteres": "tsx --conditions=react-server scripts/close-mysteries.ts",
