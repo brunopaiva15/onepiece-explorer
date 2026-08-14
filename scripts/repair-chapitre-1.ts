@@ -494,32 +494,33 @@ async function repairIdentity(
    * Le nom d'abord, sur tous les nœuds : c'est lui qui rend la composante
    * anonyme, et la désignation ci-dessous n'a de sens qu'une fois qu'elle l'est.
    *
-   * Écrit au plus une fois pour toute la composante, et seulement si personne
-   * ne le porte déjà. La fiche lit la composante entière : un nom posé sur
-   * chaque moitié se lirait deux fois dans « Noms connus » au chapitre où il est
-   * révélé — ce qui est précisément ce que la première version de cette boucle a
-   * produit, et ce que son dry-run a montré.
+   * Un libellé au plus par composante, et posé sur le nœud qui porte déjà le
+   * nom quand il y en a un.
+   *
+   * Les deux moitiés de la règle sont venues d'un échec. Écrire sur chaque nœud
+   * fait lire deux fois le même mot dans « Noms connus », que la fiche
+   * assemble sur toute la composante — le dry-run l'a montré. Et choisir le
+   * nœud par son identifiant fait dépendre le résultat de l'ordre des UUID :
+   * la désignation atterrissait sur une moitié et le nom sur l'autre, au
+   * hasard, ce qui passe sur une machine et échoue sur une autre. Le nœud qui
+   * porte le nom est un ancrage que la donnée détermine, pas le tri.
    */
-  const [carried] = await sql<Array<{ n: string }>>`
-    SELECT count(*)::text AS n FROM entity_labels
-     WHERE entity_id IN ${sql(members)} AND label = ${identity.canonical}
-  `
-  const alreadyNamed = carried !== undefined && carried.n !== '0'
+  const anchor = await anchorOf(sql, members, spellings)
 
   for (const member of members) {
-    await ensureLabel(sql, work, member, {
-      label: identity.canonical,
-      kind: 'true_name',
-      precedence: 100,
-      chapter: identity.reveal.chapter,
-      source: identity.reveal.source,
-      existingOnly: alreadyNamed || member !== members[0],
-    })
     await redateSpellings(sql, member, identity)
     await followPortraits(sql, work, member, identity, spellings, bump)
   }
 
-  await ensureLabel(sql, work, members[0]!, {
+  await ensureLabel(sql, work, members, anchor, {
+    label: identity.canonical,
+    kind: 'true_name',
+    precedence: 100,
+    chapter: identity.reveal.chapter,
+    source: identity.reveal.source,
+  })
+
+  await ensureLabel(sql, work, members, anchor, {
     label: identity.before,
     kind: 'placeholder',
     precedence: 10,
@@ -527,11 +528,33 @@ async function repairIdentity(
     source: null,
   })
 
-  await ensurePresence(sql, work, chapterId, members, identity)
+  await ensurePresence(sql, work, chapterId, members, anchor, identity)
 
   if (crewId && identity.crewFrom !== null) {
-    await ensureMembership(sql, work, members, crewId, identity, bump)
+    await ensureMembership(sql, work, members, anchor, crewId, identity, bump)
   }
+}
+
+/**
+ * Le nœud d'une composante sur lequel écrire, quand il faut en choisir un.
+ *
+ * Celui qui porte déjà le nom, parce que c'est celui vers lequel tout le reste
+ * pointe : les faits, les portraits, les propositions à venir. Le plus petit
+ * identifiant en dernier recours seulement — il faut bien trancher, mais un tri
+ * d'UUID ne doit pas être ce qui décide où va la désignation d'un personnage.
+ */
+async function anchorOf(
+  sql: postgres.Sql,
+  members: readonly string[],
+  spellings: readonly string[],
+): Promise<string> {
+  const [named] = await sql<Array<{ entity_id: string }>>`
+    SELECT entity_id FROM entity_labels
+     WHERE entity_id IN ${sql([...members])} AND label IN ${sql([...spellings])}
+     ORDER BY precedence DESC, entity_id
+     LIMIT 1
+  `
+  return named?.entity_id ?? members[0]!
 }
 
 /**
@@ -601,7 +624,13 @@ async function followPortraits(
 }
 
 /**
- * Un libellé, à sa date et avec sa provenance.
+ * Un libellé de la composante, à sa date et avec sa provenance.
+ *
+ * Cherché sur tous les nœuds, écrit sur un seul. C'est ce qui rend le script
+ * sûr à relancer sur une bibliothèque à demi corrigée : la passe précédente a
+ * pu poser la désignation sur une moitié, et une recherche par nœud n'y verrait
+ * rien à cet endroit-ci — elle en écrirait une seconde, et la fiche lirait deux
+ * fois le même mot.
  *
  * Écrit s'il manque, redaté s'il est là et faux, laissé tel quel s'il est déjà
  * juste — dans cet ordre, et sans jamais en supprimer un. Un nom qu'on retire
@@ -612,15 +641,14 @@ async function followPortraits(
 async function ensureLabel(
   sql: postgres.Sql,
   work: Work,
-  entityId: string,
+  members: readonly string[],
+  anchor: string,
   wanted: {
     label: string
     kind: string
     precedence: number
     chapter: number | null
     source: string | null
-    /** Redater ce libellé s'il est là, mais ne pas l'écrire s'il ne l'est pas. */
-    existingOnly?: boolean
   },
 ): Promise<void> {
   const held = await sql<
@@ -633,18 +661,17 @@ async function ensureLabel(
   >`
     SELECT id, label, revealed_in_chapter, reveal_source
       FROM entity_labels
-     WHERE entity_id = ${entityId} AND label = ${wanted.label}
+     WHERE entity_id IN ${sql([...members])} AND label = ${wanted.label}
   `
 
   if (held.length === 0) {
-    if (wanted.existingOnly) return
     console.log(`      + « ${wanted.label} » ${at(wanted.chapter, wanted.source)}`)
     if (dryRun) return
     await sql`
       INSERT INTO entity_labels
         (entity_id, user_id, label, normalized_label, kind,
          revealed_in_chapter, reveal_source, precedence)
-      VALUES (${entityId}, ${work.user_id}, ${wanted.label},
+      VALUES (${anchor}, ${work.user_id}, ${wanted.label},
               ${normalizeText(wanted.label)}, ${wanted.kind}::label_kind,
               ${wanted.chapter}, ${wanted.source}, ${wanted.precedence})
     `
@@ -735,6 +762,7 @@ async function ensurePresence(
   work: Work,
   chapterId: string,
   members: readonly string[],
+  anchor: string,
   identity: Identity,
 ): Promise<void> {
   // Lue sur toute la composante, écrite sur un seul nœud. Une présence déjà
@@ -753,7 +781,7 @@ async function ensurePresence(
   if (dryRun) return
   await sql`
     INSERT INTO occurrences (entity_id, user_id, chapter_id, kind, stated, chapter_number)
-    VALUES (${members[0]!}, ${work.user_id}, ${chapterId}, 'appearance', true,
+    VALUES (${anchor}, ${work.user_id}, ${chapterId}, 'appearance', true,
             ${identity.firstAppearance})
   `
 }
@@ -772,6 +800,7 @@ async function ensureMembership(
   sql: postgres.Sql,
   work: Work,
   members: readonly string[],
+  anchor: string,
   crewId: string,
   identity: Identity,
   bump: (key: string, by?: number) => number,
@@ -824,7 +853,7 @@ async function ensureMembership(
       knowledge_from_chapter, observed_in_chapter, confidence,
       epistemic_status, review_status, proposed_by, locked
     ) VALUES (
-      ${work.id}, ${work.user_id}, ${members[0]!}, 'member_of', ${crewId},
+      ${work.id}, ${work.user_id}, ${anchor}, 'member_of', ${crewId},
       ${from}, ${from}, 1, 'user_validated', 'accepted', 'user', true
     )
   `

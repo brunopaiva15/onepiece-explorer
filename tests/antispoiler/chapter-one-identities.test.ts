@@ -176,20 +176,26 @@ describe('la relecture du chapitre 1, appliquée', () => {
     await addPortrait(world, roux, { matchedLabel: 'Lucky Roux', revealedIn: 1 })
 
     /*
-     * Beckman en deux nœuds, joints par une identité — la forme que la
-     * bibliothèque a réellement, et celle qui a fait rater la correction. Le
-     * nom est sur la moitié que la recherche par libellé ne renvoie pas la
-     * première, ce qui est le seul détail qui compte ici.
+     * Beckman en deux nœuds joints par une identité — la forme que la
+     * bibliothèque a réellement, et celle qui a fait rater la correction.
+     *
+     * Le nom va délibérément sur le nœud de plus **grand** identifiant. Les
+     * uuid sont tirés au hasard, donc laisser l'ordre décider ferait passer ce
+     * test une fois sur deux — ce qui est exactement ce qui est arrivé : vert
+     * ici, rouge en CI, sur un défaut bien réel. Le cas défavorable est donc
+     * construit, pas espéré.
      */
-    beckman = await createEntity(world, 'character', 1)
+    const pair = [
+      await createEntity(world, 'character', 1),
+      await createEntity(world, 'character', 1),
+    ].sort()
+    beckman = pair[0]!
     await addLabel(world, beckman, 'Ben Beckman', 'alias', 1, 5)
-
-    const beckmanTwin = await createEntity(world, 'character', 1)
-    await addLabel(world, beckmanTwin, 'Benn Beckman', 'true_name', 1, 100)
+    await addLabel(world, pair[1]!, 'Benn Beckman', 'true_name', 1, 100)
     await addAssertion(world, {
       subject: beckman,
       predicate: 'same_as',
-      object: beckmanTwin,
+      object: pair[1]!,
       knowledgeFrom: 1,
       epistemic: 'user_validated',
       proposedBy: 'user',
@@ -218,6 +224,17 @@ describe('la relecture du chapitre 1, appliquée', () => {
   }, 120_000)
 
   it('rend les deux pirates anonymes au chapitre 1 et nommés au 42', async () => {
+    /*
+     * Lu par la fiche, pas par `displayLabel`.
+     *
+     * La distinction a coûté une CI rouge et vaut d'être écrite ici. Une
+     * personne rangée en deux nœuds n'a pas ses libellés sur les deux : la
+     * désignation descriptive est posée une fois, sinon « Noms connus » la
+     * lirait en double. `displayLabel` interroge *une* entité et répond donc
+     * « rien » sur la moitié qui ne la porte pas — ce que le lecteur ne voit
+     * jamais, parce que toute vue passe par la composante. Assertion sur ce que
+     * le lecteur voit, donc, et pas sur une brique interne.
+     */
     for (const [before, after] of [
       ['Pirate corpulent mangeant de la viande', 'Lucky Roux'],
       ['Pirate aux cheveux noirs de l’équipage de Shanks', 'Benn Beckman'],
@@ -228,9 +245,12 @@ describe('la relecture du chapitre 1, appliquée', () => {
       `
       expect(row, after).toBeDefined()
 
-      expect((await displayLabel(world.userId, 1, row!.entity_id))?.label).toBe(before)
-      expect((await displayLabel(world.userId, 41, row!.entity_id))?.label).toBe(before)
-      expect((await displayLabel(world.userId, 42, row!.entity_id))?.label).toBe(after)
+      for (const boundary of [1, 41]) {
+        const sheet = await getEntitySheet(world.userId, boundary, row!.entity_id)
+        expect(sheet?.displayLabel, `${after} au ch${boundary}`).toBe(before)
+      }
+      const named = await getEntitySheet(world.userId, 42, row!.entity_id)
+      expect(named?.displayLabel).toBe(after)
     }
   })
 
@@ -268,10 +288,31 @@ describe('la relecture du chapitre 1, appliquée', () => {
   })
 
   it('donne l’appartenance à l’équipage à la date où elle se lit', async () => {
+    /*
+     * Le nom cherché sur la composante du sujet, pas sur son seul nœud : la
+     * relation est écrite sur le nœud qui porte le nom, mais rien ne garantit
+     * que ce soit celui-là dans une bibliothèque déjà fusionnée, et un test qui
+     * en dépendrait mesurerait un tri d'identifiants.
+     */
     const rows = await raw<Array<{ label: string; knowledge_from_chapter: number }>>`
-      SELECT (SELECT label FROM entity_labels
-               WHERE entity_id = a.subject_entity_id AND kind = 'true_name'
-               LIMIT 1) AS label,
+      WITH RECURSIVE component(root, id) AS (
+        SELECT a.subject_entity_id, a.subject_entity_id
+          FROM assertions a
+         WHERE a.user_id = ${world.userId} AND a.predicate = 'member_of'
+           AND a.object_entity_id = ${crew} AND a.review_status = 'accepted'
+        UNION
+        SELECT c.root,
+               CASE WHEN s.subject_entity_id = c.id
+                    THEN s.object_entity_id ELSE s.subject_entity_id END
+          FROM assertions s JOIN component c
+            ON c.id IN (s.subject_entity_id, s.object_entity_id)
+         WHERE s.predicate = 'same_as' AND s.review_status = 'accepted'
+           AND s.object_entity_id IS NOT NULL
+      )
+      SELECT (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id IN (SELECT id FROM component WHERE root = a.subject_entity_id)
+                 AND l.kind = 'true_name'
+               ORDER BY l.precedence DESC LIMIT 1) AS label,
              a.knowledge_from_chapter
         FROM assertions a
        WHERE a.user_id = ${world.userId} AND a.predicate = 'member_of'
