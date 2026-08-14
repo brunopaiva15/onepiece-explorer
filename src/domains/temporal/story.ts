@@ -8,6 +8,7 @@ import {
   nodeTypeLabel,
   predicateLabel,
 } from '@/domains/knowledge/predicate-label.ts'
+import { SEARCH_ONLY_PRECEDENCE } from '@/domains/knowledge/rename.ts'
 import { identityComponents } from './projection.ts'
 import { describeStoryTime } from './timeline.ts'
 
@@ -270,6 +271,13 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
       -- this fires for every label in the chapter, which on chapter 1 is
       -- every entity in the story — and a first name is not a reveal, it is
       -- an introduction, which the next arm already makes.
+      --
+      -- And not a wording nothing displays. Publication stores the source's
+      -- own spelling beside a label it translated, below every kind in
+      -- LABEL_PRECEDENCE precisely so it can never be shown — it exists for
+      -- the search and for the illustration catalogues. Announced here it
+      -- became a second reveal of a name the reader had just been given:
+      -- « Yasopp », then « Yassop », on the same chapter.
       SELECT 'nom', 3, l.entity_id, l.label,
              (SELECT p.label FROM entity_labels p
                WHERE p.entity_id = l.entity_id
@@ -280,6 +288,7 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
         FROM entity_labels l
         JOIN entities en ON en.id = l.entity_id
        WHERE l.revealed_in_chapter = ${chapter}
+         AND l.precedence > ${SEARCH_ONLY_PRECEDENCE}
          AND EXISTS (SELECT 1 FROM entity_labels p
                       WHERE p.entity_id = l.entity_id
                         AND p.revealed_in_chapter < ${chapter})
