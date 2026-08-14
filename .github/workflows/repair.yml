@@ -26,6 +26,13 @@ name: Réparations (production)
 # What it needs, once: the repository secret PRODUCTION_DIRECT_URL, which
 # migrate.yml already uses. Nothing new to configure if migrations have ever
 # been run from here.
+#
+# One order to respect, and it is not enforced here on purpose. `chapitre-1`
+# writes a name with no revelation chapter, which the schema only accepts from
+# migration 0026 onwards — so run migrate.yml first. It is left to the operator
+# rather than chained automatically because a repair workflow that migrates on
+# its own would apply schema changes nobody asked it to; the failure, if the
+# order is wrong, is a constraint error on the first write and nothing else.
 
 on:
   workflow_dispatch:
@@ -37,6 +44,7 @@ on:
         default: chapitres-1-42
         options:
           - chapitres-1-42
+          - chapitre-1
           - luffy-crew
       mode:
         description: 'Mode'
