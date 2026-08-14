@@ -95,6 +95,21 @@ async function main(): Promise<void> {
     )
     console.log(`  sans image   ${report.unmatched}`)
 
+    /*
+     * Named, not just counted.
+     *
+     * Same reason as on the settings page: the total says whether to worry, the
+     * names say what to do about it. Twenty at a time, because a first run on a
+     * large library leaves hundreds and a wall of names scrolls the rest of the
+     * report — the numbers above — off the terminal.
+     */
+    for (const entity of report.unmatchedEntities.slice(0, 20)) {
+      console.log(`    sans image « ${entity.label} » (${entity.nodeType})`)
+    }
+    if (report.unmatchedEntities.length > 20) {
+      console.log(`    … et ${report.unmatchedEntities.length - 20} autre(s)`)
+    }
+
     for (const failure of report.failures.slice(0, 10)) {
       console.log(`  échec « ${failure.label} » : ${failure.reason}`)
     }

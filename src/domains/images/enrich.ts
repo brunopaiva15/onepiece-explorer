@@ -40,6 +40,19 @@ export interface EnrichReport {
   stored: number
   /** Entities with no plausible candidate. Expected, not a failure. */
   unmatched: number
+  /**
+   * Which entities those are, named.
+   *
+   * « 31 sans image » is a number the reader can do nothing with: they cannot
+   * tell whether it hides thirty walk-on characters — the normal case, and no
+   * reason to touch anything — or the one island whose article the wiki files
+   * under another spelling, which a rename on the fiche would fix in a minute.
+   * Naming them is the difference between a statistic and something actionable.
+   *
+   * The label is the one the matcher tried first, so a reader comparing it with
+   * the wiki is looking at the same spelling this run looked up.
+   */
+  unmatchedEntities: Array<{ entityId: string; label: string; nodeType: string }>
   /** Of `matched`, how many the wiki fallback found. */
   fromWiki: number
   /**
@@ -128,6 +141,7 @@ export async function enrichEntityImages(
     matched: 0,
     stored: 0,
     unmatched: 0,
+    unmatchedEntities: [],
     fromWiki: 0,
     preTimeskip: 0,
     postTimeskip: 0,
@@ -181,6 +195,12 @@ export async function enrichEntityImages(
     const matches = await portraitsFor(input, index, options)
     if (matches.length === 0) {
       report.unmatched += 1
+      report.unmatchedEntities.push({
+        entityId: row.entity_id,
+        // Never empty: `pending()` selects only entities that have a label.
+        label: input.labels[0]!.label,
+        nodeType: row.node_type,
+      })
       continue
     }
     report.matched += 1

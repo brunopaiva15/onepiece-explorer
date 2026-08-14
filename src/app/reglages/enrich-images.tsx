@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import type { Coverage } from '@/domains/images/index.ts'
+import { nodeTypeLabel } from '@/domains/knowledge/predicate-label.ts'
 import { enrichImagesAction, type EnrichImagesResult } from './actions.ts'
 
 /**
@@ -196,6 +198,21 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
             c&apos;est le cas normal pour un personnage secondaire ou une
             désignation provisoire, pas une erreur.
           </p>
+
+          {/*
+            Which ones, by name.
+
+            The count alone is not actionable: thirty walk-on characters with
+            no portrait is the system working, while one missing island is
+            nearly always a spelling the wiki files differently — and that is
+            fixed on the fiche in a minute. Folded by default, so the summary
+            stays three lines and the list is there for whoever wants it.
+          */}
+          <UnmatchedList
+            entities={result.unmatchedEntities ?? []}
+            total={result.unmatched ?? 0}
+          />
+
           {result.failures ? (
             <p className="mt-1 text-[var(--epi-contradicted)]">
               {result.failures} échec(s) de téléchargement.
@@ -211,5 +228,58 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The entities the run left without a picture, named and linked.
+ *
+ * Each name goes to its fiche, because that is where the two things worth doing
+ * about it live: rename the entity to the spelling the catalogues use, or
+ * decide it is a walk-on and leave it alone. A list you can only read would be
+ * a longer version of the count it replaces.
+ *
+ * `total` rather than `entities.length` in the summary: the action caps how
+ * many names it sends back, and a list that quietly stops at two hundred while
+ * claiming to be the whole thing would be worse than the bare number.
+ */
+function UnmatchedList({
+  entities,
+  total,
+}: {
+  entities: NonNullable<EnrichImagesResult['unmatchedEntities']>
+  total: number
+}) {
+  if (entities.length === 0) return null
+
+  const hidden = total - entities.length
+
+  return (
+    <details className="mt-2">
+      <summary className="cursor-pointer text-sm text-secondary hover:text-primary">
+        Voir lesquelles ({entities.length}
+        {hidden > 0 ? ` sur ${total}` : ''})
+      </summary>
+      <ul className="mt-2 space-y-1 text-sm">
+        {entities.map((entity) => (
+          <li key={entity.entityId} className="flex items-baseline gap-2">
+            <Link
+              href={`/entite/${entity.entityId}`}
+              className="text-primary hover:underline"
+            >
+              {entity.label}
+            </Link>
+            <span className="text-xs text-muted">
+              {nodeTypeLabel(entity.nodeType)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {hidden > 0 ? (
+        <p className="mt-2 text-xs text-muted">
+          … et {hidden} autre(s), non listée(s) ici.
+        </p>
+      ) : null}
+    </details>
   )
 }
