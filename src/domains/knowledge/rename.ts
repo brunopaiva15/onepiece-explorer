@@ -76,8 +76,14 @@ export interface RenameResult {
   previousLabel: string
   label: string
   kind: LabelKind
-  /** The surviving name's own revelation — the earlier of the two on a fold. */
-  revealedInChapter: number
+  /**
+   * The surviving name's own revelation — the earlier of the two on a fold.
+   *
+   * Null when no chapter gives this name: a SBS answer, a databook entry. Such
+   * a row is never displayed at any boundary, so a rename of one corrects a
+   * spelling the reader will not see until the manga itself says it.
+   */
+  revealedInChapter: number | null
   /** The entity already carried this name: the two rows became one. */
   folded: boolean
   keptAsAlias: boolean
@@ -151,6 +157,7 @@ export async function renameEntityLabel(
         kind: entityLabels.kind,
         precedence: entityLabels.precedence,
         revealedInChapter: entityLabels.revealedInChapter,
+        revealSource: entityLabels.revealSource,
         workId: entities.workId,
       })
       .from(entityLabels)
@@ -187,6 +194,7 @@ export async function renameEntityLabel(
         kind: entityLabels.kind,
         precedence: entityLabels.precedence,
         revealedInChapter: entityLabels.revealedInChapter,
+        revealSource: entityLabels.revealSource,
       })
       .from(entityLabels)
       .where(
@@ -224,9 +232,7 @@ export async function renameEntityLabel(
 
     /** What the surviving row says once the two have folded into one. */
     const survivingKind = clash && clash.precedence >= wanted ? clash.kind : kind
-    const revealedInChapter = clash
-      ? Math.min(clash.revealedInChapter, row.revealedInChapter)
-      : row.revealedInChapter
+    const reveal = clash ? earliestReveal(clash, row) : row
 
     if (clash) {
       await db
@@ -239,7 +245,8 @@ export async function renameEntityLabel(
           normalizedLabel: normalized,
           kind: survivingKind,
           precedence,
-          revealedInChapter,
+          revealedInChapter: reveal.revealedInChapter,
+          revealSource: reveal.revealSource,
         })
         .where(eq(entityLabels.id, clash.id))
     } else {
@@ -284,8 +291,11 @@ export async function renameEntityLabel(
         normalizedLabel: row.normalizedLabel,
         kind: 'alias',
         // The chapter that used it, unchanged. A name is dated by when it was
-        // read, and this one was read exactly when the corrected one was.
+        // read, and this one was read exactly when the corrected one was — the
+        // source with it, since a row with no chapter has to keep saying where
+        // it came from.
         revealedInChapter: row.revealedInChapter,
+        revealSource: row.revealSource,
         precedence: SEARCH_ONLY_PRECEDENCE,
       })
     }
@@ -314,8 +324,18 @@ export async function renameEntityLabel(
      * forms that have to point at the corrected name — mapping only the French
      * guess would let the source wording produce that guess all over again.
      */
+    /*
+     * A name no chapter gives settles no vocabulary.
+     *
+     * `glossary_terms` hands its answer to the extraction of every *later*
+     * chapter, and « later » has no meaning for a name that sits outside the
+     * chapter axis. Recording one would have to invent the date this correction
+     * exists to refuse — and it would hand the next chapter a name the reader
+     * has not read, which is the leak migration 0016 bounded the glossary to
+     * prevent.
+     */
     let recorded = 0
-    if (differs && isDisplayedName) {
+    if (differs && isDisplayedName && reveal.revealedInChapter !== null) {
       const seen = new Set<string>()
       const wordings = [
         { label: row.label, normalizedLabel: row.normalizedLabel },
@@ -338,7 +358,7 @@ export async function renameEntityLabel(
             sourceTerm: wording.label,
             normalizedSource: wording.normalizedLabel,
             frenchTerm: label,
-            decidedInChapter: revealedInChapter,
+            decidedInChapter: reveal.revealedInChapter,
           })
           .onConflictDoUpdate({
             target: [glossaryTerms.workId, glossaryTerms.normalizedSource],
@@ -370,7 +390,7 @@ export async function renameEntityLabel(
         to: label,
         fromKind: row.kind,
         kind: survivingKind,
-        revealedInChapter,
+        revealedInChapter: reveal.revealedInChapter,
         folded: clash !== undefined,
         keptAsAlias,
         glossaryTerms: recorded,
@@ -383,13 +403,33 @@ export async function renameEntityLabel(
       previousLabel: row.label,
       label,
       kind: survivingKind,
-      revealedInChapter,
+      revealedInChapter: reveal.revealedInChapter,
       folded: clash !== undefined,
       keptAsAlias,
       glossaryTerms: recorded,
       proseRewritten,
     }
   })
+}
+
+/**
+ * Of two names that turn out to be one, the one the reader met first.
+ *
+ * A chapter always wins over no chapter, and it is not a tie-break: the entity
+ * really was named this at that chapter, in a spelling now corrected, and a
+ * fold that kept the NULL would hide from the reader a name they have read.
+ * Two chapter-less rows fold to a chapter-less row, which is the same rule with
+ * nothing to choose between.
+ *
+ * The source travels with the chapter, so the surviving row never claims to
+ * come from a SBS column while carrying a chapter that came from the page.
+ */
+function earliestReveal<
+  T extends { revealedInChapter: number | null; revealSource: string | null },
+>(a: T, b: T): { revealedInChapter: number | null; revealSource: string | null } {
+  if (a.revealedInChapter === null) return b
+  if (b.revealedInChapter === null) return a
+  return a.revealedInChapter <= b.revealedInChapter ? a : b
 }
 
 /**

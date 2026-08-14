@@ -34,3 +34,17 @@ export const LABEL_KINDS: ReadonlyArray<{ kind: LabelKind; label: string }> = [
 export function labelKindLabel(kind: string): string {
   return LABEL_KINDS.find((entry) => entry.kind === kind)?.label ?? kind
 }
+
+/**
+ * When a name became readable, in one phrase.
+ *
+ * Here rather than in each view for the same reason the kinds are: the fiche
+ * and the rename form print it side by side, and « ch. null » is what the two
+ * of them say the day one of them forgets that a name can have no chapter at
+ * all. Migration 0026 has the why; this is the wording.
+ */
+export function revealedAtLabel(revealedInChapter: number | null): string {
+  return revealedInChapter === null
+    ? 'hors chronologie'
+    : `révélé ch. ${revealedInChapter}`
+}

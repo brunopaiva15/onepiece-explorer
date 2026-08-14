@@ -37,7 +37,16 @@ export interface SheetLabel {
   id: string
   label: string
   kind: string
-  revealedInChapter: number
+  /**
+   * Null when no chapter gives this name — see migration 0026.
+   *
+   * The boundary policy withholds such a row, so this is never null on a sheet
+   * read through `withBoundary`. It stays in the type because the rename form
+   * on the fiche posts a label id straight to `renameEntityLabel`, which reads
+   * as the ingestion role and does see them.
+   */
+  revealedInChapter: number | null
+  revealSource: string | null
   precedence: number
 }
 
@@ -115,6 +124,7 @@ export async function getEntitySheet(
         label: entityLabels.label,
         kind: entityLabels.kind,
         revealedInChapter: entityLabels.revealedInChapter,
+        revealSource: entityLabels.revealSource,
         precedence: entityLabels.precedence,
       })
       .from(entityLabels)
@@ -260,6 +270,7 @@ export async function getEntitySheet(
     label: row.label,
     kind: row.kind,
     revealedInChapter: row.revealedInChapter,
+    revealSource: row.revealSource,
     precedence: row.precedence,
   }))
 

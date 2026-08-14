@@ -91,6 +91,22 @@ identique existe déjà : la survivante garde la plus forte précédence de la p
 plus ancienne révélation, parce que l'entité portait bien ce nom à ce
 chapitre-là, mal orthographié.
 
+**Apparaître n'est pas être nommé.** Le chapitre 1 montre trois pirates de
+l'équipage du Roux sans en nommer un seul : deux ne le sont que dans le SBS du
+tome 5, le troisième au chapitre 25, et le maire du village jamais — son nom
+vient d'un databook, que rien ne rattache à un chapitre. Le graphe datait déjà
+un nom ; ce qu'il ne savait pas dire, c'est qu'un nom puisse n'avoir **aucune
+date**, et le seul moyen de le ranger était de lui en inventer une. Un libellé
+porte donc aussi sa **provenance** — « SBS du tome 5 », « databook » — et son
+chapitre de révélation peut être vide, ce qui ne veut pas dire « on ne sait pas
+quand » mais « aucun chapitre ne le donne » : la politique de frontière le
+retient alors partout, et la fiche s'en tient à la désignation que le lecteur a,
+« Maire du village de Fuchsia », jusqu'au jour où le manga le nomme lui-même. Le
+nœud, lui, ne bouge pas, et les liens continuent de pointer vers la même entité
+— c'est le texte affiché qui dépend du chapitre. La relecture du chapitre 1 est
+dans `pnpm repair:chapitre-1` ; comme les autres scripts de réparation, elle se
+lance d'abord en `--dry-run`, qui dit tout et n'écrit rien.
+
 **Et un type se corrige aussi.** Le Bara Bara no Mi est un fruit : il se mange,
 il se vole, il se transporte — et le graphe le rangeait en « Pouvoir », juste à
 côté du Bara Bara no Hou, qui est la technique qu'il donne. L'ontologie le

@@ -5,7 +5,7 @@ import { getViewerSession } from '@/domains/auth/session.ts'
 import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
 import { epistemicColour, epistemicLabel } from '@/domains/knowledge/epistemic-label.ts'
-import { labelKindLabel } from '@/domains/knowledge/label-kind.ts'
+import { labelKindLabel, revealedAtLabel } from '@/domains/knowledge/label-kind.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 import { buildEntityProfile } from '@/domains/knowledge/profile.ts'
 import { EntityProfile } from './entity-profile.tsx'
@@ -183,8 +183,23 @@ export default async function EntityPage({
                   <span className="text-sm text-muted">
                     {labelKindLabel(label.kind)}
                   </span>
+                  {/*
+                    * Where the name comes from, when it is not the page.
+                    *
+                    * « Lucky Roux » is read at chapter 42 and is nowhere in
+                    * chapter 42 : it is in the SBS of volume 5, which the reader
+                    * reaches there. Printing the chapter alone would send anyone
+                    * checking it back to a chapter that never says the name.
+                    *
+                    * The chapter itself can be absent — a databook name, which
+                    * no boundary displays — so this line is written to hold
+                    * either half on its own.
+                    */}
                   <span className="ml-auto font-mono text-sm text-muted">
-                    révélé ch. {label.revealedInChapter}
+                    {revealedAtLabel(label.revealedInChapter)}
+                    {label.revealSource && (
+                      <span className="font-sans"> · {label.revealSource}</span>
+                    )}
                   </span>
                 </li>
               ))}

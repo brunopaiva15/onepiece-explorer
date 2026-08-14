@@ -109,7 +109,19 @@ export const entityLabels = pgTable(
     label: text('label').notNull(),
     normalizedLabel: text('normalized_label').notNull(),
     kind: labelKindEnum('kind').notNull().default('alias'),
-    revealedInChapter: integer('revealed_in_chapter').notNull(),
+    /**
+     * The chapter that teaches the reader this name.
+     *
+     * Null means no chapter does. Not "unknown": a name given by a SBS column
+     * or a databook is real and belongs to the entity, and it still has no
+     * place on the chapter axis — see migration 0026. The boundary policy
+     * withholds those rows at every chapter rather than picking one, so the
+     * village mayor of chapter 1 stays « Maire du village de Fuchsia » until
+     * the manga itself names him.
+     */
+    revealedInChapter: integer('revealed_in_chapter'),
+    /** Where a name comes from when it is not the chapter's own pages. */
+    revealSource: text('reveal_source'),
     precedence: integer('precedence').notNull().default(0),
     sourceAssertionId: uuid('source_assertion_id'),
     createdAt: timestamp('created_at', { withTimezone: true })

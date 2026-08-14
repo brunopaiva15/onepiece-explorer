@@ -2,7 +2,12 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { LABEL_KINDS, labelKindLabel, type LabelKind } from '@/domains/knowledge/label-kind.ts'
+import {
+  LABEL_KINDS,
+  labelKindLabel,
+  revealedAtLabel,
+  type LabelKind,
+} from '@/domains/knowledge/label-kind.ts'
 import { normalizeText } from '@/domains/knowledge/normalize.ts'
 import type { SheetLabel } from '@/domains/temporal/entity-sheet.ts'
 import { renameEntityAction } from './actions.ts'
@@ -96,11 +101,15 @@ export function RenameEntity({
 
       const result = response.result
       setDone(
-        (result.folded
-          ? `« ${result.previousLabel} » et « ${result.label} » ne font plus ` +
-            `qu'un seul nom, connu depuis le chapitre ${result.revealedInChapter}.`
-          : `« ${result.previousLabel} » est désormais « ${result.label} », ` +
-            `révélé au chapitre ${result.revealedInChapter}.`) +
+        (result.revealedInChapter === null
+          ? `« ${result.previousLabel} » est désormais « ${result.label} ». ` +
+            `Aucun chapitre ne donne ce nom, donc il reste invisible : la fiche ` +
+            `garde sa désignation descriptive.`
+          : result.folded
+            ? `« ${result.previousLabel} » et « ${result.label} » ne font plus ` +
+              `qu'un seul nom, connu depuis le chapitre ${result.revealedInChapter}.`
+            : `« ${result.previousLabel} » est désormais « ${result.label} », ` +
+              `révélé au chapitre ${result.revealedInChapter}.`) +
           (result.proseRewritten > 0
             ? ` ${result.proseRewritten} événement(s) ou mystère(s) qui l’écrivaient` +
               ` en toutes lettres ont suivi.`
@@ -164,8 +173,8 @@ export function RenameEntity({
           >
             {labels.map((label) => (
               <option key={label.id} value={label.id}>
-                {label.label} — {labelKindLabel(label.kind)}, ch.{' '}
-                {label.revealedInChapter}
+                {label.label} — {labelKindLabel(label.kind)},{' '}
+                {revealedAtLabel(label.revealedInChapter)}
               </option>
             ))}
           </select>
@@ -202,7 +211,7 @@ export function RenameEntity({
 
       {selected && (
         <p className="mt-2 font-mono text-xs text-muted">
-          révélé ch. {selected.revealedInChapter} — inchangé
+          {revealedAtLabel(selected.revealedInChapter)} — inchangé
         </p>
       )}
 

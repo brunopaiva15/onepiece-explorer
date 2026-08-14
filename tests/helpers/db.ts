@@ -93,20 +93,31 @@ export async function createEntity(
   return id
 }
 
+/**
+ * A name, with the chapter that gives it.
+ *
+ * `revealedInChapter` may be null: a name no chapter gives — a SBS answer, a
+ * databook entry — which the boundary policy withholds at every chapter. The
+ * schema then requires `revealSource`, so the helper takes it too rather than
+ * letting a fixture hit a constraint error and read as a broken test.
+ */
 export async function addLabel(
   world: SeededWorld,
   entityId: string,
   label: string,
   kind: string,
-  revealedInChapter: number,
+  revealedInChapter: number | null,
   precedence: number,
+  revealSource?: string,
 ): Promise<void> {
   await raw`
     INSERT INTO entity_labels
-      (entity_id, user_id, label, normalized_label, kind, revealed_in_chapter, precedence)
+      (entity_id, user_id, label, normalized_label, kind, revealed_in_chapter,
+       reveal_source, precedence)
     VALUES
       (${entityId}, ${world.userId}, ${label}, ${label.toLowerCase()},
-       ${kind}::label_kind, ${revealedInChapter}, ${precedence})
+       ${kind}::label_kind, ${revealedInChapter}, ${revealSource ?? null},
+       ${precedence})
   `
 }
 
