@@ -2,6 +2,7 @@ import 'server-only'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
 import { entities, entityLabels, events } from '@/db/schema/knowledge.ts'
+import { sameBeat } from '@/domains/knowledge/beats.ts'
 import { describeStoryTime, type StoryTimeView } from './timeline.ts'
 
 /**
@@ -37,6 +38,15 @@ import { describeStoryTime, type StoryTimeView } from './timeline.ts'
  * far truer than dropping it into a bin called « position inconnue », which is
  * what it used to get.
  */
+
+/**
+ * Inside a group, publication order breaks the tie and never crosses a chapter —
+ * the same rule the revelation axis uses, and for the same reason: everything a
+ * chapter reveals shares one number, so without a tie-break the order is
+ * whatever PostgreSQL felt like returning.
+ */
+const byChapter = (a: ChronologyEvent, b: ChronologyEvent): number =>
+  a.chapter - b.chapter || a.recordedAt - b.recordedAt
 
 export type Placement =
   /** The chapter gave a distance. The only rows with a real coordinate. */
@@ -125,27 +135,57 @@ export async function getChronology(
     }
   })
 
-  /*
-   * Inside a group, publication order breaks the tie and never crosses a
-   * chapter — the same rule the revelation axis uses, and for the same reason:
-   * everything a chapter reveals shares one number, so without a tie-break the
-   * order is whatever PostgreSQL felt like returning.
-   */
-  const byChapter = (a: ChronologyEvent, b: ChronologyEvent) =>
-    a.chapter - b.chapter || a.recordedAt - b.recordedAt
+  const told = oneEntryPerScene(all)
 
   return {
     ceiling,
-    dated: all
+    dated: told
       .filter((event) => event.placement.kind === 'dated')
       .sort((a, b) => {
         const left = a.placement as Extract<Placement, { kind: 'dated' }>
         const right = b.placement as Extract<Placement, { kind: 'dated' }>
         return right.yearsAgo - left.yearsAgo || byChapter(a, b)
       }),
-    earlier: all.filter((event) => event.placement.kind === 'earlier').sort(byChapter),
-    present: all.filter((event) => event.placement.kind === 'present').sort(byChapter),
+    earlier: told.filter((event) => event.placement.kind === 'earlier').sort(byChapter),
+    present: told.filter((event) => event.placement.kind === 'present').sort(byChapter),
   }
+}
+
+/**
+ * A scene told twice by two processings, counted once.
+ *
+ * The same fold the thread applies, for the same reason and by the same rule —
+ * see `oneBeadPerBeat` in `story.ts` and `sameBeat` in `knowledge/beats.ts`. A
+ * chapter read a second time produces a second set of summaries, worded
+ * differently, each its own entity; on the thread they are two beads one after
+ * the other, and here they are two rows on the axis, which is worse: the axis is
+ * what someone reads to count what has happened.
+ *
+ * Before the three buckets rather than inside each, because the two runs are
+ * free to disagree about `is_flashback` — one copy lands in « present » and the
+ * other in « earlier », and a fold applied per bucket would never see the pair.
+ *
+ * Compared within one chapter only. Two chapters recounting the same scene is
+ * not a duplicate, it is how a story tells you something again — and it is
+ * precisely what a flashback *is*.
+ */
+export function oneEntryPerScene(events: ChronologyEvent[]): ChronologyEvent[] {
+  /** The earliest telling wins, so the fold does not depend on row order. */
+  const walked = [...events].sort(byChapter)
+
+  const keptByChapter = new Map<number, ChronologyEvent[]>()
+  const kept = new Set<string>()
+
+  for (const event of walked) {
+    const text = event.summary ?? event.label
+    const told = keptByChapter.get(event.chapter) ?? []
+    if (told.some((earlier) => sameBeat(earlier.summary ?? earlier.label, text))) continue
+    told.push(event)
+    keptByChapter.set(event.chapter, told)
+    kept.add(event.entityId)
+  }
+
+  return events.filter((event) => kept.has(event.entityId))
 }
 
 /**
