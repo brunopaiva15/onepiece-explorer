@@ -243,6 +243,54 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     ],
   },
   {
+    canonical: 'Higuma',
+    aliases: ['higuma', 'higuma l’ours', 'higuma the bear'],
+    rows: [
+      /*
+       * The first poster the work ever shows, on the first page of chapter 1,
+       * and the first one a reader of this site can see. The picture is the one
+       * « Episode of Luffy » drew of it, which is why the line is pinned: the
+       * matcher refuses a file whose caption names a special, and cannot tell a
+       * non-canonical poster from a canonical poster drawn for television.
+       */
+      { chapter: 1, amount: 8_000_000, edition: 1, file: 'Higuma Bounty Poster.png' },
+    ],
+  },
+  {
+    canonical: 'Dorry',
+    aliases: ['dorry'],
+    rows: [
+      /*
+       * A hundred million at chapter 118, and no picture of it anywhere: the
+       * file the wiki calls « Dorry Wanted Poster.png » shows one billion eight
+       * hundred million, which is the printing of chapter 1130 after a century
+       * of inflation. Pinning the file to this row on the strength of its name
+       * would have put a thousand chapters of spoiler on the front page of
+       * anybody reading Little Garden.
+       */
+      { chapter: 118, amount: 100_000_000, edition: 1 },
+      {
+        chapter: 1130,
+        amount: 1_800_000_000,
+        edition: 2,
+        file: 'Dorry Wanted Poster.png',
+      },
+    ],
+  },
+  {
+    canonical: 'Brogy',
+    aliases: ['brogy', 'broggy'],
+    rows: [
+      { chapter: 118, amount: 100_000_000, edition: 1 },
+      {
+        chapter: 1130,
+        amount: 1_800_000_000,
+        edition: 2,
+        file: 'Brogy Wanted Poster.png',
+      },
+    ],
+  },
+  {
     canonical: 'Buggy',
     aliases: ['buggy', 'baggy', 'buggy le clown', 'baggy le clown', 'buggy the clown'],
     rows: [

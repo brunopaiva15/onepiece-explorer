@@ -114,6 +114,27 @@ describe('un fichier connu de la seule catégorie', () => {
     expect(isCanon(real)).toBe(true)
   })
 
+  /*
+   * A canonical poster drawn for television is still a canonical poster.
+   *
+   * Higuma's eight million is on the first page of chapter 1 and the only
+   * picture of it is captioned « as seen in Episode of Luffy ». `isCanon` reads
+   * that caption and says no, which is right for a film's invented poster and
+   * wrong for this one. It cannot tell them apart; a person can, and a pin is
+   * what that person leaves behind.
+   */
+  it('passe outre le filtre hors-canon, parce qu’une épingle est une décision', () => {
+    const higuma = {
+      title: 'File:Higuma Bounty Poster.png',
+      caption: "Higuma's wanted poster as seen in Episode of Luffy.",
+      section: 'East Blue Posters',
+    }
+    expect(isCanon(higuma)).toBe(false)
+
+    const row = { chapter: 1, amount: 8_000_000, edition: 1, file: 'Higuma Bounty Poster.png' }
+    expect(findPoster([higuma], luffy, row)?.entry.title).toBe('File:Higuma Bounty Poster.png')
+  })
+
   it('reste rattachable quand le manifeste le nomme', () => {
     const gallery = [{ title: "File:Koby's Wanted Poster.png", caption: '', section: CATEGORY }]
     const row = { chapter: 1, amount: 1, edition: 1, file: "Koby's Wanted Poster.png" }
