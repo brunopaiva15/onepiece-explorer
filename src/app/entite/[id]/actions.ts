@@ -1,10 +1,21 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { resolveBoundary } from '@/db/boundary.ts'
 import { requireOwner } from '@/domains/auth/session.ts'
+import {
+  entityCandidates,
+  type EntityCandidate,
+} from '@/domains/knowledge/candidates.ts'
 import type { LabelKind } from '@/domains/knowledge/label-kind.ts'
 import { renameEntityLabel, type RenameResult } from '@/domains/knowledge/rename.ts'
 import { retypeEntity, type RetypeResult } from '@/domains/knowledge/retype.ts'
+import {
+  retractAssertion,
+  reviseAssertion,
+  type RetractResult,
+  type ReviseResult,
+} from '@/domains/knowledge/revise.ts'
 
 export interface RenameActionResult {
   ok: boolean
@@ -15,6 +26,24 @@ export interface RenameActionResult {
 export interface RetypeActionResult {
   ok: boolean
   result?: RetypeResult
+  error?: string
+}
+
+export interface ReviseActionResult {
+  ok: boolean
+  result?: ReviseResult
+  error?: string
+}
+
+export interface RetractActionResult {
+  ok: boolean
+  result?: RetractResult
+  error?: string
+}
+
+export interface CandidatesActionResult {
+  ok: boolean
+  candidates?: EntityCandidate[]
   error?: string
 }
 
@@ -99,6 +128,114 @@ export async function retypeEntityAction(input: {
       ok: false,
       error:
         error instanceof Error ? error.message : 'Changement de type impossible.',
+    }
+  }
+}
+
+/**
+ * Correct a fact, from the fiche that states it.
+ *
+ * `requireOwner()` for the third time in this file and for the same reason: an
+ * action is a POST endpoint anyone can reach whether or not a button was
+ * rendered for them, and the ids in the body are the only things taken from the
+ * browser — the domain function re-reads both rows by owner before writing.
+ *
+ * Two fiches move, not one. « Baggy appartient à l'Équipage du Roux » is on
+ * Baggy's page and on the crew's, so a correction that leaves the second one
+ * standing has fixed half the defect; the corrected target gains the fact and is
+ * named here too. The graph draws the edge, the table lists it, the search
+ * indexes it and the timeline reads it, so all four follow.
+ */
+export async function reviseFactAction(input: {
+  assertionId: string
+  predicate?: string
+  objectEntityId?: string
+  objectValue?: string
+  comment?: string
+}): Promise<ReviseActionResult> {
+  try {
+    const session = await requireOwner()
+    const result = await reviseAssertion(session.userId, input)
+
+    revalidatePath(`/entite/${result.subjectEntityId}`)
+    if (result.fromEntityId) revalidatePath(`/entite/${result.fromEntityId}`)
+    if (result.toEntityId) revalidatePath(`/entite/${result.toEntityId}`)
+    revalidatePath('/graph')
+    revalidatePath('/graph/table')
+    revalidatePath('/recherche')
+    revalidatePath('/chronologie')
+
+    return { ok: true, result }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Correction impossible.',
+    }
+  }
+}
+
+/** Take a fact back. Same guard, same pages: it disappears from all of them. */
+export async function retractFactAction(input: {
+  assertionId: string
+  comment?: string
+}): Promise<RetractActionResult> {
+  try {
+    const session = await requireOwner()
+    const result = await retractAssertion(session.userId, input)
+
+    revalidatePath(`/entite/${result.subjectEntityId}`)
+    if (result.objectEntityId) revalidatePath(`/entite/${result.objectEntityId}`)
+    revalidatePath('/graph')
+    revalidatePath('/graph/table')
+    revalidatePath('/recherche')
+    revalidatePath('/chronologie')
+
+    return { ok: true, result }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Retrait impossible.',
+    }
+  }
+}
+
+/**
+ * Which entity did you mean — searched at the chapter you are reading at.
+ *
+ * A read, in a file of writes, and it stays here because it is one half of a
+ * correction: the form cannot offer a target it has not looked up. `requireOwner()`
+ * all the same — the structural test in tests/antispoiler forbids the read-only
+ * session helper anywhere in an action file, and it is right to: this returns
+ * names from a private library.
+ *
+ * The boundary comes from the page the form is on, clamped to the library's own
+ * ceiling. The fiche can be read at a rewound slider, and a correction made
+ * there must not be the one place that hands back a crew from four hundred
+ * chapters ahead.
+ */
+export async function factTargetsAction(input: {
+  query: string
+  boundary: number
+  accepts?: string[]
+  exclude?: string[]
+}): Promise<CandidatesActionResult> {
+  try {
+    const session = await requireOwner()
+    const candidates = await entityCandidates(
+      session.userId,
+      resolveBoundary(input.boundary, session.maxChapter),
+      {
+        query: input.query,
+        accepts: input.accepts,
+        exclude: input.exclude,
+      },
+    )
+
+    return { ok: true, candidates }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Recherche impossible.',
     }
   }
 }
