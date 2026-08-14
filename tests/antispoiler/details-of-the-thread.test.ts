@@ -36,6 +36,7 @@ const exec = promisify(execFile)
 
 let world: SeededWorld
 let zoro: string
+let sorrow: string
 let zeff: string
 let yasopp: string
 
@@ -76,9 +77,18 @@ beforeAll(async () => {
   await addPresence(world, zoro, { chapterNumber: 2, kind: 'mention' })
   await addPresence(world, zoro, { chapterNumber: 21, kind: 'appearance' })
 
-  // Le même homme, mal transcrit, entré comme un second nœud au chapitre 3.
-  const soro = await createEntity(world, 'character', 3)
-  await addLabel(world, soro, 'Soro', 'true_name', 3, 100)
+  /*
+   * Le loup d'Hermep, dont le nom est mal orthographié — et qui ressemble à
+   * « Zoro » d'assez près pour qu'une première version de ce script ait voulu
+   * le replier dedans. C'est pour ça qu'il est ici : la ressemblance de deux
+   * libellés n'établit rien, et le test le dit en gardant deux nœuds.
+   */
+  sorrow = await createEntity(world, 'character', 3)
+  await addLabel(world, sorrow, 'Soro', 'true_name', 3, 100)
+  const wolfScene = await createEntity(world, 'event', 3)
+  const wolfLine = 'Zoro a été arrêté pour avoir tué Soro, le loup d’Hermep.'
+  await addLabel(world, wolfScene, wolfLine, 'alias', 3, 10)
+  await addEvent(world, wolfScene, { summary: wolfLine, shownIn: 3 })
 
   // --- Zeff en trois nœuds, dont un rangé en concept ------------------------
   zeff = await createEntity(world, 'character', 43)
@@ -177,14 +187,46 @@ describe('l’entrée en scène de Zoro', () => {
     expect(mention?.chapter).toBe(2)
   })
 
-  it('replie « Soro » sur lui sans jamais l’afficher', async () => {
+  it('ne replie rien dans Zoro', async () => {
+    /*
+     * Le test de la faute évitée.
+     *
+     * « Soro » ressemble à « Zoro » à une lettre près, et c'est tout ce que
+     * cette ressemblance établit : c'est Sorrow, le loup d'Hermep, celui que
+     * Zoro tue et pour lequel il est arrêté. Une fusion aurait rangé un animal
+     * dans un personnage et donné à Zoro les faits du loup. Deux nœuds, donc,
+     * et cette assertion existe pour que la fusion ne revienne pas.
+     */
     const sheet = await getEntitySheet(world.userId, 48, zoro)
-    expect(sheet?.memberIds.length).toBe(2)
+    expect(sheet?.memberIds).toEqual([zoro])
     expect(sheet?.displayLabel).toBe('Roronoa Zoro')
-    // Conservé — la fusion n'efface rien —, mais sous un rang qui ne s'affiche
-    // jamais : c'est une transcription fautive, pas un nom.
-    const soro = sheet?.labels.find((label) => label.label === 'Soro')
-    expect(soro?.precedence).toBe(5)
+  })
+})
+
+describe('le loup d’Hermep, sous son nom', () => {
+  it('corrige l’orthographe sans toucher au chapitre', async () => {
+    const sheet = await getEntitySheet(world.userId, 48, sorrow)
+    expect(sheet?.displayLabel).toBe('Sorrow')
+    const name = sheet?.labels.find((label) => label.label === 'Sorrow')
+    // Le même nom, mieux écrit : le dater d'aujourd'hui ouvrirait dans le
+    // curseur un chapitre où l'animal n'aurait pas de nom.
+    expect(name?.revealedInChapter).toBe(3)
+  })
+
+  it('garde « Soro » trouvable par la recherche', async () => {
+    const [row] = await raw<Array<{ precedence: number }>>`
+      SELECT precedence FROM entity_labels
+       WHERE user_id = ${world.userId} AND label = 'Soro'
+    `
+    expect(row?.precedence).toBe(5)
+  })
+
+  it('fait suivre les phrases qui l’épelaient', async () => {
+    const [row] = await raw<Array<{ summary: string }>>`
+      SELECT summary FROM events
+       WHERE user_id = ${world.userId} AND shown_in_chapter = 3
+    `
+    expect(row?.summary).toBe('Zoro a été arrêté pour avoir tué Sorrow, le loup d’Hermep.')
   })
 })
 

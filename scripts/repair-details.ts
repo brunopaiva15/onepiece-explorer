@@ -27,12 +27,27 @@
  *      le fil lit à juste titre cette absence comme une absence de réponse.
  *      Donc la réponse, à la main, comme pour la mention du chapitre 2.
  *
- *   4. Une personne rangée en plusieurs nœuds. « Soro » est Zoro mal
- *      transcrit ; « Zeff aux Pieds Rouges » et « Zeff aux Pieds rouges » sont
- *      le surnom de Zeff, l'un rangé en personnage et l'autre en concept.
+ *   4. Une personne rangée en plusieurs nœuds. « Zeff aux Pieds Rouges » et
+ *      « Zeff aux Pieds rouges » sont le surnom de Zeff, l'un rangé en
+ *      personnage et l'autre en concept.
  *
  *   5. Ce qu'un nœud est. Sham et Buchi sont deux personnages rangés en
  *      groupes ; le groupe, ce sont les Nyaban Brothers, et il existe déjà.
+ *
+ * Et une correction qui n'est pas dans cette liste parce qu'elle a d'abord été
+ * écrite de travers, ce qui vaut d'être dit ici plutôt qu'oublié. « Soro » est
+ * un nœud du chapitre 3 que la ressemblance des deux mots faisait prendre pour
+ * Zoro mal transcrit ; il allait être replié dans Zoro. C'est Sorrow, le loup
+ * d'Hermep — celui que Zoro tue et pour lequel il est arrêté. La fusion aurait
+ * donc rangé un animal dans un personnage, irréversiblement du point de vue du
+ * lecteur, et la fiche de Zoro aurait porté les faits du loup.
+ *
+ * Ce que ce nœud demande n'est pas une fusion mais une orthographe, et le dépôt
+ * a déjà l'outil : `renameEntityLabel` corrige le mot, garde l'ancien trouvable
+ * par la recherche, enregistre la correction au glossaire pour les chapitres
+ * suivants et réécrit les phrases qui l'épellent. Une fusion n'est jamais la
+ * réparation d'une ressemblance de noms — c'est une affirmation sur ce que deux
+ * nœuds sont, et elle se vérifie ailleurs que dans l'orthographe.
  *
  * Rien n'est supprimé. Une entité en double est rejointe à sa jumelle par une
  * relation d'identité datée du chapitre — le mécanisme que le dépôt emploie
@@ -99,20 +114,43 @@ const PRESENCE: ReadonlyArray<{ label: string; chapter: number; kind: 'appearanc
   { label: 'Roronoa Zoro', chapter: 3, kind: 'appearance' },
 ]
 
-/** Deux nœuds pour une personne, nommément. */
+/**
+ * Deux nœuds pour une personne, nommément.
+ *
+ * Nommément, et pas par ressemblance : c'est la leçon de « Soro ». Ces deux-ci
+ * tiennent parce que le texte des chapitres le dit — le 47 fait reconnaître
+ * « Zeff aux Pieds Rouges » *en* Zeff, et le 48 raconte l'histoire de Zeff
+ * « surnommé aux pieds rouges ». Ce sont les phrases qui l'établissent, pas
+ * l'air de famille des libellés.
+ */
 const MERGES: ReadonlyArray<{ keep: string; drop: string; chapter: number }> = [
-  { keep: 'Roronoa Zoro', drop: 'Soro', chapter: 3 },
   { keep: 'Zeff', drop: 'Zeff aux Pieds Rouges', chapter: 47 },
   { keep: 'Zeff', drop: 'Zeff aux Pieds rouges', chapter: 48 },
+]
+
+/**
+ * Un nom mal orthographié, corrigé sans rien fusionner.
+ *
+ * `renameEntityLabel` est ce que fait le bouton « Renommer » de la fiche, et il
+ * fait plus qu'écrire un mot : il garde l'ancienne graphie trouvable par la
+ * recherche — c'est par elle que les catalogues d'illustrations retrouvent un
+ * personnage —, enregistre la correction au glossaire pour que les chapitres
+ * suivants ne reposent pas la question, et réécrit les résumés et les questions
+ * qui l'épellent en toutes lettres. Le chapitre de révélation ne bouge pas :
+ * c'est le même nom, mieux écrit.
+ */
+const RENAMES: ReadonlyArray<{ from: string; to: string; why: string }> = [
+  { from: 'Soro', to: 'Sorrow', why: 'le loup d’Hermep, au chapitre 3' },
 ]
 
 /**
  * Ce qu'un libellé est, une fois la fusion faite.
  *
  * Sans ça, une fusion se retourne contre elle-même. Les deux libellés d'une
- * composante se disputent l'affichage à la précédence, et « Soro » — enregistré
- * comme un vrai nom au chapitre 3 — battrait « Roronoa Zoro » révélé au 2. La
- * fusion aurait donc pour effet visible de remplacer le nom juste par le faux.
+ * composante se disputent l'affichage à la précédence, et « Zeff aux Pieds
+ * Rouges » — enregistré comme un vrai nom au chapitre 47 — battrait « Zeff »
+ * révélé au 43. La fusion aurait donc pour effet visible de remplacer le nom
+ * par le surnom.
  *
  * « Yassop » n'a rien à voir avec une fusion et se répare pareil : c'est la
  * graphie que la source emploie, gardée pour que les catalogues d'illustrations
@@ -125,7 +163,6 @@ const RECLASSIFY: ReadonlyArray<{
   precedence: number
   why: string
 }> = [
-  { label: 'Soro', kind: 'alias', precedence: 5, why: 'transcription fautive de Zoro' },
   { label: 'Yassop', kind: 'alias', precedence: 5, why: 'graphie de la source' },
   {
     label: 'Zeff aux Pieds Rouges',
@@ -182,6 +219,9 @@ async function main(): Promise<void> {
 
     console.log('\nPRÉSENCES')
     for (const presence of PRESENCE) await statePresence(sql, work, presence, bump)
+
+    console.log('\nORTHOGRAPHES')
+    for (const rename of RENAMES) await renameLabel(sql, work, rename, bump)
 
     console.log('\nENTITÉS EN DOUBLE')
     for (const merge of MERGES) await mergeNamed(sql, work, merge, bump)
@@ -322,6 +362,66 @@ async function statePresence(
             ${presence.kind}, true, ${presence.chapter})
   `
   bump('présences')
+}
+
+/**
+ * Un mot corrigé, par la fonction que le bouton « Renommer » appelle.
+ *
+ * Plutôt qu'un UPDATE : celui-ci n'écrirait que le libellé, et laisserait
+ * l'ancienne graphie introuvable, le glossaire muet — donc la question reposée
+ * au prochain chapitre — et les résumés qui épellent le nom inchangés. La
+ * fonction du domaine fait les quatre, et elle est déjà testée.
+ */
+async function renameLabel(
+  sql: postgres.Sql,
+  work: Work,
+  rename: { from: string; to: string; why: string },
+  bump: (key: string, by?: number) => number,
+): Promise<void> {
+  const { renameEntityLabel, SEARCH_ONLY_PRECEDENCE } = await import(
+    '../src/domains/knowledge/rename.ts'
+  )
+
+  /*
+   * Le nom *affiché*, et pas la graphie gardée pour la recherche.
+   *
+   * C'est ce qui rend l'opération rejouable, et il a fallu une seconde
+   * exécution pour le voir : renommer garde l'ancienne forme dans la table,
+   * sous une précédence qui l'empêche de s'afficher. Une recherche par libellé
+   * seul la retrouve donc au tour suivant et la renomme encore — le script
+   * n'écrivait plus rien d'utile mais ne disait jamais « déjà fait ». La clause
+   * de précédence dit ce qu'on cherche : le mot que la fiche montre.
+   */
+  const [row] = await sql<Array<{ id: string }>>`
+    SELECT l.id
+      FROM entity_labels l
+      JOIN entities en ON en.id = l.entity_id
+     WHERE l.user_id = ${work.user_id} AND l.label = ${rename.from}
+       AND l.precedence > ${SEARCH_ONLY_PRECEDENCE}
+       AND en.review_status = 'accepted'
+     LIMIT 1
+  `
+  if (!row) {
+    const [already] = await sql<Array<{ n: string }>>`
+      SELECT count(*)::text AS n FROM entity_labels
+       WHERE user_id = ${work.user_id} AND label = ${rename.to}
+    `
+    console.log(
+      already && already.n !== '0'
+        ? `  = « ${rename.from} » → « ${rename.to} » déjà fait`
+        : `  ! « ${rename.from} » introuvable`,
+    )
+    return
+  }
+
+  console.log(`  → « ${rename.from} » → « ${rename.to} » (${rename.why})`)
+  if (dryRun) return
+
+  const result = await renameEntityLabel(work.user_id, { labelId: row.id, label: rename.to })
+  if (result.proseRewritten > 0) {
+    console.log(`      ${result.proseRewritten} phrase(s) qui l’épelaient ont suivi`)
+  }
+  bump('orthographes')
 }
 
 /** Deux nœuds pour une personne, désignés par leurs libellés. */
