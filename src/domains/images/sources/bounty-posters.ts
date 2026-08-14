@@ -274,14 +274,27 @@ export function findPoster(
   character: BountyHistory,
   bounty: Bounty,
 ): PosterMatch | null {
-  const canon = gallery.filter(isCanon)
-
+  /*
+   * A pin reaches any file, canonical heading or not.
+   *
+   * `isCanon` answers « is this poster a chapter's », and it answers it from a
+   * name and a caption, which conflates two different things: a poster that
+   * only exists in a film, and a canonical poster *drawn* in one. Higuma's
+   * eight million is on the first page of chapter 1, and the only picture of it
+   * the wiki holds is captioned « as seen in Episode of Luffy ». The bounty is
+   * canon, the chapter is canon, the rendering is a television special's.
+   *
+   * The heuristic cannot tell those apart from a caption and should not try.
+   * A person looking at the picture can, and that is what a pin is.
+   */
   if (bounty.file) {
     const wanted = `file:${bounty.file}`.toLowerCase().replace(/_/g, ' ')
-    const named = canon.find((entry) => entry.title.toLowerCase() === wanted)
+    const named = gallery.find((entry) => entry.title.toLowerCase() === wanted)
     if (named) return { entry: named, score: 1000, why: 'fichier nommé dans le manifeste' }
     return null
   }
+
+  const canon = gallery.filter(isCanon)
 
   let best: PosterMatch | null = null
 
