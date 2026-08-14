@@ -692,6 +692,56 @@ describe('the faces on the thread', () => {
     expect(at(page, 1, 'entree')[0]!.portrait).toBeNull()
     expect(at(page, 3, 'nom')[0]!.portrait).not.toBeNull()
   })
+
+  /*
+   * A busy chapter used to run out of faces, and the ones it dropped were the
+   * ones the reader was looking at.
+   *
+   * The thread asked for a fixed number of portraits per chapter, and the order
+   * it asked in was « longest label first » — a tie-break borrowed from the
+   * regex that cuts the sentences, which has nothing to say about what the page
+   * draws. So a chapter carrying twenty walk-ons with long descriptive names
+   * spent the whole allowance on them, and « Smoker bloque Luffy et Sanji »
+   * came out with a face beside Luffy and nothing beside the other two.
+   *
+   * Twenty here, against an allowance that used to be sixteen.
+   */
+  it('runs out of nothing, however many faces a chapter needs', async () => {
+    const crowd = 20
+    for (let index = 0; index < crowd; index += 1) {
+      const walkOn = await createEntity(world, 'character', 1)
+      await addLabel(world, walkOn, `Marin de garde numéro ${index} de Logue Town`, 'true_name', 1, 100)
+      await addPortrait(world, walkOn, {
+        matchedLabel: `Marin de garde numéro ${index} de Logue Town`,
+        revealedIn: 1,
+      })
+    }
+
+    for (const name of ['Smoker', 'Luffy', 'Sanji']) {
+      const character = await createEntity(world, 'character', 1)
+      await addLabel(world, character, name, 'true_name', 1, 100)
+      await addPortrait(world, character, { matchedLabel: name, revealedIn: 1 })
+    }
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Smoker bloque Luffy et Sanji, et les bat sans effort.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const page = await read(1, 1, 4)
+    const parts = at(page, 1, 'evenement')[0]!.textParts
+
+    expect(parts!.filter((part) => part.portrait).map((part) => part.text)).toEqual([
+      'Smoker',
+      'Luffy',
+      'Sanji',
+    ])
+
+    // And the walk-ons keep theirs: this is not a budget moved elsewhere.
+    expect(
+      at(page, 1, 'entree').filter((beat) => beat.portrait !== null),
+    ).toHaveLength(crowd + 3)
+  })
 })
 
 describe('a library with nothing in it', () => {
