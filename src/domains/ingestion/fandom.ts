@@ -31,6 +31,9 @@ const ENDPOINTS = {
     /** The section holding the detailed retelling, and its near misses. */
     section: 'Long Summary',
     aliases: ['long summary'],
+    /** « Quick Reference → Chapter Notes ». See `fetchNotes` for why. */
+    notesSection: 'Chapter Notes',
+    notesAliases: ['chapter notes'],
     url: (chapter: number) => `https://onepiece.fandom.com/wiki/Chapter_${chapter}`,
   },
   fr: {
@@ -38,6 +41,18 @@ const ENDPOINTS = {
     page: (chapter: number) => `Chapitre ${chapter}`,
     section: 'Résumé approfondi',
     aliases: ['résumé approfondi', 'resume approfondi', 'résumé détaillé'],
+    /*
+     * « Informations → Notes », and nothing that merely resembles it.
+     *
+     * The `includes` fallback that serves the summaries would be a trap here: a
+     * page carrying « Notes et références » or « Notes de l'auteur » would
+     * answer to it, and a bibliography would be stored as though the chapter
+     * were telling it. An exact heading or no notes at all — the same rule
+     * `sectionIndex` already applies to the summaries, applied more strictly
+     * because the word is a common one.
+     */
+    notesSection: 'Notes',
+    notesAliases: ['notes du chapitre'],
     url: (chapter: number) => `https://onepiece.fandom.com/fr/wiki/Chapitre_${chapter}`,
   },
 } as const
@@ -51,8 +66,26 @@ export interface FandomSummary {
   url: string
   /** The section heading as the wiki actually spells it today. */
   section: string
-  /** Paragraphs, already stripped of markup. Blank when nothing was found. */
+  /**
+   * The whole citable body: the detailed summary, then the chapter notes.
+   *
+   * One text rather than two fields to store, because passages are what the
+   * pipeline reads and a passage does not care which heading it came from. What
+   * the split would buy — showing the reviewer where the notes start — is
+   * bought instead by `notes`, which keeps the same paragraphs on their own for
+   * the form to count.
+   */
   text: string
+  /**
+   * The chapter notes alone, empty when the page has none.
+   *
+   * Reported rather than hidden: a chapter whose notes are missing looks
+   * exactly like one whose notes were not asked for, and the form is where that
+   * difference is worth seeing.
+   */
+  notes: string
+  /** The notes heading as spelled today, or null when there were none. */
+  notesSection: string | null
 }
 
 export interface FandomFetch {
@@ -178,7 +211,7 @@ export async function fetchChapterSummaries(
  */
 export const MAX_RANGE_LENGTH = 20
 
-/** How many chapters are in flight at once. Four requests each, so: politely. */
+/** How many chapters are in flight at once. Six requests each, so: politely. */
 const RANGE_CONCURRENCY = 3
 
 export interface FandomRangeEntry {
@@ -305,7 +338,71 @@ async function fetchOne(
     )
   }
 
-  return { language, page, url: endpoint.url(chapterNumber), section: index.name, text }
+  const notes = await fetchNotes(language, page, sections, fetcher)
+
+  return {
+    language,
+    page,
+    url: endpoint.url(chapterNumber),
+    section: index.name,
+    // The notes come after the retelling, which is the order the page itself
+    // uses and the order they read in: the story, then what to remember of it.
+    text: notes ? `${text}\n\n${notes.text}` : text,
+    notes: notes?.text ?? '',
+    notesSection: notes?.section ?? null,
+  }
+}
+
+/**
+ * The chapter notes, when the page has them.
+ *
+ * « Quick Reference → Chapter Notes », « Informations → Notes ». A dozen lines
+ * per chapter that the long summary genuinely does not contain: who appears for
+ * the first time, what a scene establishes, and — the reason this exists — the
+ * flat statements the retelling dilutes into three sentences of drama.
+ * « Arlong kills Bell-mère » is one line of the notes of chapter 78 and no
+ * sentence of its Long Summary says it that plainly.
+ *
+ * Citable, like the summary, and that is the point rather than a side effect:
+ * the graph can only ever hold what its citable text states, so notes stored
+ * anywhere else would be facts the reviewer can read and the pipeline cannot
+ * propose. They are appended verbatim, with no heading of ours inserted between
+ * them and the retelling — an invented line is one a proposal could cite, and a
+ * citation must always land on something the wiki wrote.
+ *
+ * Never fatal. The section is optional on both wikis and absent on plenty of
+ * chapters; a chapter is perfectly importable without it, and losing a summary
+ * because its notes 404'd would be a bad trade. The section index is read from
+ * the sections payload the caller already fetched, so a page with no notes
+ * costs no extra request at all.
+ */
+async function fetchNotes(
+  language: FandomLanguage,
+  page: string,
+  sections: unknown,
+  fetcher: Fetcher,
+): Promise<{ text: string; section: string } | null> {
+  const endpoint = ENDPOINTS[language]
+  const index = sectionIndex(sections, endpoint.notesSection, endpoint.notesAliases)
+  if (index === null) return null
+
+  try {
+    const body = await call(fetcher, endpoint.api, {
+      action: 'parse',
+      page,
+      section: index.index,
+      prop: 'text',
+      format: 'json',
+    })
+
+    const html = readPath(body, ['parse', 'text', '*'])
+    if (typeof html !== 'string') return null
+
+    const text = htmlToParagraphs(html)
+    return text.length > 0 ? { text, section: index.name } : null
+  } catch {
+    return null
+  }
 }
 
 async function call(
@@ -384,6 +481,15 @@ function sectionIndex(
  * flattened. A navigation table rendered as text would become a passage of
  * chapter numbers, and a passage is a citable unit: a fact anchored to a row of
  * links is a fact whose evidence proves nothing.
+ *
+ * A block ends at the next list boundary as well as at its own closing tag, and
+ * that clause is what makes the chapter notes readable. They are nested lists —
+ * a bullet, and under it the three things it covers — where the outer `<li>`
+ * closes only after its children. Matched to its own `</li>`, the parent would
+ * swallow its first child and leave the others behind it: « Nami's flashback
+ * continues. Arlong declares that for every village to stay alive… » as one
+ * passage, and the two bullets after it as two more. The lookahead cuts each
+ * bullet where the eye cuts it.
  */
 export function htmlToParagraphs(html: string): string {
   const cleaned = html
@@ -393,7 +499,9 @@ export function htmlToParagraphs(html: string): string {
     .replace(/<span\b[^>]*class="[^"]*mw-editsection[^"]*"[\s\S]*?<\/span>/gi, '')
     .replace(/<h[1-6][\s\S]*?<\/h[1-6]>/gi, '')
 
-  const blocks = [...cleaned.matchAll(/<(p|li)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map((match) =>
+  const blocks = [
+    ...cleaned.matchAll(/<(p|li)\b[^>]*>([\s\S]*?)(?=<\/\1\b|<\/?(?:li|ul|ol)\b)/gi),
+  ].map((match) =>
     decodeEntities(stripTags(match[2] ?? ''))
       .replace(/\s+/g, ' ')
       .trim(),
