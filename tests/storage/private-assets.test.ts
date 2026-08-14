@@ -103,6 +103,41 @@ describe('signed URLs', () => {
     expect(params.get('sig')).toMatch(/^[0-9a-f]{64}$/)
   })
 
+  /*
+   * The batch form, which is what every page that shows more than one picture
+   * uses. On the remote driver it is one request instead of one per file, and
+   * that is what let the story thread stop rationing faces per chapter.
+   */
+  it('signs a whole list, and answers per key', async () => {
+    const keys = [key, 'user-a/chap-1/original/page-02.webp', key]
+    const urls = await store.signedUrls(keys, 60)
+
+    expect(urls.size).toBe(2)
+    for (const [signedKey, url] of urls) {
+      expect(await verifyUrl(signedKey, url)).toBe(true)
+    }
+  })
+
+  it('drops a key it cannot sign rather than losing the rest', async () => {
+    const urls = await store.signedUrls(
+      [key, 'user-a/../user-b/secret.webp'],
+      60,
+    )
+
+    expect([...urls.keys()]).toEqual([key])
+  })
+
+  /** Re-read a signed URL the way /api/assets does. */
+  async function verifyUrl(signedKey: string, url: string): Promise<boolean> {
+    const params = new URL(url, 'http://localhost').searchParams
+    return verifySignature(
+      SECRET,
+      signedKey,
+      Number(params.get('exp')),
+      params.get('sig') ?? '',
+    )
+  }
+
   it('accepts its own signature', () => {
     const exp = Math.floor(Date.now() / 1000) + 60
     expect(verifySignature(SECRET, key, exp, signKey(SECRET, key, exp))).toBe(true)

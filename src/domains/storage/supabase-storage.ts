@@ -12,6 +12,9 @@ import { assertSafeKey, type StorageAdapter } from './adapter.ts'
  *
  * Uses the service-role key and therefore never runs in the browser.
  */
+/** Paths per signing request. See signedUrls(). */
+const SIGN_CHUNK = 200
+
 export class SupabaseStorage implements StorageAdapter {
   readonly name = 'supabase'
   private readonly client: SupabaseClient
@@ -85,6 +88,47 @@ export class SupabaseStorage implements StorageAdapter {
       throw new Error(`Impossible de signer l'URL (${key}) : ${error?.message}`)
     }
     return data.signedUrl
+  }
+
+  /**
+   * Every key in one POST.
+   *
+   * `createSignedUrls` takes a list and answers a list, so a page showing forty
+   * portraits costs one request instead of eighty. The chunk is there because
+   * the request body is a JSON array of paths and nothing on the other side
+   * promises to accept an unbounded one; two hundred is comfortably below any
+   * limit anyone has hit and still turns every realistic page into one call.
+   *
+   * Per-key failures come back *inside* the successful response, one `error`
+   * field per path. They are skipped rather than thrown: a picture whose file
+   * has gone missing should cost the reader that picture, not the page.
+   */
+  async signedUrls(
+    keys: string[],
+    ttlSeconds?: number,
+  ): Promise<Map<string, string>> {
+    const unique = [...new Set(keys)]
+    unique.forEach(assertSafeKey)
+
+    const out = new Map<string, string>()
+    for (let start = 0; start < unique.length; start += SIGN_CHUNK) {
+      const chunk = unique.slice(start, start + SIGN_CHUNK)
+      const { data, error } = await this.client.storage
+        .from(this.bucket)
+        .createSignedUrls(chunk, ttlSeconds ?? this.defaultTtl)
+
+      if (error || !data) {
+        throw new Error(
+          `Impossible de signer ${chunk.length} URL(s) : ${error?.message}`,
+        )
+      }
+
+      for (const row of data) {
+        if (row.error || !row.path || !row.signedUrl) continue
+        out.set(row.path, row.signedUrl)
+      }
+    }
+    return out
   }
 
   /**

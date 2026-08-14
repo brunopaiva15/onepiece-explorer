@@ -28,6 +28,21 @@ export interface StorageAdapter {
   /** Short-lived, single-asset URL. Never cached in a shared cache. */
   signedUrl(key: string, ttlSeconds?: number): Promise<string>
 
+  /**
+   * The same, for many keys at once.
+   *
+   * Not a convenience wrapper: for the remote driver this is one HTTP round
+   * trip where the loop is one per key, and that difference is what decides
+   * whether a page can show every picture it has or has to ration them. A page
+   * of thirty portraits was sixty requests to somebody else's API, so the
+   * callers grew caps — and a cap on how many faces a page may sign is a cap
+   * that falls on whichever face happens to sort last.
+   *
+   * A key that cannot be signed is absent from the result rather than an error.
+   * One missing file must not cost a page all its other pictures.
+   */
+  signedUrls(keys: string[], ttlSeconds?: number): Promise<Map<string, string>>
+
   remove(keys: string[]): Promise<void>
 
   exists(key: string): Promise<boolean>
