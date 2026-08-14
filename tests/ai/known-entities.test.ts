@@ -72,6 +72,22 @@ describe('the extraction prompt', () => {
   })
 
   /*
+   * And says which end is which.
+   *
+   * Told that the open questions sit in the validated entity list and asked
+   * which of them this chapter closes, the model pointed the relation from the
+   * question to the question — « Qui a fait exploser le rhum de Dorry ? —
+   * résout le mystère — Qui a fait exploser le rhum de Dorry ? » — and the
+   * ontology, written with `ANY_ENTITY` for that subject, agreed. Accepting it
+   * closed the question for ever, on nothing.
+   */
+  it('says that the subject of a resolution is what answers, never the question', () => {
+    const prompt = extractionSystem('(ontologie)', 'summary')
+    expect(prompt).toMatch(/Le sujet est ce qui répond, jamais la question/)
+    expect(prompt).toMatch(/ne se résout pas\s+elle-même/)
+  })
+
+  /*
    * `events.story_time` was in the schema from the first migration and no field
    * ever asked for it, so it was null in every library and the chronology
    * reported — accurately — that nothing had a position in story time.
@@ -111,6 +127,6 @@ describe('the extraction prompt', () => {
   it('carries a version that moved with the wording', () => {
     // Stored on every assertion the model proposes. Without a bump, a run
     // before this change and a run after it are indistinguishable in the record.
-    expect(PROMPT_VERSION).toBe('10')
+    expect(PROMPT_VERSION).toBe('11')
   })
 })

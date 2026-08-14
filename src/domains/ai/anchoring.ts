@@ -46,6 +46,7 @@ export type QuarantineReason =
   | 'unknown_subject'
   | 'unknown_object'
   | 'literal_object'
+  | 'self_reference'
   | 'empty_excerpt'
 
 export interface Quarantined {
@@ -529,6 +530,45 @@ export function filterExtraction(
      * not silently lost: the panel says the object must be an entity, which is
      * also the sentence that prevents the next occurrence.
      */
+    /*
+     * Nothing is related to itself.
+     *
+     * « Qui a fait exploser le rhum de Dorry ? — résout le mystère — Qui a fait
+     * exploser le rhum de Dorry ? » is what this catches: the model, handed the
+     * open questions among the validated entities and asked which of them this
+     * chapter answers, points the relation back at the question instead of at
+     * the scene that answers it. Both ends are the same identifier, every other
+     * check agrees, and the card in review shows the same sentence twice.
+     *
+     * The ontology now refuses a question as the subject of the three mystery
+     * predicates, which covers that case at the type level. This is the general
+     * statement, and it is worth making on its own: a relation joins two things,
+     * and one thing is not two. « Zoro rencontre Zoro » says nothing either, and
+     * on an identity predicate a loop would join a node to itself in the
+     * union-find for ever.
+     *
+     * Compared on the identifier before it is resolved, so it catches what the
+     * response wrote. The same loop can also be *created* later — publication
+     * joins a proposal to an entity already in the graph by its label, and two
+     * different identifiers can land on one row — which is why publication
+     * checks again on the resolved ids.
+     */
+    if (
+      assertion.object !== null &&
+      assertion.object.trim().length > 0 &&
+      assertion.object.trim() === assertion.subject.trim()
+    ) {
+      quarantined.push({
+        reason: 'self_reference',
+        detail:
+          `« ${assertion.predicate} » joint « ${assertion.subject} » à lui-même. ` +
+          `Une relation joint deux choses distinctes : une question ne se résout pas ` +
+          `elle-même, et rien ne se rencontre soi-même.`,
+        payload: assertion,
+      })
+      continue
+    }
+
     const literal = assertion.object_value?.trim() ?? ''
     const hasEntityObject = assertion.object !== null && assertion.object.length > 0
     const allowsLiteral = ontology.literalObjects?.has(assertion.predicate) ?? false
