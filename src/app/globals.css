@@ -904,8 +904,9 @@ hr.regle {
   margin: 2.6rem 0 0.6rem;
   /* Jumped to, the notch stops below the pinned chrome rather than under it —
      landing on a chapter whose number is hidden by the search bar reads as
-     having landed on the wrong one. */
-  scroll-margin-top: 7rem;
+     having landed on the wrong one. The extra room is the arc label, which
+     hangs above the notch and would otherwise be the part that goes under. */
+  scroll-margin-top: 8.2rem;
 }
 
 .encoche::before {
@@ -916,6 +917,28 @@ hr.regle {
   width: 1.7rem;
   height: 3px;
   background: var(--ink);
+}
+
+/* The arc, over the chapter number.
+ *
+ * Out of the notch's flow on purpose. In it, the label would be a first line
+ * pushing the number down, and the tick is positioned against the notch rather
+ * than against the number — it would end up pointing at the word « Alabasta »
+ * instead of at chapter 155. Above it, in the margin the notch already leaves,
+ * nothing else has to move.
+ *
+ * One line, always: an arc name that wrapped would climb into the bead above. */
+.encoche-arc {
+  position: absolute;
+  top: -1rem;
+  left: 0;
+  max-width: 100%;
+  /* Room for the accents: « Île » set at a line-height of 1 loses its
+     circumflex to the clipping that keeps a long name on one line. */
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .encoche-numero {

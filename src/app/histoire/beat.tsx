@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Portrait } from '@/app/components/portrait.tsx'
+import { arcOf } from '@/domains/temporal/arcs.ts'
 import type { StoryBeat, StoryPart } from '@/domains/temporal/story.ts'
 
 /**
@@ -34,8 +35,22 @@ const EVENT_KINDS = new Set<StoryBeat['kind']>(['evenement', 'souvenir'])
 
 export function Beat({ beat }: { beat: StoryBeat }) {
   if (beat.kind === 'chapitre') {
+    /*
+     * Which arc this is, above the number.
+     *
+     * On every notch rather than only where the arc turns over. The thread is
+     * one page of a thousand chapters and the reader arrives in the middle of
+     * it — by the corner jump, by a link, by having scrolled for a while — so a
+     * signpost planted only at chapter 155 answers « where am I » for exactly
+     * one of the sixty-three chapters of Alabasta. Repeated, it is a running
+     * head: small, muted, above the number, read when looked for and otherwise
+     * not noticed.
+     */
+    const arc = arcOf(beat.chapter)
+
     return (
       <li className="encoche" id={`ch-${beat.chapter}`}>
+        {arc && <span className="cartouche encoche-arc">{arc.name}</span>}
         <span className="chiffre encoche-numero">{beat.chapter}</span>
         {beat.text && <span className="encoche-titre">{beat.text}</span>}
       </li>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Beat } from './beat.tsx'
+import { arcOf } from '@/domains/temporal/arcs.ts'
 import type { StoryBeat } from '@/domains/temporal/story.ts'
 
 /**
@@ -76,6 +77,9 @@ export function StoryScroller({
     setLoading(false)
     setFailed(false)
   }
+
+  /** The arc the thread stops in — which is the arc the reader is in. */
+  const end = arcOf(lastChapter)
 
   const sentinel = useRef<HTMLDivElement | null>(null)
   /** Guards against a second fetch for a stretch already in flight. */
@@ -188,6 +192,10 @@ export function StoryScroller({
           <p className="fil-fin">
             <span className="cartouche">Le fil s&apos;arrête au chapitre</span>
             <span className="chiffre chiffre-xl">{lastChapter}</span>
+            {/* Where the reader is, named. The number is the boundary, and the
+                arc is the same fact in the words people use when they say how
+                far they have got. */}
+            {end && <span className="cartouche">{end.name}</span>}
           </p>
         )}
       </div>
