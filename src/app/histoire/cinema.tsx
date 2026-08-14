@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { credit, planShots, progressOf, RATES, type Shot } from './shots.ts'
+import { planShots, progressOf, RATES, type Shot } from './shots.ts'
+import type { DisplayImage } from '@/domains/images/index.ts'
 import type { StoryBeat } from '@/domains/temporal/story.ts'
 
 /**
@@ -24,10 +25,17 @@ import type { StoryBeat } from '@/domains/temporal/story.ts'
  *  2. **It can always be stopped.** Play, pause, step either way, speed, close
  *     — with the keyboard as well as with the mouse, and Escape at any moment.
  *     Motion that cannot be stopped is motion nobody can read.
- *  3. **A picture still says where it came from.** A portrait is the easiest
- *     thing in an interface to believe and these are name matches against fan
- *     catalogues, so the attribution rides along, blown up with everything
- *     else, rather than being the one thing full-screen mode drops.
+ *  3. **A picture that will not load loses its frame, not its shot.** These
+ *     addresses are signed and expire, and a film runs far longer than one
+ *     signature lives: a face that fails asks for a fresh address and comes
+ *     back, and one that cannot be recovered leaves the sentence standing on
+ *     its own rather than a black rectangle standing in for it.
+ *
+ * The film carries no caption. On the thread each face sits beside the name it
+ * was matched to, and a full-size portrait names its catalogue and that name;
+ * here the pictures are the shot and a line of provenance under every one of
+ * them was three seconds of small print between two sentences. The thread
+ * below is where a reader checks a face, and `/entite` behind it.
  *
  * A `<dialog>` opened with `showModal()` rather than a div with a high
  * `z-index`: the browser puts it in the top layer, makes the rest of the page
@@ -58,6 +66,13 @@ interface Props {
   failed: boolean
   /** Ask the scroller for the next window. Idempotent while one is in flight. */
   onNeedMore: () => void
+  /**
+   * Ask the scroller to re-fetch a stretch, for the signatures on its faces.
+   * Idempotent per chapter while one is in flight.
+   */
+  onRefresh: (chapter: number) => void
+  /** Whether a chapter's beads are old enough for their addresses to be. */
+  isStale: (chapter: number) => boolean
   /** Closed, on the chapter it stopped at — the page below scrolls there. */
   onClose: (chapter: number) => void
   start: number
@@ -70,6 +85,8 @@ export function Cinema({
   loading,
   failed,
   onNeedMore,
+  onRefresh,
+  isStale,
   onClose,
   start,
   lastChapter,
@@ -134,13 +151,59 @@ export function Cinema({
   }, [hasMore, index, shots.length, onNeedMore])
 
   /*
+   * A face that did not answer, and the second chance the film gives it.
+   *
+   * An address here is signed and expires — a minute, by default — and a film
+   * runs for a great deal longer than that. The window it came in was preloaded
+   * on arrival, which puts the bytes in the browser's cache while the signature
+   * is still good; when that is not enough, the fix is not to hide the picture,
+   * it is to ask for a new address. So a broken image asks the scroller to
+   * re-fetch that stretch, and the fresh beads come back with fresh signatures.
+   *
+   * Once per *picture*, and which of the two identities a picture has does the
+   * guarding is the whole of whether this terminates. Signing is not
+   * idempotent: ask twice and the same file comes back under two addresses. So
+   * a set of addresses guards nothing — the retry produces a URL it has never
+   * seen, which fails, which retries, which is a loop against the API for as
+   * long as the reel is open. The catalogue page is the same for every
+   * signature of the same file, so it is what counts the attempt.
+   *
+   * Two goes per picture, then: the one that expired and the one that was
+   * freshly signed. If the second fails too, the file is gone rather than
+   * stale, and the shot plays without it.
+   */
+  const retried = useRef<Set<string>>(new Set())
+  const broke = useCallback(
+    (image: DisplayImage, chapter: number): void => {
+      setBroken((was) => (was.has(image.url) ? was : new Set(was).add(image.url)))
+      if (retried.current.has(image.sourceUrl)) return
+      retried.current.add(image.sourceUrl)
+      onRefresh(chapter)
+    },
+    [onRefresh],
+  )
+
+  /*
+   * And the same ask, before anything breaks.
+   *
+   * The reactive path above costs a blink: the reader sees the frame fail and
+   * then fill. Entering a chapter whose beads were fetched long enough ago that
+   * their signatures are doubtful, the film re-asks for them first — one
+   * request that re-signs the next six chapters, and the shots play against
+   * addresses minted seconds earlier.
+   */
+  useEffect(() => {
+    if (shot !== null && isStale(shot.chapter)) onRefresh(shot.chapter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shot?.chapter, isStale, onRefresh])
+
+  /*
    * Every picture, fetched the moment its window arrives.
    *
-   * Not when the shot comes up. A signed URL lives about a minute and a window
-   * is six chapters, so a film that waited until it needed a face would be
-   * asking for a signature minted several minutes earlier and getting a 403 on
-   * the shots furthest into the window — the exact opposite of the failure one
-   * would design for. Fetched on arrival the bytes land in the HTTP cache
+   * Not when the shot comes up. A film that waited until it needed a face would
+   * be asking for a signature minted several minutes earlier and getting a 403
+   * on the shots furthest into the window — the exact opposite of the failure
+   * one would design for. Fetched on arrival the bytes land in the HTTP cache
    * while the address is still good, and the shot that eventually shows them
    * is a cache hit against the same URL.
    */
@@ -151,13 +214,11 @@ export function Cinema({
         if (asked.current.has(image.url)) continue
         asked.current.add(image.url)
         const probe = new window.Image()
-        probe.onerror = () => {
-          setBroken((was) => new Set(was).add(image.url))
-        }
+        probe.onerror = () => broke(image, shot.chapter)
         probe.src = image.url
       }
     }
-  }, [shots])
+  }, [shots, broke])
 
   const step = useCallback(
     (by: number): void => {
@@ -214,9 +275,10 @@ export function Cinema({
         * region that is itself replaced announces nothing. So the region is the
         * container and the shots change inside it.
         *
-        * Everything on the card is announced, the credit line included. It is
-        * wordy, and the alternative was to hide the provenance from exactly the
-        * readers who cannot see the picture it belongs to.
+        * What is announced is the card: its label, its line, its second line.
+        * That is all the card carries now — the film shows the pictures and
+        * says nothing about them, provenance included, which is the thread's
+        * job and `/entite` after it.
         */}
       <div className="cine-plateau" aria-live="polite">
         <div className="cine-scene" key={shot?.id ?? (done ? 'fin' : 'attente')}>
@@ -232,7 +294,14 @@ export function Cinema({
           ) : shot.kind === 'chapitre' ? (
             <Carton shot={shot} />
           ) : (
-            <Plan shot={shot} images={images} index={index} rate={rate} playing={playing} />
+            <Plan
+              shot={shot}
+              images={images}
+              index={index}
+              rate={rate}
+              playing={playing}
+              onBroken={broke}
+            />
           )}
         </div>
       </div>
@@ -334,12 +403,14 @@ function Plan({
   index,
   rate,
   playing,
+  onBroken,
 }: {
   shot: Shot
   images: Shot['images']
   index: number
   rate: number
   playing: boolean
+  onBroken: (image: DisplayImage, chapter: number) => void
 }) {
   return (
     <>
@@ -364,6 +435,7 @@ function Plan({
                 className="cine-image"
                 data-pan={(index + place) % PANS}
                 style={{ animationDuration: `${Math.round(shot.ms * rate)}ms` }}
+                onError={() => onBroken(image, shot.chapter)}
               />
             </div>
           ))}
@@ -384,10 +456,6 @@ function Plan({
         </p>
 
         {shot.detail !== null && <p className="cine-detail">{shot.detail}</p>}
-
-        {/* Where each face came from and which name found it. Small, and not
-            optional — see Portrait. */}
-        {images.length > 0 && <p className="cine-source">{credit(images)}</p>}
       </div>
     </>
   )

@@ -127,6 +127,39 @@ describe('le fil découpé en plans', () => {
     expect(plan?.images.at(-1)?.matchedLabel).toBe('Nami')
   })
 
+  it('ne joue ni l’appel des noms ni les questions ouvertes', () => {
+    /*
+     * Les deux perles que le fil garde et que le film laisse : l'entrée en
+     * scène, qui est un générique — une seconde par nom avant que rien
+     * n'arrive à personne —, et la question, qui arrête la bobine pour demander
+     * ce que les plans suivants ne répondront pas.
+     */
+    const plans = planShots([
+      beat('entree', 'Zeff', { detail: 'Personnage' }),
+      beat('question', 'Qui a laissé la marque sur la coque ?'),
+      beat('reponse', 'Qui a laissé la marque sur la coque ?'),
+      beat('evenement', 'Zeff donne sa jambe à un gamin qu’il ne connaît pas.'),
+    ])
+
+    expect(plans.map((plan) => plan.kind)).toEqual(['reponse', 'evenement'])
+  })
+
+  it('garde le visage d’un personnage dont l’entrée en scène est coupée', () => {
+    // Ce qui est perdu, c'est la présentation, pas le portrait : il revient
+    // dans les phrases qui le nomment.
+    const zeff = image('Zeff')
+
+    const plans = planShots([
+      beat('entree', 'Zeff', { portrait: zeff }),
+      beat('evenement', 'Zeff perd sa jambe.', {
+        textParts: parts(['Zeff', zeff], ' perd sa jambe.'),
+      }),
+    ])
+
+    expect(plans).toHaveLength(1)
+    expect(plans[0]?.images.map((found) => found.matchedLabel)).toEqual(['Zeff'])
+  })
+
   it('coupe la queue repliée du chapitre', () => {
     const plans = planShots([
       beat('evenement', 'Le sixième événement du chapitre.', { collapsed: true }),
@@ -167,15 +200,42 @@ describe('le fil découpé en plans', () => {
     expect(plan?.label).toBe('un nom')
   })
 
+  it('n’étiquette pas un événement, et étiquette tout ce qui en a besoin', () => {
+    /*
+     * « Il arrive » séparait, sur le fil, une chose qui se passe des perles
+     * autour d'elle — des noms, des questions. Dans le film celles-là sont
+     * parties et l'événement est presque chaque plan : le mot ne distinguait
+     * plus rien. Les étiquettes qui restent font toutes un travail que la
+     * phrase ne fait pas seule.
+     */
+    const [arrive, renommé, démenti, réponse] = planShots([
+      beat('evenement', 'Zeff donne sa jambe.'),
+      beat('nom', 'Kuro', { detail: 'Klahadore' }),
+      beat('dementi', 'Kaelo Renn se trouve à Fuchsia', {
+        detail: 'cru depuis le chapitre 1',
+      }),
+      beat('reponse', 'Qui a laissé la marque sur la coque ?'),
+    ])
+
+    expect(arrive?.label).toBe('')
+    expect(renommé?.label).toBe('un nom')
+    expect(démenti?.label).toBe('on ne croit plus')
+    expect(réponse?.label).toBe('réponse')
+  })
+
   it('met le moment sur l’étiquette et non sous la phrase', () => {
-    const [plan] = planShots([
+    const [souvenir, daté] = planShots([
       beat('souvenir', 'Zeff perd sa jambe.', {
         detail: 'environ dix ans plus tôt',
       }),
+      // Un événement que le chapitre date : il a perdu son verbe, donc le
+      // séparateur n'a plus rien à séparer et ne s'écrit pas.
+      beat('evenement', 'Roger est exécuté.', { detail: 'vingt-deux ans plus tôt' }),
     ])
 
-    expect(plan?.label).toBe('souvenir · environ dix ans plus tôt')
-    expect(plan?.detail).toBeNull()
+    expect(souvenir?.label).toBe('souvenir · environ dix ans plus tôt')
+    expect(souvenir?.detail).toBeNull()
+    expect(daté?.label).toBe('vingt-deux ans plus tôt')
   })
 
   it('annonce une citation et la langue de sa source', () => {
@@ -189,7 +249,7 @@ describe('le fil découpé en plans', () => {
 
   it('tient un plan le temps qu’il faut pour le lire, plancher et plafond compris', () => {
     const [nom, phrase, pavé] = planShots([
-      beat('entree', 'Zeff'),
+      beat('mention', 'Zeff'),
       beat('evenement', 'A'.repeat(60)),
       beat('evenement', 'A'.repeat(400)),
     ])

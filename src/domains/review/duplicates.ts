@@ -1,5 +1,5 @@
+import { sameBeat } from '@/domains/knowledge/beats.ts'
 import { normalizeText } from '@/domains/knowledge/normalize.ts'
-import { tokens } from '@/domains/resolution/scoring.ts'
 
 /**
  * When one run proposes the same thing twice.
@@ -214,49 +214,18 @@ function entityIdentities(rows: Groupable[]): Map<string, string | null> {
   return claims
 }
 
-/**
- * How much two event summaries have to share to be the same beat.
+/*
+ * Events, and only events, are grouped by resemblance rather than by equality —
+ * `knowledge/beats.ts` holds the rule and why it has the shape it has. It is
+ * shared rather than local because the reader's thread applies the same test to
+ * what has already been published: a pair this file calls « copie 2 sur 2 » is a
+ * pair the thread must not tell twice, and two spellings of the same rule is how
+ * those two answers come apart.
  *
- * Events are the one category with no stable identity to compare. An entity has
- * the wording it quotes, a relation has its predicate and its two ends; an event
- * is a sentence the model composed, and it composes it differently each time —
- * « Le Seigneur de la Côte dévore Higuma et son bateau » in one slice, « Le
- * Seigneur de la Côte avale Higuma » in the next. Exact equality never fires on
- * those, which left the category with no duplicate detection at all.
- *
- * So events, and only events, are compared by content words. The overlap
- * coefficient rather than Jaccard, because one summary is often the other plus a
- * clause, and a length difference should not hide a match. Two shared words
- * minimum, so a pair of terse summaries cannot match on a single name.
- *
- * The threshold is honest about being a threshold, and its blast radius is
- * bounded: a wrong grouping here shows a banner and a link to the other card.
- * Nothing merges, nothing is decided, and the reviewer is the one who answers.
+ * The blast radius here is bounded either way: a wrong grouping shows a banner
+ * and a link to the other card. Nothing merges, nothing is decided, and the
+ * reviewer is the one who answers.
  */
-const EVENT_OVERLAP = 0.7
-const EVENT_MIN_SHARED = 2
-
-/**
- * Content words of a summary, with sentence punctuation out of the way.
- *
- * `normalizeText` folds punctuation rather than dropping it, which is right for
- * an excerpt compared character by character and wrong here: these are whole
- * sentences, and « Luffy. » at the end of one is the same word as « Luffy » in
- * the middle of the other. Left in, a full stop was enough to hide a match.
- */
-function beatWords(summary: string): Set<string> {
-  return new Set(tokens(summary.replace(/[^\p{L}\p{N}]+/gu, ' ')))
-}
-
-function sameBeat(a: string, b: string): boolean {
-  const left = beatWords(a)
-  const right = beatWords(b)
-  if (left.size === 0 || right.size === 0) return false
-
-  const shared = [...left].filter((token) => right.has(token)).length
-  if (shared < EVENT_MIN_SHARED) return false
-  return shared / Math.min(left.size, right.size) >= EVENT_OVERLAP
-}
 
 /** The summary an event proposal carries, for comparison. */
 function summaryOf(row: Groupable): string {
