@@ -153,6 +153,11 @@ export function GraphExplorer({
                   <span style={{ color: 'var(--epi-hypothetical)' }}>Ambre</span> : hypothèse.
                   Gris : fait affirmé.
                 </li>
+                <li>
+                  La disposition est physique : elle s&apos;organise, puis se
+                  fige pour être lue. Glissez un nœud pour le placer — il y
+                  reste ; double-cliquez-le pour le rendre à la simulation.
+                </li>
               </ul>
             </div>
           </>
