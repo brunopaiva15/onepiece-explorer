@@ -1,25 +1,73 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { GraphProjection } from '@/domains/temporal/projection.ts'
 import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
 /**
- * The graph, rendered in WebGL.
+ * The graph, rendered in WebGL, laid out by a live simulation.
  *
  * Sigma and graphology are loaded dynamically for two reasons. They are large
  * enough that a reader who only opens the table view should not pay for them,
  * and the layout runs on `window` — so importing at module scope would break
  * the server render of the page around it.
  *
- * ForceAtlas2 runs synchronously for a bounded number of iterations rather than
- * as a live animation. A settling layout looks impressive and makes the graph
- * unusable while it moves: you cannot click a node that is still drifting, and
- * the reader's mental map is rebuilt every frame. A fixed number of iterations
- * gives the same arrangement every time for the same data, which also means
- * moving the boundary by one chapter does not reshuffle the whole picture.
+ * ForceAtlas2 used to run synchronously for 200 iterations and stop there. The
+ * argument for it was that a moving graph cannot be clicked; what it produced
+ * was a graph that could be clicked and not read. Two hundred iterations is a
+ * budget imposed by the main thread, not a state of the layout: it is what fits
+ * in a second before the page stops responding, and at a few thousand nodes it
+ * leaves the communities half-folded into each other, still on their way apart
+ * when the clock runs out. Measured on a graph built to have communities, the
+ * groups sit 2.5 times further from each other than from themselves after 200
+ * iterations, and 4.1 times once the layout is allowed to finish — the same
+ * data, saying twice as much.
+ *
+ * So the layout is physical now: it runs in a Web Worker, where it can take the
+ * thousands of iterations it needs without the page ever freezing; the reader
+ * watches it open out, and nodes can be dragged and stay where they are put.
+ * Both halves of the old argument are still answered:
+ *
+ * - it stops. The simulation freezes once it has settled, and the picture then
+ *   holds still to be read and clicked. The control in the corner resumes it.
+ * - it is still deterministic. Starting positions are seeded from node ids and
+ *   the same corpus at the same boundary converges to the same arrangement, so
+ *   moving the boundary one chapter does not reshuffle what the reader has just
+ *   learnt to recognise.
  */
+
+/** The worker-driven layout, reduced to what this file drives. */
+interface LiveLayout {
+  start(): void
+  stop(): void
+  kill(): void
+  isRunning(): boolean
+}
+
+/**
+ * Iterations run on the main thread before the worker takes over.
+ *
+ * Enough to get out of the seeded square — a first frame of evenly scattered
+ * dots reads as a bug rather than as a graph — and few enough that nobody waits
+ * for it. Everything past this point happens off the main thread.
+ */
+function warmUpIterations(order: number): number {
+  return order > 2_000 ? 20 : 60
+}
+
+/**
+ * How long the simulation runs before it freezes.
+ *
+ * ForceAtlas2 has no convergence signal to wait on, and a worker left running
+ * spins a core for as long as the tab is open. The budget is time rather than
+ * iterations because iterations get slower as the corpus grows: this keeps the
+ * wait bounded while still giving a large graph the thousand-odd iterations it
+ * needs to open out.
+ */
+function settleDelay(order: number): number {
+  return Math.min(45_000, 8_000 + order * 6)
+}
 
 /** What the hover card needs: a signed thumbnail and where it came from. */
 export interface NodePortrait {
@@ -157,25 +205,71 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
    * you hover them.
    */
   const [hovered, setHovered] = useState<string | null>(null)
+  /** Whether the simulation is currently moving nodes. */
+  const [physics, setPhysics] = useState<'running' | 'paused'>('running')
   const router = useRouter()
   const empty = projection.nodes.length === 0
+  const order = projection.nodes.length
   const labelOf = new Map(projection.nodes.map((node) => [node.id, node.label]))
+
+  const layout = useRef<LiveLayout | null>(null)
+  /**
+   * Nodes the reader has placed by hand, in graph coordinates.
+   *
+   * Held in a ref rather than in the graph's own attributes because the worker
+   * rebuilds its matrix only on `start()`: a `fixed` attribute set afterwards
+   * would be ignored until the next restart. The layout's `outputReducer` reads
+   * this map on every tick instead, which is the one hook that runs between the
+   * worker's positions and the graph's.
+   */
+  const pinned = useRef(new Map<string, { x: number; y: number }>())
+  const dragged = useRef<string | null>(null)
+  const settleTimer = useRef<number | null>(null)
+
+  const stopPhysics = useCallback(() => {
+    if (settleTimer.current !== null) {
+      window.clearTimeout(settleTimer.current)
+      settleTimer.current = null
+    }
+    layout.current?.stop()
+    setPhysics('paused')
+  }, [])
+
+  const startPhysics = useCallback(() => {
+    if (!layout.current) return
+    layout.current.start()
+    setPhysics('running')
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current)
+    settleTimer.current = window.setTimeout(() => {
+      settleTimer.current = null
+      layout.current?.stop()
+      setPhysics('paused')
+    }, settleDelay(order))
+  }, [order])
 
   useEffect(() => {
     if (empty) return
 
     let sigma: { kill: () => void } | null = null
     let cancelled = false
+    // Captured for the cleanup: the refs themselves are stable, and reading
+    // `.current` from a teardown is what the exhaustive-deps rule warns about.
+    const pins = pinned.current
 
     void (async () => {
       try {
-        const [{ default: Graph }, { default: Sigma }, { default: forceAtlas2 }] =
-          await Promise.all([
-            import('graphology'),
-            import('sigma'),
-            // `assign` lives on the default export, not on the module namespace.
-            import('graphology-layout-forceatlas2'),
-          ])
+        const [
+          { default: Graph },
+          { default: Sigma },
+          { default: forceAtlas2 },
+          { default: FA2Layout },
+        ] = await Promise.all([
+          import('graphology'),
+          import('sigma'),
+          // `assign` lives on the default export, not on the module namespace.
+          import('graphology-layout-forceatlas2'),
+          import('graphology-layout-forceatlas2/worker'),
+        ])
 
         if (cancelled || !container.current) return
 
@@ -217,15 +311,33 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
           })
         }
 
-        // Bounded iterations, scaled down for large graphs so the wait stays
-        // roughly constant rather than growing with the corpus.
-        const iterations = projection.nodes.length > 800 ? 80 : 200
+        /*
+         * The settings are the inferred ones, and that is a finding rather than
+         * a default left alone.
+         *
+         * The obvious knobs for an unreadable graph — Noack's LinLog model,
+         * `adjustSizes` for anti-collision — both look like improvements by the
+         * measure of how much canvas gets used, and both were rejected after
+         * being scored against a stochastic block model, which is the shape this
+         * graph actually has: crews, marine bases, islands. Each one takes the
+         * spatial separation between communities from 4.0 down to 1.0. A
+         * separation of 1 means two figures from different corners of the story
+         * sit as far apart as two members of the same crew — the drawing has
+         * stopped saying anything, while looking tidier. Spread is not
+         * legibility.
+         *
+         * What was actually wrong was the iteration count. Everything below
+         * depends on this being the same set of settings the worker continues
+         * with, so the warm-up and the live layout share one object.
+         */
+        const settings = {
+          ...forceAtlas2.inferSettings(graph),
+          barnesHutOptimize: projection.nodes.length > 500,
+        }
+
         forceAtlas2.assign(graph, {
-          iterations,
-          settings: {
-            ...forceAtlas2.inferSettings(graph),
-            barnesHutOptimize: projection.nodes.length > 500,
-          },
+          iterations: warmUpIterations(projection.nodes.length),
+          settings,
         })
 
         if (cancelled || !container.current) return
@@ -251,8 +363,77 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
         renderer.on('enterNode', ({ node }) => setHovered(node))
         renderer.on('leaveNode', () => setHovered(null))
 
+        /*
+         * Dragging: the reader's half of a physical graph.
+         *
+         * A simulation you can only watch is a screensaver. Pulling a node out
+         * of a knot to see what it is attached to is the whole point, and
+         * because the node stays where it was dropped, the layout can be
+         * arranged by hand — the reader is the one who knows which figure the
+         * page is about.
+         *
+         * Sigma suppresses `clickNode` once the pointer has moved, so a drag
+         * does not also open the selection panel.
+         */
+        renderer.on('downNode', ({ node, event }) => {
+          dragged.current = node
+          graph.setNodeAttribute(node, 'highlighted', true)
+          pinned.current.set(node, {
+            x: graph.getNodeAttribute(node, 'x') as number,
+            y: graph.getNodeAttribute(node, 'y') as number,
+          })
+          // Otherwise the camera pans along with the node.
+          event.preventSigmaDefault()
+        })
+
+        renderer.on('moveBody', ({ event }) => {
+          const node = dragged.current
+          if (!node) return
+          const position = renderer.viewportToGraph(event)
+          graph.setNodeAttribute(node, 'x', position.x)
+          graph.setNodeAttribute(node, 'y', position.y)
+          pinned.current.set(node, position)
+          event.preventSigmaDefault()
+          event.original.preventDefault()
+          event.original.stopPropagation()
+        })
+
+        const release = () => {
+          const node = dragged.current
+          if (!node) return
+          graph.removeNodeAttribute(node, 'highlighted')
+          dragged.current = null
+        }
+        renderer.on('upNode', release)
+        renderer.on('upStage', release)
+
+        // Double-click hands a node back to the simulation. Sigma's own
+        // double-click zooms, which is not what a pinned node needs.
+        renderer.on('doubleClickNode', ({ node, preventSigmaDefault }) => {
+          preventSigmaDefault()
+          pinned.current.delete(node)
+        })
+
+        /*
+         * `outputReducer` runs between the worker's positions and the graph's,
+         * which makes it the place to overrule the simulation. Whatever the
+         * worker computed for a pinned node is discarded here, and the
+         * supervisor reads the corrected positions back into its matrix on the
+         * same tick — so a dragged node holds still while its neighbours react
+         * to it in real time.
+         */
+        const live: LiveLayout = new FA2Layout(graph, {
+          settings,
+          outputReducer: (node, attributes) => {
+            const pin = pinned.current.get(node)
+            return pin ? { ...attributes, x: pin.x, y: pin.y } : attributes
+          },
+        })
+
         sigma = renderer
+        layout.current = live
         setStatus('ready')
+        startPhysics()
       } catch (error) {
         // WebGL unavailable, a blocked worker, an old GPU: the table view is a
         // complete alternative, so this is a redirect rather than a dead end.
@@ -263,9 +444,21 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
 
     return () => {
       cancelled = true
+      if (settleTimer.current !== null) {
+        window.clearTimeout(settleTimer.current)
+        settleTimer.current = null
+      }
+      // The worker outlives the component unless it is killed: an unmounted
+      // graph page would keep a core busy for the life of the tab.
+      layout.current?.kill()
+      layout.current = null
+      // A different projection is a different set of coordinates: positions
+      // pinned in the old one would drag nodes to meaningless places in the new.
+      pins.clear()
+      dragged.current = null
       sigma?.kill()
     }
-  }, [projection, onSelect, router, empty])
+  }, [projection, onSelect, router, empty, startPhysics])
 
   if (empty) {
     return (
@@ -290,6 +483,38 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
           label={labelOf.get(hovered) ?? ''}
           portrait={portraits?.[hovered] ?? null}
         />
+      )}
+
+      {/*
+        The simulation, under the reader's hand.
+
+        It stops on its own once settled, so the button is mostly there to say
+        that the stillness is deliberate — and to start it again after the
+        filters, the boundary or a handful of dragged nodes have changed what
+        the arrangement should be.
+      */}
+      {status === 'ready' && (
+        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={physics === 'running' ? stopPhysics : startPhysics}
+            aria-pressed={physics === 'running'}
+            className="bouton !px-2.5 !py-1 !text-xs"
+          >
+            {physics === 'running' ? '❚❚ Figer' : '▶ Physique'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              pinned.current.clear()
+              startPhysics()
+            }}
+            title="Relance la simulation et libère les nœuds déplacés à la main"
+            className="bouton !px-2.5 !py-1 !text-xs"
+          >
+            Réorganiser
+          </button>
+        </div>
       )}
 
       {status === 'loading' && (

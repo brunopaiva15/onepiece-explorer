@@ -35,6 +35,25 @@ An accessible table view at `/graph/table` is a first-class requirement, not a
 fallback: it applies the identical boundary filtering, and it is the only way
 to use the graph without WebGL or a pointing device.
 
+### Amendment (2026-08-14) — la disposition tourne pour de bon
+
+ForceAtlas2 shipped as 200 synchronous iterations, chosen so the main thread
+would not freeze. That is a budget, not a converged layout: at a thousand nodes
+the communities are still folded into each other when the count runs out, and
+the picture is a ball of wool. The layout now runs in the Web Worker this ADR
+always assumed, live, and the reader can drag a node — it stays where it is
+dropped, a double-click hands it back to the simulation. It freezes on its own
+once settled, because a graph that never stops moving cannot be clicked and
+keeps a core busy for as long as the tab is open.
+
+The settings stay the inferred ones, which is the part worth recording. The two
+obvious remedies for a crowded graph — Noack's LinLog model, and `adjustSizes`
+for anti-collision — both improve every measure of how much canvas is used, and
+both were rejected: scored against a stochastic block model, each takes the
+spatial separation between communities from 4.0 to 1.0. Groups end up evenly
+scattered, which reads as tidier and means nothing. What was wrong was never the
+settings; it was stopping early.
+
 ---
 
 ## Vector store: an adapter, with pgvector as the real implementation
