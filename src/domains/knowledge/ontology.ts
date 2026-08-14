@@ -118,6 +118,25 @@ const ANY_ENTITY = [
   'mystery',
 ] as const
 
+/**
+ * Everything except a question.
+ *
+ * A question does not answer a question, and nothing but this list was stopping
+ * one from being written down as if it did. The three mystery predicates were
+ * spelled with `ANY_ENTITY` at both ends, so « Qui a fait exploser le rhum de
+ * Dorry ? — résout le mystère — Qui a fait exploser le rhum de Dorry ? » was a
+ * well-typed edge: the same question on both sides, requiring explicit review,
+ * saying nothing. And accepting it did more than clutter the graph — it wrote
+ * `resolved_in_chapter` on the question, so /mystères showed as « refermée » a
+ * question no chapter had answered, and the reader lost the thread the moment
+ * the answer really arrived.
+ *
+ * What answers a question is what the chapter shows: the scene that gives the
+ * answer, most often, or the person, the place, the thing it turns on. Every
+ * node type there is, minus the questions themselves.
+ */
+const EVERYTHING_BUT_A_MYSTERY = ANY_ENTITY.filter((key) => key !== 'mystery')
+
 export interface PredicateDef {
   key: string
   labelFr: string
@@ -727,29 +746,36 @@ export const PREDICATES = [
     labelFr: 'donne un indice sur',
     directed: true,
     symmetric: false,
-    subjectTypes: ANY_ENTITY,
+    subjectTypes: EVERYTHING_BUT_A_MYSTERY,
     objectTypes: ['mystery'],
-    description: 'Alimente un mystère sans le résoudre.',
+    description:
+      'Alimente un mystère sans le résoudre. Ce qui donne l’indice est une ' +
+      'scène, un personnage, une chose — jamais une autre question.',
   },
   {
     key: 'resolves_mystery',
     labelFr: 'résout le mystère',
     directed: true,
     symmetric: false,
-    subjectTypes: ANY_ENTITY,
+    subjectTypes: EVERYTHING_BUT_A_MYSTERY,
     objectTypes: ['mystery'],
     requiresExplicitReview: true,
-    description: 'Apporte la réponse. Revue humaine obligatoire.',
+    description:
+      'Apporte la réponse. Le sujet est ce qui répond — le plus souvent la ' +
+      'scène qui montre la réponse. Une question n’en résout pas une autre, et ' +
+      'surtout pas elle-même. Revue humaine obligatoire.',
   },
   {
     key: 'reopens_mystery',
     labelFr: 'réouvre le mystère',
     directed: true,
     symmetric: false,
-    subjectTypes: ANY_ENTITY,
+    subjectTypes: EVERYTHING_BUT_A_MYSTERY,
     objectTypes: ['mystery'],
     requiresExplicitReview: true,
-    description: 'Invalide une résolution antérieure.',
+    description:
+      'Invalide une résolution antérieure. Comme pour « résout le mystère », ' +
+      'le sujet est ce qui la rouvre, pas une question.',
   },
 ] as const satisfies readonly PredicateDef[]
 

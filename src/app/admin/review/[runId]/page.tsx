@@ -135,6 +135,8 @@ function quarantineLabel(reason: string): string {
     unknown_subject: 'sujet introuvable — son entité a été écartée',
     unknown_object: 'objet introuvable',
     literal_object: 'objet écrit en toutes lettres au lieu d’une entité',
+    self_reference:
+      'relation d’une chose vers elle-même — une question qui se résout elle-même, le plus souvent',
     empty_excerpt: 'preuve sans extrait',
   }
   return labels[reason] ?? reason

@@ -253,11 +253,17 @@ describe('renaming an entity', () => {
     const helmeppo = await createEntity(world, 'character', 1)
     await addLabel(world, helmeppo, 'Helmeppo', 'true_name', 1, 100)
 
+    // Two entities, because a relation joins two things: the database refuses
+    // an edge from a row to itself since 0028. What is under test here is the
+    // quote hanging off the relation, not the relation.
+    const morgan = await createEntity(world, 'character', 1)
+    await addLabel(world, morgan, 'Morgan', 'true_name', 1, 100)
+
     const quoted = 'Helmeppo rit très fort.'
     const assertionId = await addAssertion(world, {
       subject: helmeppo,
       predicate: 'related_to',
-      object: helmeppo,
+      object: morgan,
       knowledgeFrom: 1,
     })
     await addQuote(world, { assertionId, chapterNumber: 1, text: quoted })

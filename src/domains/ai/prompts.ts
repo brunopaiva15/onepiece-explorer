@@ -58,8 +58,15 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     story time. Asking is the easy half: a model asked when Ohara burned
  *     knows, and would have answered from memory, so the dating carries a quote
  *     that anchoring checks against the blocks the scene already cites.
+ * '10' says what the *subject* of a resolution is, which '8' left to be guessed.
+ *     Told that the open questions are in the validated entity list and asked
+ *     which of them this chapter closes, a model points the relation from the
+ *     question to the question: « Qui a fait exploser le rhum de Dorry ? —
+ *     résout le mystère — Qui a fait exploser le rhum de Dorry ? », both ends
+ *     the right type as the ontology was then written, in mandatory review, and
+ *     closing for ever a question nothing had answered.
  */
-export const PROMPT_VERSION = '9'
+export const PROMPT_VERSION = '10'
 
 /**
  * What the model is reading.
@@ -473,7 +480,15 @@ contient des lignes de type « mystery » : ce sont, écrites en toutes lettres,
 les questions que les chapitres précédents ont laissées en suspens. Quand ce
 chapitre y répond, dites-le — une relation « resolves_mystery » depuis ce qui
 apporte la réponse, le plus souvent la scène par son « local_id », vers
-l'identifiant de la question. Rien d'autre ne les referme : une question dont
+l'identifiant de la question.
+
+Le sujet est ce qui répond, jamais la question. Une question ne se résout pas
+elle-même et n'en résout aucune autre : viser la question des deux côtés de la
+flèche referme pour toujours, sur rien, ce que le chapitre laissait ouvert. Si
+aucune scène de ce chapitre ne porte la réponse, déclarez-la dans « events » et
+partez de là ; si le chapitre ne répond pas, ne proposez rien.
+
+Rien d'autre ne les referme : une question dont
 personne n'écrit la réponse reste « sans réponse » pour toujours, et le lecteur
 la retrouve cent chapitres après l'avoir lue. Si un chapitre annule une réponse
 antérieure, c'est « reopens_mystery », et cela se dit aussi.
