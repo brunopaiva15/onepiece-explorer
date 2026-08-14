@@ -1,10 +1,14 @@
 /**
  * Referme les questions auxquelles les chapitres déjà lus ont répondu.
  *
- *   pnpm mysteres:refermer                    # DIRECT_URL
- *   pnpm mysteres:refermer -- --dry-run       # dit ce qu'il ferait, n'écrit rien
- *   pnpm mysteres:refermer -- --limit=5       # les cinq plus anciennes, pour voir
- *   TEST_DB=1 pnpm mysteres:refermer          # base de test
+ *   pnpm repair:mysteres                    # DIRECT_URL
+ *   pnpm repair:mysteres -- --dry-run       # dit ce qu'il ferait, n'écrit rien
+ *   pnpm repair:mysteres -- --limit=5       # les cinq plus anciennes, pour voir
+ *   TEST_DB=1 pnpm repair:mysteres          # base de test
+ *
+ * Le nom suit celui des autres réparations parce que le bouton les appelle par
+ * leur nom : `.github/workflows/repair.yml` interpole `pnpm repair:<script>`,
+ * et c'est de là que celle-ci se lance sur la bibliothèque en production.
  *
  * Le rattrapage, une fois. Publier « résout le mystère » referme désormais la
  * question dans sa propre ligne — mais une bibliothèque importée avant que ce
@@ -40,6 +44,10 @@
  *   bibliothèque publiée. C'est sans conséquence — la date écrite est celle de
  *   la scène qui répond, et la projection masque une résolution postérieure au
  *   chapitre où le lecteur se trouve.
+ *
+ *   Il demande un modèle qui lise vraiment, et refuse de tourner sans. Les modes
+ *   synthétique et replay répondent en comparant des mots ; leurs verdicts
+ *   entreraient dans le graphe avec l'aplomb des vrais.
  *
  * Ré-exécutable : il ne regarde que les questions dont `resolved_in_chapter` est
  * nul, et une seconde passe ne les redemande donc pas.
@@ -176,7 +184,32 @@ async function main(): Promise<void> {
       (dryRun ? ' — essai à blanc, rien ne sera écrit.' : '.'),
   )
 
+  /*
+   * Un fournisseur qui ne lit pas ne referme rien.
+   *
+   * Le mode synthétique répond en comptant les mots communs entre la question et
+   * chaque scène, et il rend des citations comme les autres. Sur cette base
+   * « Où se trouve le trésor que Gold Roger a laissé derrière lui ? » se
+   * refermerait sur la première scène contenant le mot « trésor » — un verdict
+   * faux, écrit dans le graphe avec l'aplomb d'un vrai, sur une question dont la
+   * réponse est le sujet de toute l'œuvre. Le mode replay a le même défaut par
+   * un autre chemin : il répond ce qu'une autre question a fait enregistrer.
+   *
+   * C'est la seule vérification qui doit exister ici plutôt que dans la règle :
+   * tout le reste du script se contente de ce que le modèle dit, et ce garde-fou
+   * est ce qui rend cette confiance défendable.
+   */
   const provider = modelProvider()
+  if (provider.name !== 'anthropic' && provider.name !== 'local') {
+    console.error(
+      `Fournisseur « ${provider.name} » : il ne lit pas les scènes, il compare des mots.\n` +
+        'Refermer une question demande de la comprendre. Configurez ANTHROPIC_API_KEY, ' +
+        'ou LOCAL_AI_BASE_URL et LOCAL_AI_MODEL pour un modèle auto-hébergé.',
+    )
+    process.exitCode = 1
+    return
+  }
+
   const boundaries = new Map<string, number>()
   let closed = 0
   let left = 0
