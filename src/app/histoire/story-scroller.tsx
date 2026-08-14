@@ -1,7 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { Beat } from './beat.tsx'
+import { Cinema } from './cinema.tsx'
 import { arcOf } from '@/domains/temporal/arcs.ts'
 import type { StoryBeat } from '@/domains/temporal/story.ts'
 
@@ -22,9 +29,17 @@ import type { StoryBeat } from '@/domains/temporal/story.ts'
  *
  * There is no progress widget, because the thread is one: the drawn part of the
  * line is how far the reader has come.
+ *
+ * It also owns the loaded beads, which is why animation mode hangs off it
+ * rather than off the page: the film plays the same array, asks for the next
+ * window through the same `loadMore()`, and therefore cannot reach a bead the
+ * scroll could not. Two loaders would be two boundaries to keep honest.
  */
 
 const ROOT_MARGIN = '800px'
+
+/** A store with nothing to subscribe to — see `hydrated` below. */
+const NEVER_CHANGES = () => () => {}
 
 interface Props {
   initialBeats: StoryBeat[]
@@ -47,6 +62,7 @@ export function StoryScroller({
   const [cursor, setCursor] = useState(initialCursor)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [playing, setPlaying] = useState(false)
 
   /*
    * Which thread is on screen — and the reset when the server sends another.
@@ -76,6 +92,9 @@ export function StoryScroller({
     setCursor(initialCursor)
     setLoading(false)
     setFailed(false)
+    // Another thread means the film would be playing beads that no longer
+    // belong to the page under it.
+    setPlaying(false)
   }
 
   /** The arc the thread stops in — which is the arc the reader is in. */
@@ -143,8 +162,75 @@ export function StoryScroller({
     return () => observer.disconnect()
   }, [cursor, loadMore])
 
+  const play = useRef<HTMLButtonElement>(null)
+
+  /**
+   * Whether the browser has taken over from the server rendering.
+   *
+   * `useSyncExternalStore` with a store that never changes: the server snapshot
+   * is false, the client one is true, and React swaps them on hydration without
+   * a state write in an effect. It is the one thing that separates « this
+   * component runs in the browser » from « this markup was produced there ».
+   */
+  const hydrated = useSyncExternalStore(NEVER_CHANGES, () => true, () => false)
+
+  /** Stable, because the film re-asks whenever this identity changes. */
+  const needMore = useCallback((): void => void loadMore(), [loadMore])
+
+  /**
+   * Closed, on the chapter the film stopped at.
+   *
+   * The page underneath scrolls there, because someone who watched to chapter
+   * 60 and pressed Escape is asking about chapter 60 — landing them back at
+   * the top would make closing the film a way of losing their place. The focus
+   * goes back to the button that opened it, and without moving the page again:
+   * `focus()` scrolls its target into view by default, which would undo the
+   * line above.
+   */
+  const closeCinema = useCallback((chapter: number): void => {
+    setPlaying(false)
+    document.getElementById(`ch-${chapter}`)?.scrollIntoView({ block: 'start' })
+    play.current?.focus({ preventScroll: true })
+  }, [])
+
   return (
     <>
+      {/* Drawn once the browser has taken over, and not before. The thread is
+          complete without the film, so a page whose JavaScript never arrives
+          shows no button rather than one that does nothing — and this component
+          is server-rendered like everything else, so « client component » is not
+          on its own the same promise. */}
+      {hydrated && (
+        <div className="fil-projection">
+          <button
+            ref={play}
+            type="button"
+            className="bouton bouton-primaire"
+            onClick={() => setPlaying(true)}
+          >
+            <Triangle />
+            Voir en animation
+          </button>
+          <p className="fil-projection-aide">
+            Le fil se déroule tout seul, image par image, du chapitre {start} à
+            celui où vous en êtes.
+          </p>
+        </div>
+      )}
+
+      {playing && (
+        <Cinema
+          beats={beats}
+          hasMore={cursor !== null}
+          loading={loading}
+          failed={failed}
+          onNeedMore={needMore}
+          onClose={closeCinema}
+          start={start}
+          lastChapter={lastChapter}
+        />
+      )}
+
       <ol className="fil">
         {fold(beats).map((run) =>
           Array.isArray(run) ? (
@@ -200,6 +286,15 @@ export function StoryScroller({
         )}
       </div>
     </>
+  )
+}
+
+/** The play mark, drawn rather than typed: « ▶ » is an emoji on half the phones. */
+function Triangle() {
+  return (
+    <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3 w-3 shrink-0">
+      <path d="M3 1.5 L10.5 6 L3 10.5 Z" fill="currentColor" />
+    </svg>
   )
 }
 
