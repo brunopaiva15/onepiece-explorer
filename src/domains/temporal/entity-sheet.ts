@@ -38,7 +38,7 @@ export interface SheetLabel {
   label: string
   kind: string
   /**
-   * Null when no chapter gives this name — see migration 0026.
+   * Null when no chapter gives this name — see migration 0027.
    *
    * The boundary policy withholds such a row, so this is never null on a sheet
    * read through `withBoundary`. It stays in the type because the rename form

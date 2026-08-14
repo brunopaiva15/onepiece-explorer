@@ -55,9 +55,25 @@ describe('the extraction prompt', () => {
     expect(prompt).toMatch(/placeholder/)
   })
 
+  /*
+   * The mysteries of earlier chapters were in the list of validated entities
+   * from the day it was written, and « résout le mystère » was in the ontology
+   * from the day *it* was written — but nothing ever said that closing one was
+   * part of reading a chapter. Seventy-one questions stood open across
+   * fifty-nine chapters, including ones the next chapter answered on the page.
+   */
+  it('asks the chapter to close the questions it answers', () => {
+    const prompt = extractionSystem('(ontologie)', 'summary')
+    expect(prompt).toContain('resolves_mystery')
+    expect(prompt).toMatch(/SE REFERMENT ICI/)
+    // And the other half, without which the instruction is an invitation to
+    // close a question on a scene that merely approaches its answer.
+    expect(prompt).toMatch(/Répondre n'est pas approcher/)
+  })
+
   it('carries a version that moved with the wording', () => {
     // Stored on every assertion the model proposes. Without a bump, a run
     // before this change and a run after it are indistinguishable in the record.
-    expect(PROMPT_VERSION).toBe('7')
+    expect(PROMPT_VERSION).toBe('8')
   })
 })

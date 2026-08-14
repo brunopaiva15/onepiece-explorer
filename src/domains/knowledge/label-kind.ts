@@ -41,7 +41,7 @@ export function labelKindLabel(kind: string): string {
  * Here rather than in each view for the same reason the kinds are: the fiche
  * and the rename form print it side by side, and « ch. null » is what the two
  * of them say the day one of them forgets that a name can have no chapter at
- * all. Migration 0026 has the why; this is the wording.
+ * all. Migration 0027 has the why; this is the wording.
  */
 export function revealedAtLabel(revealedInChapter: number | null): string {
   return revealedInChapter === null

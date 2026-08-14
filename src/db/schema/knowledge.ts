@@ -114,7 +114,7 @@ export const entityLabels = pgTable(
      *
      * Null means no chapter does. Not "unknown": a name given by a SBS column
      * or a databook is real and belongs to the entity, and it still has no
-     * place on the chapter axis — see migration 0026. The boundary policy
+     * place on the chapter axis — see migration 0027. The boundary policy
      * withholds those rows at every chapter rather than picking one, so the
      * village mayor of chapter 1 stays « Maire du village de Fuchsia » until
      * the manga itself names him.

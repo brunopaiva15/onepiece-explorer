@@ -45,8 +45,14 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     nobody has named yet aimed a relation at the closest crew there was —
  *     « Luffy dirige l'Équipage du Capitaine Usopp », both ends the right
  *     type, the excerpt properly anchored, and nothing to catch it.
+ * '8' asks the chapter to close the questions it answers. The mysteries of
+ *     earlier chapters were already in the list of validated entities, and
+ *     « résout le mystère » was already in the ontology, but nothing ever told
+ *     the model that closing one was part of the job — so seventy-one questions
+ *     stood open across fifty-nine chapters, including ones the very next
+ *     chapter answered on the page.
  */
-export const PROMPT_VERSION = '7'
+export const PROMPT_VERSION = '8'
 
 /**
  * What the model is reading.
@@ -431,6 +437,23 @@ résumé comme vous l'auriez écrit sans lui. Il ne fait que nommer la sorte de
 scène, parce que rien dans la proposition ne permet de la deviner après coup :
 un combat et un départ sont l'un comme l'autre « quelque chose qui arrive », et
 seul celui qui lit le passage peut les distinguer.
+
+LES QUESTIONS DÉJÀ POSÉES SE REFERMENT ICI. La liste des entités validées
+contient des lignes de type « mystery » : ce sont, écrites en toutes lettres,
+les questions que les chapitres précédents ont laissées en suspens. Quand ce
+chapitre y répond, dites-le — une relation « resolves_mystery » depuis ce qui
+apporte la réponse, le plus souvent la scène par son « local_id », vers
+l'identifiant de la question. Rien d'autre ne les referme : une question dont
+personne n'écrit la réponse reste « sans réponse » pour toujours, et le lecteur
+la retrouve cent chapitres après l'avoir lue. Si un chapitre annule une réponse
+antérieure, c'est « reopens_mystery », et cela se dit aussi.
+
+Répondre n'est pas approcher. « Zoro affronte Cabaji » ne referme pas « Zoro
+vaincra-t-il Cabaji ? » ; « Zoro l'achève d'un Oni Giri » la referme. Ne
+refermez que ce que le chapitre établit, et sur la même preuve que n'importe
+quel autre élément : une question laissée ouverte se referme au chapitre
+suivant, une question refermée sur une supposition écrit dans l'histoire du
+lecteur une réponse que la page ne donne pas.
 
 Une identité (« même personne que »), une mort, une filiation, une affiliation
 cachée ou la résolution d'un mystère demandent une preuve directe. En cas de

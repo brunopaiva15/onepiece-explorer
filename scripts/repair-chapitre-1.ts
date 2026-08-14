@@ -29,7 +29,7 @@
  *      databook, que cette bibliothèque ne rattache à aucun chapitre. Il n'y a
  *      pas de date à écrire, et lui en inventer une serait affirmer une
  *      révélation qu'aucun chapitre ne contient. Son nom passe donc hors
- *      chronologie — voir la migration 0026.
+ *      chronologie — voir la migration 0027.
  *
  *   4. Makino, Shanks, Higuma, Luffy et Gold Roger sont nommés dans le chapitre
  *      lui-même. Rien à corriger : ils sont ici pour être *vérifiés*, y compris
@@ -97,7 +97,7 @@ interface Identity {
    * Où le nom est donné, et quand.
    *
    * `chapter: null` veut dire « aucun chapitre ne le donne » — pas « on ne sait
-   * pas ». La contrainte de la migration 0026 exige alors une source, parce
+   * pas ». La contrainte de la migration 0027 exige alors une source, parce
    * qu'un nom que rien n'explique n'est pas une donnée, c'est un trou.
    */
   reveal: { chapter: number | null; source: string | null }

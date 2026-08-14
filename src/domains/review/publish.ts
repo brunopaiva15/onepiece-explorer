@@ -90,6 +90,16 @@ export interface PublishResult {
   assertionsCreated: number
   eventsCreated: number
   mysteriesCreated: number
+  /**
+   * Questions this chapter closed, and questions it re-opened.
+   *
+   * Counted apart from the assertions that caused them because they are not the
+   * same event to a reader: `résout le mystère` is one more edge in the graph,
+   * and « la question posée au chapitre 16 est refermée » is a line moving from
+   * one half of /mysteres to the other.
+   */
+  mysteriesResolved: number
+  mysteriesReopened: number
   labelsCreated: number
   rejected: number
   deferred: number
@@ -120,6 +130,8 @@ export function mergePublishResults(a: PublishResult, b: PublishResult): Publish
     assertionsCreated: a.assertionsCreated + b.assertionsCreated,
     eventsCreated: a.eventsCreated + b.eventsCreated,
     mysteriesCreated: a.mysteriesCreated + b.mysteriesCreated,
+    mysteriesResolved: a.mysteriesResolved + b.mysteriesResolved,
+    mysteriesReopened: a.mysteriesReopened + b.mysteriesReopened,
     labelsCreated: a.labelsCreated + b.labelsCreated,
     rejected: a.rejected + b.rejected,
     deferred: a.deferred + b.deferred,
@@ -142,6 +154,8 @@ export async function publishDecisions(
     assertionsCreated: 0,
     eventsCreated: 0,
     mysteriesCreated: 0,
+    mysteriesResolved: 0,
+    mysteriesReopened: 0,
     labelsCreated: 0,
     rejected: 0,
     deferred: 0,
@@ -206,6 +220,19 @@ export async function publishDecisions(
      * neither.
      */
     const localToEntity = new Map<string, string>()
+
+    /*
+     * The scenes published in this batch, with the cast the reviewer accepted.
+     *
+     * Held until both the event loop and the assertion loop have run, because
+     * the relation this turns into is one the model is *also* asked to write —
+     * the prompt says « nommez ses acteurs dans participants et écrivez
+     * participe à vers ce même identifiant ». Linking during the event loop
+     * would therefore draw the compliant chapters twice, once from each source.
+     * Linking afterwards means the derived edge is only ever the one that was
+     * missing. See `linkCast`.
+     */
+    const cast: SceneCast[] = []
 
     const alreadyPublished = await db
       .select({ id: entities.id, localId: entities.proposalLocalId })
@@ -697,13 +724,22 @@ export async function publishDecisions(
         if (item.category === 'event') {
           const candidate = (decision.correctedPayload ?? item.payload) as CandidateEvent
           localToEntity.set(candidate.local_id, twin)
-          await recordParticipants(db, {
+          const present = await recordParticipants(db, {
             userId,
             chapterId: run.chapterId,
             chapterNumber: run.chapterNumber,
             participants: candidate.participants,
             localToEntity,
             confidence: candidate.confidence,
+          })
+          cast.push({
+            eventId: twin,
+            reviewItemId: item.id,
+            fingerprint: item.fingerprint,
+            participants: present,
+            evidence: candidate.evidence,
+            confidence: candidate.confidence,
+            corrected: decision.decision === 'correct',
           })
         }
 
@@ -791,19 +827,29 @@ export async function publishDecisions(
          * for: « qu'est-ce que Nami fait au chapitre 14 » had nothing to read,
          * because the chapter's facts were events and no event named her.
          *
-         * Recorded as presence rather than as relations. An occurrence says
-         * where someone was seen, which is what the model stated; inventing a
-         * « participe à » edge per participant would be writing assertions
-         * nobody reviewed, and the review card now lists the names so the
-         * decision covers them.
+         * Recorded as presence — where someone was seen — and, since `linkCast`
+         * below, as a relation too. Presence alone answered « où était Nami au
+         * chapitre 14 » and nothing else: an occurrence names a chapter, not
+         * the scene, so the graph still had no line between a scene and the
+         * people in it. Both are kept because they answer different questions,
+         * and one does not derive the other.
          */
-        await recordParticipants(db, {
+        const present = await recordParticipants(db, {
           userId,
           chapterId: run.chapterId,
           chapterNumber: run.chapterNumber,
           participants: candidate.participants,
           localToEntity,
           confidence: candidate.confidence,
+        })
+        cast.push({
+          eventId: entity.id,
+          reviewItemId: item.id,
+          fingerprint: item.fingerprint,
+          participants: present,
+          evidence: candidate.evidence,
+          confidence: candidate.confidence,
+          corrected: decision.decision === 'correct',
         })
 
         result.eventsCreated++
@@ -989,6 +1035,32 @@ export async function publishDecisions(
       }
 
       result.assertionsCreated++
+
+      /*
+       * A question the chapter answers stops being an open question.
+       *
+       * `résout le mystère` was publishable since the ontology was written, and
+       * it went into `assertions` like any other edge and stopped there. The
+       * question's own row kept `state = 'open'` and `resolved_in_chapter` null
+       * for ever — so /mysteres, which decides open-or-closed by reading that
+       * column, showed « Ouverte » next to a question the reader had watched
+       * being answered, and « Refermées » was a heading that could never appear.
+       * The read side was complete; nothing wrote.
+       *
+       * Here rather than in a sweep afterwards because it is the same fact: the
+       * edge and the state are two ways of saying that this chapter answered
+       * this question, and writing one without the other is what created the
+       * disagreement in the first place.
+       */
+      const verdict = await applyMysteryVerdict(db, {
+        userId,
+        predicate: candidate.predicate,
+        mysteryId: objectId,
+        chapterNumber: run.chapterNumber,
+      })
+      if (verdict === 'resolved') result.mysteriesResolved++
+      if (verdict === 'reopened') result.mysteriesReopened++
+
       await recordDecision(db, userId, run.workId, item, decision)
       await db
         .update(reviewItems)
@@ -996,6 +1068,36 @@ export async function publishDecisions(
         .where(eq(reviewItems.id, item.id))
     }
 
+    /*
+     * A scene, joined to the people it happens to.
+     *
+     * Every relation loop above is over now, so what is written here is exactly
+     * what the chapter did not already say. That ordering is the whole design:
+     * the model is asked for « participe à » and sometimes gives it, and this
+     * fills in the rest rather than competing with it.
+     *
+     * Until this ran, an event was a node of degree zero. Not a rare one — a
+     * chapter imported as a written summary produces mostly events, so a library
+     * of fifty chapters had several hundred scenes in it, each connected to
+     * nothing, drawn as the halo of loose dots around the graph and reachable
+     * from no character's fiche. The cast was known all along: the model states
+     * it, anchoring filters it, the review card lists it and the reviewer
+     * accepted it. It was recorded as presence — « Nami est au chapitre 14 » —
+     * which cannot express « Nami est dans *cette* scène », because an
+     * occurrence points at a chapter and never at the event.
+     */
+    for (const scene of cast) {
+      result.assertionsCreated += await linkCast(db, {
+        userId,
+        workId: run.workId,
+        runId,
+        chapterId: run.chapterId,
+        chapterNumber: run.chapterNumber,
+        refTable: table,
+        scene,
+        failures: result.failures,
+      })
+    }
 
     /*
      * Rapprochements and contradictions, decided rather than ignored.
@@ -1173,6 +1275,71 @@ export async function markChapterReviewed(
  * Keyed on `(user, work, fingerprint)` rather than on the review item, because
  * the review item is per-run and would not match anything on the next pass.
  */
+/**
+ * Carry an accepted `résout le mystère` into the question's own row.
+ *
+ * The two predicates are the only ones whose acceptance changes something other
+ * than the graph, and the rule for each is about *dates*, not about the latest
+ * word winning:
+ *
+ *   Resolving records the earliest chapter that answers the question. A second
+ *   chapter saying the same thing does not push the answer later — the reader
+ *   learned it the first time — so a resolution already recorded at or before
+ *   this chapter is left alone. Re-importing a chapter therefore writes the same
+ *   value it wrote before, which is what makes publication idempotent here too.
+ *
+ *   Re-opening clears a resolution *this chapter invalidates*, meaning one dated
+ *   at or before it. A resolution recorded later is a different, later answer
+ *   and survives: « on croyait savoir au 40, on rouvre au 60, on répond au 80 »
+ *   must not lose the chapter-80 answer because the chapter-60 card was
+ *   published afterwards.
+ *
+ * Returns null when the object is not a question at all. The database trigger
+ * already refuses `résout le mystère` towards anything but a mystery, so that
+ * case means the row was deleted between the insert and here — nothing to write,
+ * and nothing worth failing a publication over.
+ */
+async function applyMysteryVerdict(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    userId: string
+    predicate: string
+    mysteryId: string | null
+    chapterNumber: number
+  },
+): Promise<'resolved' | 'reopened' | null> {
+  if (input.mysteryId === null) return null
+  if (input.predicate !== 'resolves_mystery' && input.predicate !== 'reopens_mystery') {
+    return null
+  }
+
+  const [current] = await db
+    .select({ resolvedInChapter: mysteries.resolvedInChapter })
+    .from(mysteries)
+    .where(and(eq(mysteries.entityId, input.mysteryId), eq(mysteries.userId, input.userId)))
+    .limit(1)
+
+  if (!current) return null
+
+  const recorded = current.resolvedInChapter
+
+  if (input.predicate === 'resolves_mystery') {
+    if (recorded !== null && recorded <= input.chapterNumber) return null
+    await db
+      .update(mysteries)
+      .set({ state: 'resolved', resolvedInChapter: input.chapterNumber })
+      .where(eq(mysteries.entityId, input.mysteryId))
+    return 'resolved'
+  }
+
+  if (recorded === null || recorded > input.chapterNumber) return null
+  await db
+    .update(mysteries)
+    .set({ state: 'reopened', resolvedInChapter: null })
+    .where(eq(mysteries.entityId, input.mysteryId))
+  return 'reopened'
+}
+
 async function recordDecision(
   db: Parameters<Parameters<typeof withIngest>[0]>[0],
   userId: string,
@@ -1441,6 +1608,10 @@ async function recordPresence(
  * that. An identifier that resolves to nothing is skipped in silence: it means
  * the participant's own proposal was rejected or deferred, which the reviewer
  * decided on purpose and does not need told twice.
+ *
+ * Returns the entity ids it resolved, deduplicated, so `linkCast` draws the
+ * same cast this recorded rather than resolving the identifiers a second time
+ * and risking a different answer.
  */
 async function recordParticipants(
   db: Parameters<Parameters<typeof withIngest>[0]>[0],
@@ -1452,7 +1623,7 @@ async function recordParticipants(
     localToEntity: Map<string, string>
     confidence: number
   },
-): Promise<void> {
+): Promise<string[]> {
   const seen = new Set<string>()
 
   for (const participant of input.participants) {
@@ -1469,6 +1640,175 @@ async function recordParticipants(
       confidence: input.confidence,
     })
   }
+
+  return [...seen]
+}
+
+/** One published scene and the cast the reviewer accepted with it. */
+interface SceneCast {
+  eventId: string
+  reviewItemId: string
+  fingerprint: string | null
+  /** Already resolved to entity ids by `recordParticipants`. */
+  participants: string[]
+  evidence: EvidenceRef[]
+  confidence: number
+  /** True when the reviewer edited the proposal rather than accepting it. */
+  corrected: boolean
+}
+
+/**
+ * Which relation says « this entity was in this scene ».
+ *
+ * Read off the ontology rather than assumed, because `participants` is a flat
+ * list of whoever the passage put in the scene and the ontology does not accept
+ * them all on the same predicate. Two answers, both of which the type trigger
+ * would accept:
+ *
+ *   • an actor — a character or a group — *takes part*: `participates_in`,
+ *     pointing from them at the scene, which is the direction the fiche reads
+ *     to fill its « Participants » section.
+ *   • a place *is where it happened*: `located_at`, pointing from the scene at
+ *     the place, since that is the direction the ontology gives it.
+ *
+ * Anything else gets no edge. A fruit, a species or a mystery listed among the
+ * participants is not wrong of the model — the scene really is about them — but
+ * no predicate in the ontology carries "an object was involved in an event",
+ * and inventing one here would be adding to the ontology from inside a
+ * publication loop. The presence row is still written, so nothing is lost, and
+ * `mentions` remains available to the extraction for saying it properly.
+ */
+function participationLink(
+  eventId: string,
+  participantId: string,
+  nodeType: string,
+): { subject: string; predicate: string; object: string } | null {
+  if (nodeType === 'character' || nodeType === 'group') {
+    return { subject: participantId, predicate: 'participates_in', object: eventId }
+  }
+  if (nodeType === 'place') {
+    return { subject: eventId, predicate: 'located_at', object: participantId }
+  }
+  return null
+}
+
+/**
+ * Draw the accepted cast of one scene as relations.
+ *
+ * Nothing here decides anything. The participants are the ones the reviewer saw
+ * listed on the card and accepted, resolved to entities a moment ago; this only
+ * writes down, in the shape the graph reads, what accepting that card meant.
+ * That is why it is `explicit` and not an inference: the extraction stated who
+ * was in the scene, in the same answer that stated the scene.
+ *
+ * Skips a pair the graph already carries, whatever chapter it came from. The
+ * duplicate this prevents is the ordinary case rather than the exotic one — the
+ * model is asked for « participe à » and often supplies it, a chapter can be
+ * published in several batches, and a re-import re-proposes the same scene.
+ * Assertions are append-only, so a duplicate written here could not be taken
+ * back.
+ *
+ * A refused edge is contained by a savepoint and reported, exactly as in the
+ * assertion loop: one participant the ontology will not take must not cost the
+ * chapter its publication.
+ */
+async function linkCast(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  input: {
+    userId: string
+    workId: string
+    runId: string
+    chapterId: string
+    chapterNumber: number
+    refTable: RefTable
+    scene: SceneCast
+    failures: PublishResult['failures']
+  },
+): Promise<number> {
+  const { scene } = input
+  const ids = scene.participants.filter((id) => id !== scene.eventId)
+  if (ids.length === 0) return 0
+
+  const rows = await db
+    .select({ id: entities.id, nodeType: entities.nodeType })
+    .from(entities)
+    .where(and(eq(entities.userId, input.userId), inArray(entities.id, ids)))
+
+  let created = 0
+
+  for (const row of rows) {
+    const link = participationLink(scene.eventId, row.id, row.nodeType)
+    if (link === null) continue
+
+    const [already] = await db
+      .select({ id: assertions.id })
+      .from(assertions)
+      .where(
+        and(
+          eq(assertions.userId, input.userId),
+          eq(assertions.subjectEntityId, link.subject),
+          eq(assertions.predicate, link.predicate),
+          eq(assertions.objectEntityId, link.object),
+        ),
+      )
+      .limit(1)
+
+    if (already) continue
+
+    try {
+      await db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(assertions)
+          .values({
+            workId: input.workId,
+            userId: input.userId,
+            subjectEntityId: link.subject,
+            predicate: link.predicate,
+            objectEntityId: link.object,
+            knowledgeFromChapter: input.chapterNumber,
+            observedInChapter: input.chapterNumber,
+            confidence: scene.confidence,
+            epistemicStatus: scene.corrected ? 'user_validated' : 'explicit',
+            reviewStatus: 'accepted',
+            proposedBy: scene.corrected ? 'user' : 'ai',
+            locked: scene.corrected,
+            pipelineVersion: PIPELINE_VERSION,
+            promptVersion: PROMPT_VERSION,
+            runId: input.runId,
+            proposalFingerprint: scene.fingerprint,
+          })
+          .returning({ id: assertions.id })
+
+        if (!inserted) throw new Error('Insertion échouée.')
+
+        /*
+         * The scene's own citation, carried onto the link.
+         *
+         * An event proposal's evidence had nowhere to live until now — the
+         * `evidence` table hangs off an assertion — so this is the first row
+         * that makes a scene traceable to the passage it was read from. Inside
+         * the savepoint with the assertion, because an assertion whose citation
+         * failed to write is precisely the unsourced row this system claims not
+         * to have.
+         */
+        await insertEvidence(tx, {
+          assertionId: inserted.id,
+          userId: input.userId,
+          chapterId: input.chapterId,
+          refs: scene.evidence,
+          refTable: input.refTable,
+        })
+      })
+      created++
+    } catch (error: unknown) {
+      input.failures.push({
+        reviewItemId: scene.reviewItemId,
+        reason: refusalReason(error),
+      })
+    }
+  }
+
+  return created
 }
 
 async function addMergedLabel(

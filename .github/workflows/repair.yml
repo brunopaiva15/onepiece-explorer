@@ -29,10 +29,21 @@ name: Réparations (production)
 #
 # One order to respect, and it is not enforced here on purpose. `chapitre-1`
 # writes a name with no revelation chapter, which the schema only accepts from
-# migration 0026 onwards — so run migrate.yml first. It is left to the operator
+# migration 0027 onwards — so run migrate.yml first. It is left to the operator
 # rather than chained automatically because a repair workflow that migrates on
 # its own would apply schema changes nobody asked it to; the failure, if the
 # order is wrong, is a constraint error on the first write and nothing else.
+#
+# One of them is not like the others, and it is worth knowing before pressing
+# the button. `mysteres` reads: it asks a model, once per open question, whether
+# the scenes published after it carry the answer. So it also needs
+# ANTHROPIC_API_KEY, it costs real money — a few dollars for a backlog of
+# seventy, in either mode, because a dry run makes the same calls and only skips
+# the writing — and it takes minutes rather than seconds, which is why the
+# timeout below is not a single number. Without the key the script stops before
+# the first question: the fallback providers answer by counting shared words,
+# and « Où se trouve le trésor de Gold Roger ? » would close on the first scene
+# containing « trésor ».
 
 on:
   workflow_dispatch:
@@ -46,6 +57,11 @@ on:
           - chapitres-1-42
           - chapitre-1
           - luffy-crew
+          - mysteres
+      limit:
+        description: 'mysteres : n''examiner que les N plus anciennes (vide = toutes)'
+        required: false
+        default: ''
       mode:
         description: 'Mode'
         required: true
@@ -68,7 +84,9 @@ jobs:
   repair:
     name: ${{ inputs.script }} (${{ inputs.mode }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A SQL repair that has not finished in a quarter of an hour is stuck. The
+    # sweep is not stuck — it is a model call per open question, in sequence.
+    timeout-minutes: ${{ inputs.script == 'mysteres' && 60 || 15 }}
 
     steps:
       # Only the writing mode asks for a typed answer. A dry run reads and
@@ -109,9 +127,29 @@ jobs:
       - name: pnpm repair:${{ inputs.script }}
         env:
           DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          # Only `mysteres` reads it, and it stops with an explanation if it is
+          # missing. Passed to every script rather than conditionally, because a
+          # conditional env is one more thing to get wrong for a value the other
+          # two never look at.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Through the environment, not through `${{ }}` in the script below.
+          # `script` and `mode` are `choice` inputs and GitHub only ever sends
+          # one of the listed values; `limit` is free text, and free text
+          # expanded into a shell command is that text *becoming* the command.
+          LIMIT: ${{ inputs.limit }}
         run: |
+          args=""
           if [ "${{ inputs.mode }}" = "dry-run" ]; then
-            pnpm repair:${{ inputs.script }} -- --dry-run
-          else
-            pnpm repair:${{ inputs.script }}
+            args="--dry-run"
           fi
+          limit="$LIMIT"
+          if [ -n "$limit" ]; then
+            case "$limit" in
+              ''|*[!0-9]*)
+                echo "« limit » attend un entier positif, reçu : $limit"
+                exit 1
+                ;;
+            esac
+            args="$args --limit=$limit"
+          fi
+          pnpm repair:${{ inputs.script }} -- $args
