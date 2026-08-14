@@ -209,6 +209,15 @@ export interface PosterReport {
   /** Printings the gallery could be pinned to a file for. */
   resolved: number
   stored: number
+  /**
+   * Printings this library already holds, and therefore did not fetch again.
+   *
+   * Reported rather than merely skipped, because without it a second run says
+   * « 0 affiche stockée » and reads as a failure when it is the opposite. It is
+   * also the number that makes the automatic pass affordable: on a library that
+   * is up to date every printing lands here and nothing is downloaded at all.
+   */
+  skipped: number
   /** Printings no file could be found for, named so the manifest can grow. */
   unresolved: string[]
   failures: Array<{ what: string; reason: string }>
@@ -220,6 +229,22 @@ export interface PosterOptions {
   download?: typeof downloadAndStore
   resolve?: typeof resolveFiles
   onProgress?: (done: number, total: number) => void
+  /**
+   * Only the printings the manifest names a file for, and no gallery read.
+   *
+   * What the automatic pass uses. A pin already carries the file name, so
+   * resolving it needs one lookup by title and none of the two requests that
+   * read the gallery and the category — which matters when the trigger is « a
+   * chapter was published » and a batch import publishes a thousand of them.
+   *
+   * The heuristics are what is given up, and giving them up is the point: they
+   * are the half that reasons from a file name, they are the half that has been
+   * wrong before, and they belong in a pass somebody is watching. Same shape as
+   * `recheck` on the portrait side, which is likewise never on automatically.
+   */
+  pinnedOnly?: boolean
+  /** Downloads one pass will do. Bounds what an unattended run costs Fandom. */
+  limit?: number
 }
 
 interface Target {
@@ -246,24 +271,49 @@ export async function enrichBountyPosters(
     considered: 0,
     resolved: 0,
     stored: 0,
+    skipped: 0,
     unresolved: [],
     failures: [],
-  }
-
-  let gallery: GalleryEntry[]
-  try {
-    gallery = options.gallery ?? (await fetchGallery())
-  } catch (error) {
-    report.failures.push({
-      what: 'galerie',
-      reason: error instanceof Error ? error.message : String(error),
-    })
-    return report
   }
 
   const targets = await findTargets(userId)
   report.considered = new Set(targets.map((target) => target.character.canonical)).size
   if (targets.length === 0) return report
+
+  /*
+   * The library is asked what it already has before the wiki is asked anything.
+   *
+   * This used to be the other way round, and it made the whole function a
+   * button: every run re-resolved and re-downloaded all twenty-six files, the
+   * insert threw the duplicates away, and the only thing that saved it was that
+   * a person pressed it once a month. Automatic runs cannot be built on that.
+   *
+   * The key is the entity and the chapter, which is precisely what a printing
+   * is. It needs no gallery, so it can be asked first — and on a library that
+   * is up to date the answer covers everything and nothing is fetched at all.
+   */
+  const held = await storedPrintings(userId)
+
+  /*
+   * The gallery is read only by a pass that needs to reason about a file name.
+   *
+   * A pin carries its own file name and reaches `resolveFiles` by title, so the
+   * automatic pass never asks for the gallery or the category — two requests
+   * saved on every published chapter, and on a batch import that is two
+   * thousand.
+   */
+  let gallery: GalleryEntry[] = []
+  if (!options.pinnedOnly) {
+    try {
+      gallery = options.gallery ?? (await fetchGallery())
+    } catch (error) {
+      report.failures.push({
+        what: 'galerie',
+        reason: error instanceof Error ? error.message : String(error),
+      })
+      return report
+    }
+  }
 
   /*
    * One pass to decide what is wanted, one request to resolve the files, then
@@ -283,6 +333,16 @@ export async function enrichBountyPosters(
   const missing: string[] = []
   for (const target of targets) {
     for (const bounty of target.character.rows) {
+      /*
+       * An automatic pass considers only what a person already decided.
+       *
+       * Not a performance shortcut — an unpinned printing is one the matcher
+       * would have to judge from a file name, which is the half of this module
+       * that has been wrong before and the half whose mistakes are only ever
+       * caught by somebody reading the report.
+       */
+      if (options.pinnedOnly && !bounty.file) continue
+
       const printing = `${target.character.canonical} · ${formatBerries(bounty.amount)} (ch. ${bounty.chapter})`
       const first = !judged.has(printing)
       judged.add(printing)
@@ -293,6 +353,13 @@ export async function enrichBountyPosters(
         continue
       }
       if (first) report.resolved += 1
+
+      /* Already in this library, at this chapter. Nothing to fetch. */
+      if (held.has(`${target.entityId}:${bounty.chapter}`)) {
+        report.skipped += 1
+        continue
+      }
+
       wanted.push({
         target,
         bounty,
@@ -305,10 +372,20 @@ export async function enrichBountyPosters(
 
   if (wanted.length === 0) return report
 
+  /*
+   * The cap, applied after the choosing rather than during it.
+   *
+   * So the report still counts every printing this library is missing, and the
+   * pass merely stops fetching. A limit that cut the loop short would make
+   * `resolved` mean « as far as we got », which is the sort of number that
+   * looks like knowledge and is not.
+   */
+  const batch = options.limit === undefined ? wanted : wanted.slice(0, options.limit)
+
   let files: Awaited<ReturnType<typeof resolveFiles>>
   try {
     const resolve = options.resolve ?? resolveFiles
-    files = await resolve(wanted.map((item) => item.title))
+    files = await resolve(batch.map((item) => item.title))
   } catch (error) {
     report.failures.push({
       what: 'résolution des fichiers',
@@ -318,9 +395,9 @@ export async function enrichBountyPosters(
   }
 
   let done = 0
-  for (const item of wanted) {
+  for (const item of batch) {
     done += 1
-    options.onProgress?.(done, wanted.length)
+    options.onProgress?.(done, batch.length)
 
     const file = files.get(item.title)
     if (!file) {
@@ -339,10 +416,12 @@ export async function enrichBountyPosters(
       sourceRef: `bounty:${item.title}`,
       kind: 'character',
       names: [item.target.character.canonical],
-      imageUrl: file.imageUrl,
+      /* A box is applied to the file at full size; see PosterFile.originalUrl. */
+      imageUrl: item.bounty.crop ? file.originalUrl : file.imageUrl,
       pageUrl: item.pageUrl,
       attribution: ATTRIBUTION,
       firstAppearanceChapter: null,
+      ...(item.bounty.crop ? { crop: item.bounty.crop } : {}),
     }
 
     try {
@@ -423,6 +502,68 @@ async function findTargets(userId: string): Promise<Target[]> {
   }
 
   return [...byEntity.values()]
+}
+
+/**
+ * Every printing this library already holds, as « entity at chapter ».
+ *
+ * Read outside the boundary for the same reason `findTargets` is: it runs for
+ * the owner, to decide what to fetch, and nothing it learns reaches a page.
+ *
+ * The chapter is the identifier of a printing, so this answers the question the
+ * pass actually has — « do we have Luffy's poster from 96 » — without knowing
+ * which file it came from and therefore without reading the gallery first.
+ */
+async function storedPrintings(userId: string): Promise<Set<string>> {
+  const rows = await withIngest(async (db) =>
+    db.execute<{ entity_id: string; revealed_in_chapter: number }>(sql`
+      SELECT DISTINCT entity_id, revealed_in_chapter
+      FROM entity_images
+      WHERE user_id = ${userId} AND kind = 'poster'
+    `),
+  )
+  return new Set(rows.map((row) => `${row.entity_id}:${row.revealed_in_chapter}`))
+}
+
+/**
+ * How many posters one automatic pass will fetch.
+ *
+ * Smaller than the portraits' fifteen, and it can afford to be: a poster is
+ * only ever fetched once, so the pass has no steady state to keep up with. A
+ * library that has just met the whole crew catches up over a few chapters, and
+ * the one after that downloads nothing.
+ */
+const AUTOMATIC_LIMIT = 6
+
+/**
+ * Bring in the posters the chapter just made reachable, without being asked.
+ *
+ * The settings page has a button for this and a button is the wrong place for
+ * it, for the reason `illustrateQuietly` gives about portraits: nobody
+ * publishes a chapter thinking « now let me go and fetch the wanted posters ».
+ * A poster is not knowledge either — it supports no assertion and is cited as
+ * nothing — so it needs a moment rather than a decision, and the moment a
+ * chapter becomes readable is the one.
+ *
+ * Pinned printings only, so an unattended run never exercises the half of the
+ * matcher that reasons from a file name. Capped, so it cannot turn a batch
+ * import into a thousand downloads. And it asks the library before the wiki,
+ * so the ordinary case — everything already here — costs one query and no
+ * request at all.
+ *
+ * Swallows everything, like its sibling: this runs after the response, beside
+ * work that already succeeded, and a fan wiki being down must not turn a
+ * published chapter into an error message.
+ */
+export async function postersQuietly(
+  userId: string,
+  limit: number = AUTOMATIC_LIMIT,
+): Promise<PosterReport | null> {
+  try {
+    return await enrichBountyPosters(userId, { pinnedOnly: true, limit })
+  } catch {
+    return null
+  }
 }
 
 /** Characters the manifest covers, for a page that wants to say so. */

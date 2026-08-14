@@ -337,6 +337,22 @@ export function EnrichPosters({ characters }: { characters: number }) {
             {result.stored} affiche(s) stockée(s) pour {result.considered}{' '}
             personnage(s), sur {result.resolved} tirage(s) rattaché(s) à un
             fichier.
+            {/*
+             * « Déjà en place » rather than nothing.
+             *
+             * A second run stores zero, because a poster is fetched once. The
+             * line above then reads as a failure unless it says where the rest
+             * went — and this is also the number that says the automatic pass
+             * is doing its job, since the posters it brought in on publication
+             * are counted here rather than downloaded again.
+             */}
+            {result.skipped ? ` ${result.skipped} déjà en place.` : ''}
+          </p>
+
+          <p className="mt-1 text-xs text-muted">
+            Les affiches épinglées arrivent aussi toutes seules, à la
+            publication d&apos;un chapitre. Ce bouton fait la passe complète :
+            il relit la galerie du wiki et rapporte ce qui reste sans fichier.
           </p>
 
           {result.unresolved && result.unresolved.length > 0 && (

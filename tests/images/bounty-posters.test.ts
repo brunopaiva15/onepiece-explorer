@@ -13,6 +13,7 @@ import {
   parseGallery,
   plainCaption,
 } from '@/domains/images/sources/bounty-posters.ts'
+import { extractOf } from '@/domains/images/store.ts'
 
 /**
  * Les avis de recherche, et la seule façon de les montrer sans mentir.
@@ -157,7 +158,10 @@ describe('rattacher un tirage à un fichier', () => {
    * entirely plausible on the page.
    */
   it('ne lit jamais l’ordinal dans la légende', () => {
-    const first = luffy.rows.find((row) => row.edition === 1)!
+    // The pin is stripped, as in the Zoro case below: this asserts what the
+    // matcher does when left to itself, and « Luffy eyecatcher poster.png » is
+    // exactly the file it must not reach for a first printing.
+    const { file: _pinned, crop: _box, ...first } = luffy.rows.find((row) => row.edition === 1)!
     expect(findPoster(gallery, luffy, first)).toBeNull()
   })
 
@@ -183,9 +187,38 @@ describe('rattacher un tirage à un fichier', () => {
     expect(findPoster(gallery, luffy, fourth)?.why).toContain('manifeste')
   })
 
-  it('ne rattache rien quand le fichier nommé a disparu de la galerie', () => {
-    const missing = { chapter: 1, amount: 1, edition: 1, file: 'Introuvable.png' }
-    expect(findPoster(gallery, luffy, missing)).toBeNull()
+  /*
+   * The gallery is where a poster is found, not a list of the posters there are.
+   *
+   * This assertion used to be the opposite: a pin naming a file outside the
+   * gallery resolved to nothing, on the reasoning that a typo should not reach
+   * the network. What it actually did was make the protagonist unpinnable.
+   * Luffy's thirty million exists on that wiki exactly once, inside « Luffy
+   * Receives His First Bounty.png », which is filed as a scene and sits in
+   * neither the gallery nor the category — so the rule cost the wall Luffy from
+   * chapter 96 to chapter 601 in order to guard against a spelling mistake.
+   *
+   * The mistake is still guarded, better: an unknown name now fails at
+   * `resolveFiles` and is printed in the run's failures, instead of vanishing.
+   */
+  it('atteint un fichier absent de la galerie, parce qu’une épingle est un nom écrit à la main', () => {
+    const outside = { chapter: 1, amount: 1, edition: 1, file: 'Introuvable.png' }
+    const match = findPoster(gallery, luffy, outside)
+    expect(match?.entry.title).toBe('File:Introuvable.png')
+    expect(match?.why).toContain('hors galerie')
+  })
+
+  it('ne laisse pas une épingle hors galerie satisfaire les heuristiques', () => {
+    // It arrives with no caption and no heading, so nothing but an exact file
+    // name can reach it: the name-plus-amount path has nothing to read.
+    const synthetic = findPoster(gallery, luffy, {
+      chapter: 96,
+      amount: 30_000_000,
+      edition: 1,
+      file: 'Une Affiche Inventée.png',
+    })!
+    expect(synthetic.entry.caption).toBe('')
+    expect(findPoster([synthetic.entry], luffy, { chapter: 96, amount: 30_000_000, edition: 1 })).toBeNull()
   })
 
   it('rattache le bon tirage à Chopper', () => {
@@ -257,11 +290,86 @@ describe('le manifeste', () => {
     expect(bountyCharacter('un villageois sans nom')).toBeNull()
   })
 
+  /*
+   * Le cadre, et ce qu'il a le droit d'être.
+   *
+   * A crop is the one line in this manifest that can turn a correct file into a
+   * wrong picture, so it is held to the same rule as a pin and one more: it may
+   * only ever frame *inside* the file, and it must know the shape of the file
+   * it was drawn on.
+   */
+  it('ne cadre jamais en dehors du fichier', () => {
+    for (const character of BOUNTY_HISTORY) {
+      for (const row of character.rows) {
+        if (!row.crop) continue
+        const [left, top, width, height] = row.crop.box
+        expect(row.file, `${character.canonical} : un cadre sans fichier`).toBeDefined()
+        expect(left).toBeGreaterThanOrEqual(0)
+        expect(top).toBeGreaterThanOrEqual(0)
+        expect(width).toBeGreaterThan(0)
+        expect(height).toBeGreaterThan(0)
+        expect(left + width).toBeLessThanOrEqual(1)
+        expect(top + height).toBeLessThanOrEqual(1)
+        expect(row.crop.ratio).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('cadre l’affiche à trente millions dans la case qui la montre', () => {
+    // The one crop there is, and the reason the mechanism exists: no file on
+    // the wiki holds this poster on its own.
+    const first = luffy.rows.find((row) => row.edition === 1)!
+    expect(first.amount).toBe(30_000_000)
+    expect(first.file).toBe('Luffy Receives His First Bounty.png')
+    expect(first.crop?.ratio).toBeCloseTo(665 / 482, 4)
+  })
+
   it('écrit la somme comme une affiche l’imprime', () => {
     // Narrow no-break spaces, written as escapes here so the expectation says
     // which character it means rather than looking like an ordinary space.
     expect(formatBerries(30_000_000)).toBe('30\u202f000\u202f000\u202f\u0e3f')
     expect(formatBerries(1_111_000_000)).toBe('1\u202f111\u202f000\u202f000\u202f\u0e3f')
     expect(formatBerries(50)).toBe('50\u202f\u0e3f')
+  })
+})
+
+/**
+ * Le recadrage, et le jour où le wiki réenvoie une autre image.
+ *
+ * A box drawn on a 665×482 panel is meaningless on a 1200×675 replacement, and
+ * the failure is silent by nature: sharp will happily return a patch of sky and
+ * the pipeline will print « 30 000 000 ฿ » underneath it. The shape of the file
+ * is the cheapest evidence that it is still the file somebody looked at, so it
+ * is checked, and a mismatch is an error rather than a best effort.
+ */
+describe('appliquer un cadre à un fichier', () => {
+  const luffyCrop = BOUNTY_HISTORY.find((c) => c.canonical === 'Monkey D. Luffy')!.rows.find(
+    (row) => row.edition === 1,
+  )!.crop!
+
+  it('rend les pixels du fichier tel qu’il arrive', () => {
+    // The bytes come through `iiurlwidth`, so the same box has to work at any
+    // size the wiki chooses to hand back. Both of these are the same poster.
+    expect(extractOf(luffyCrop, 665, 482, 'original')).toEqual({
+      left: 262,
+      top: 58,
+      width: 148,
+      height: 200,
+    })
+    expect(extractOf(luffyCrop, 512, 371, 'vignette')).toEqual({
+      left: 202,
+      top: 45,
+      width: 114,
+      height: 154,
+    })
+  })
+
+  it('refuse un fichier dont la forme a changé', () => {
+    expect(() => extractOf(luffyCrop, 1200, 675, 'remplacement')).toThrow(/périmé/)
+  })
+
+  it('refuse un cadre qui sort de l’image', () => {
+    const outside = { box: [0.9, 0.9, 0.5, 0.5] as [number, number, number, number], ratio: 1 }
+    expect(() => extractOf(outside, 400, 400, 'débordement')).toThrow(/hors de l/)
   })
 })

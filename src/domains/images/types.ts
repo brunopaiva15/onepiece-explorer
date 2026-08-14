@@ -29,6 +29,40 @@ export type CandidateKind = 'character' | 'fruit' | 'ship' | 'island' | 'page'
 
 export type SourceName = 'onepieceapi' | 'api-onepiece' | 'anilist' | 'fandom'
 
+/**
+ * The part of a picture that is the picture, when the file holds more.
+ *
+ * Written for the wanted posters and only for them. The wiki has no standalone
+ * image of Luffy's thirty-million poster — it exists on that site exactly once,
+ * inside « Luffy Receives His First Bounty.png », held up between Luffy and
+ * Usopp on the deck of the Merry. Every other route to putting the protagonist
+ * on a wall of wanted posters before chapter 601 is a worse one: showing the
+ * scene puts two grinning faces on a poster wall, and showing nothing tells a
+ * reader of chapter 124 that Luffy was never wanted.
+ *
+ * A box is not a picture the interface invented. It is the same bytes from the
+ * same file, framed on the thing the file is being cited for, and it is drawn by
+ * the same person who read the number off it — see the pin rule in bounties.ts,
+ * which this extends rather than escapes.
+ *
+ * Fractions rather than pixels, because the pixels are not knowable here: the
+ * bytes arrive through `iiurlwidth`, which is a thumbnail whose size depends on
+ * the original. Fractions survive that; a pixel box would silently frame the sky.
+ */
+export interface ImageCrop {
+  /** Left, top, width, height, each a fraction of the file's own size. */
+  box: [number, number, number, number]
+  /**
+   * Width over height of the file when the box was drawn.
+   *
+   * The guard, and the reason a stale box fails loudly instead of quietly. A
+   * re-upload that recomposes the frame changes this number, and a crop that no
+   * longer knows where it is must not be applied: the result would be a picture
+   * with a bounty printed underneath it and no relation to either.
+   */
+  ratio: number
+}
+
 export interface ImageCandidate {
   source: SourceName
   /**
@@ -64,6 +98,8 @@ export interface ImageCandidate {
    * with a similar name.
    */
   firstAppearanceChapter: number | null
+  /** Set only by the poster pipeline, and only where a person drew a box. */
+  crop?: ImageCrop
 }
 
 export interface Catalogue {

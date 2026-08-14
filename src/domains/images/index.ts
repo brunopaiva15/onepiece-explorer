@@ -50,6 +50,7 @@ export {
   bountyCharacterCount,
   enrichBountyPosters,
   postersFor,
+  postersQuietly,
   wantedEntityIds,
   type PosterOptions,
   type PosterReport,
