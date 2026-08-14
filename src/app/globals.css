@@ -1303,3 +1303,325 @@ hr.regle {
 .perle-moment {
   color: var(--text-muted);
 }
+
+/* --------------------------------------------------------------------------
+   Animation mode — the thread, played.
+
+   The same beads as the page above, one at a time and full screen: a chapter
+   card, then the faces that chapter found with the line underneath. Everything
+   here is drawn from the four devices the rest of the site uses — inked
+   outlines, hard shadows, the poster face on numbers — against the deep ocean
+   rather than parchment, because a picture shown this large needs a ground
+   that gets out of its way.
+
+   Two rules it does not break:
+
+     1. **Motion is never load-bearing.** The pan is decoration on a picture
+        that is already on screen; a reader who asked for less motion gets the
+        same shots, for the same time, standing still.
+     2. **Nothing is on screen without a way out.** The bar at the bottom never
+        hides — no auto-hiding chrome, no gesture to discover — and the film
+        stops on the first keypress a reader thinks to try.
+   -------------------------------------------------------------------------- */
+
+/* The button that opens it, above the thread. */
+.fil-projection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 2rem;
+}
+
+.fil-projection-aide {
+  flex: 1 1 14rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+/* Opened with showModal(), so this is the top layer: no z-index to lose a race
+   with, the page behind it inert, and the document blocked from scrolling. */
+.cine[open] {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: var(--sea-deep);
+  color: var(--sea-ink);
+}
+
+.cine::backdrop {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+/* The stage. Fixed in the layout so the live region on it survives the shots
+   changing inside it. */
+.cine-plateau {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.cine-scene {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.75rem, 3vh, 1.75rem);
+  padding: clamp(1rem, 4vh, 2.5rem) clamp(1rem, 4vw, 3rem);
+  text-align: center;
+}
+
+/* --- The faces ----------------------------------------------------------- */
+
+.cine-images {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: clamp(0.5rem, 2vw, 1.25rem);
+  width: min(100%, 62rem);
+  /* Room for the legend under it on a phone in portrait, where the viewport is
+     tall and the picture would otherwise push the line off the bottom. */
+  height: min(52vh, 32rem);
+}
+
+/*
+ * Panels, not a strip.
+ *
+ * Every frame keeps a portrait's shape — the same 3:4 the thread's vignettes
+ * are cropped to — and the row is sized so that the frames it holds fit side
+ * by side at that shape. Without the width term, three faces on a phone came
+ * out as three vertical slivers: the height was the viewport's and the width
+ * was a third of 390 pixels, which is not a panel, it is a bookmark.
+ */
+.cine-images[data-faces='2'] {
+  height: min(52vh, 32rem, 62vw);
+}
+
+.cine-images[data-faces='3'] {
+  height: min(52vh, 32rem, 40vw);
+}
+
+.cine-cadre {
+  flex: 0 1 auto;
+  min-width: 0;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: 3px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  background: var(--surface-sunken);
+}
+
+.cine-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Crop from the top, as everywhere else: catalogue art is often a full
+     figure, and a centred crop of one is a picture of a torso. */
+  object-position: center top;
+}
+
+/* --- The line ------------------------------------------------------------ */
+
+.cine-legende {
+  width: min(100%, 46rem);
+  padding: clamp(0.7rem, 2vh, 1.1rem) clamp(0.9rem, 3vw, 1.5rem);
+  border: 3px solid var(--ink);
+  box-shadow: var(--shadow-hard);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.cine-mot {
+  margin-bottom: 0.35rem;
+}
+
+.cine-ligne {
+  font-size: clamp(1.1rem, 0.95rem + 1vw, 1.65rem);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.cine-ligne[data-genre='citation'] {
+  font-style: italic;
+}
+
+.cine-ligne[data-genre='dementi'] {
+  text-decoration: line-through;
+  text-decoration-color: var(--epi-contradicted);
+  text-decoration-thickness: 2px;
+  color: var(--text-secondary);
+}
+
+.cine-detail {
+  margin-top: 0.35rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Where the faces came from. Small, and not optional — a portrait is a name
+   match against a fan catalogue, and full screen is where it looks most like a
+   result the pipeline established. */
+.cine-source {
+  margin-top: 0.6rem;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+/* --- The chapter card, and the end of the reel --------------------------- */
+
+.cine-carton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 34rem;
+  color: var(--sea-ink);
+}
+
+.cine-carton .cartouche {
+  color: var(--accent);
+}
+
+.cine-chiffre {
+  font-size: clamp(4rem, 2rem + 12vw, 10rem);
+  color: var(--sea-ink);
+}
+
+.cine-carton-titre {
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 0.9rem + 0.5vw, 1.35rem);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  color: var(--sea-ink);
+}
+
+/* --- The bar ------------------------------------------------------------- */
+
+.cine-chrome {
+  flex: 0 0 auto;
+  border-top: 3px solid var(--ink);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Chapters, not shots: the number of shots is unknown until the last window
+   has been fetched, so a gauge fed by them would lurch backwards all film. */
+.cine-jauge {
+  height: 6px;
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
+}
+
+.cine-jauge > span {
+  display: block;
+  height: 100%;
+  background: var(--accent-strong);
+  transition: width 300ms linear;
+}
+
+.cine-commandes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.9rem;
+  padding: 0.7rem clamp(0.75rem, 3vw, 1.5rem);
+}
+
+.cine-position {
+  margin-right: auto;
+}
+
+.cine-transport {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.cine-bouton {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.cine-vitesse {
+  display: flex;
+  gap: 0.6rem;
+}
+
+/* Only the speed in force is underlined. Three identical underlines said « you
+   may pick one of these » where the reader was asking « which one is on ». */
+.cine-lien {
+  color: var(--text-muted);
+  border-bottom-color: transparent;
+}
+
+.cine-lien[data-choisi='oui'] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-strong);
+}
+
+/* --- Motion -------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .cine-scene {
+    animation: cine-entree 260ms ease-out both;
+  }
+
+  /* The pan runs for exactly as long as the shot is held — the duration is set
+     on the element, from the same number the countdown uses — so the picture
+     is still moving when it cuts. A movement that finishes early and then sits
+     still is what makes a slideshow look like a slideshow. */
+  .cine-image {
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+  }
+
+  .cine-image[data-pan='0'] { animation-name: cine-pan-0; }
+  .cine-image[data-pan='1'] { animation-name: cine-pan-1; }
+  .cine-image[data-pan='2'] { animation-name: cine-pan-2; }
+  .cine-image[data-pan='3'] { animation-name: cine-pan-3; }
+
+  /* Paused with the film, not left drifting on a frame that is not advancing. */
+  .cine-images[data-arret='oui'] .cine-image {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes cine-entree {
+  from { opacity: 0; transform: translateY(0.7rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes cine-pan-0 {
+  from { transform: scale(1.05) translate(0, 0); }
+  to { transform: scale(1.16) translate(-2%, -3%); }
+}
+
+@keyframes cine-pan-1 {
+  from { transform: scale(1.16) translate(2%, -2%); }
+  to { transform: scale(1.05) translate(0, 0); }
+}
+
+@keyframes cine-pan-2 {
+  from { transform: scale(1.04) translate(-2%, 0); }
+  to { transform: scale(1.15) translate(2%, -2%); }
+}
+
+@keyframes cine-pan-3 {
+  from { transform: scale(1.15) translate(0, -3%); }
+  to { transform: scale(1.04) translate(-1%, 0); }
+}

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Portrait } from '@/app/components/portrait.tsx'
 import { arcOf } from '@/domains/temporal/arcs.ts'
 import type { StoryBeat, StoryPart } from '@/domains/temporal/story.ts'
+import { MOT } from './shots.ts'
 
 /**
  * One bead on the thread.
@@ -16,19 +17,12 @@ import type { StoryBeat, StoryPart } from '@/domains/temporal/story.ts'
  * one place, testable without a browser, and this is the shape it takes.
  */
 
-/** The verb, in front of the line. Small, and the only per-kind wording here. */
-const MOT: Record<StoryBeat['kind'], string> = {
-  chapitre: '',
-  citation: '',
-  mention: 'on en parle',
-  entree: 'entre en scène',
-  evenement: 'il arrive',
-  souvenir: 'souvenir',
-  nom: 'un nom',
-  dementi: 'on ne croit plus',
-  reponse: 'réponse',
-  question: 'question',
-}
+/*
+ * The verb in front of the line lives in `shots.ts`, with the rest of the
+ * per-kind wording: animation mode plays these same beads and has to call them
+ * the same things, and one table in two files drifts the first time either is
+ * reworded.
+ */
 
 /** Beads whose second line is a moment, not a sentence. */
 const EVENT_KINDS = new Set<StoryBeat['kind']>(['evenement', 'souvenir'])

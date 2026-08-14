@@ -497,6 +497,47 @@ Le curseur de la barre reste actif et veut dire ici quelque chose d'un peu
 différent d'ailleurs : c'est là où le fil **s'arrête**. Posez-le sur 45 et
 l'histoire court de 1 à 45.
 
+### Le fil se regarde aussi
+
+**« Voir en animation »**, au-dessus du fil, le déroule tout seul : un carton
+de chapitre, puis les perles de ce chapitre une par une, plein écran, les
+visages en grand et la ligne dessous. Les mêmes perles, dans le même ordre, à
+la même frontière — c'est le fil, joué.
+
+```
+ ┌──────┐ ┌──────┐ ┌──────┐     trois visages, parce que la phrase
+ │      │ │      │ │      │     en nomme trois
+ └──────┘ └──────┘ └──────┘
+ ╭──────────────────────────╮
+ │        IL ARRIVE         │
+ │  Shanks sauve Luffy et   │
+ │  perd son bras gauche.   │
+ │  onepieceapi.com · « Shanks », « Luffy »
+ ╰──────────────────────────╯
+ ▁▁▁▁▁▁▁▁▁▁░░░░░░░░░░░░░░░░░░
+ CHAPITRE 1   ◀ ⏸ ▶   lent normal rapide   fermer
+```
+
+Une phrase d'événement porte jusqu'à **trois** visages : ceux que le fil
+marque déjà en vignette dans la ligne. C'est ce qui rapproche le film d'une
+planche — « Shanks sauve Luffy » se joue comme deux portraits et cette phrase,
+au lieu d'un mur de texte entre deux noms.
+
+Il n'y a **pas de second chemin vers les données** : le film rejoue le tableau
+de perles que le défilement a chargé, et redemande la fenêtre suivante par le
+même chargeur. Il ne peut donc pas atteindre une perle que le défilement
+n'atteindrait pas, et la frontière n'a rien de neuf à garder. Ce qu'il coupe
+est écrit : la queue repliée d'un chapitre — cinq événements sont ce dont le
+chapitre parle, la suite est un relevé — et une perle dont la ligne est vide.
+
+Le mouvement n'est jamais porteur. Le panoramique est une décoration sur une
+image déjà affichée, il dure exactement le temps du plan, et
+`prefers-reduced-motion` le supprime sans rien changer aux durées. La barre du
+bas ne se cache jamais : pause, pas à pas, vitesse, Échap. Et la provenance
+monte en plein écran avec le reste — un visage montré grand est ce qui
+ressemble le plus à un résultat du pipeline, alors qu'il vient d'un catalogue
+et d'un nom.
+
 ---
 
 ## La chronologie, ou l'autre axe
