@@ -233,9 +233,54 @@ export const candidateAssertionSchema = z.object({
   confidence: z.number().min(0).max(1),
 })
 
+/**
+ * When a scene happens *in the world*, as opposed to where it was printed.
+ *
+ * The column has existed since the schema was written and nothing ever filled
+ * it: no field asked for it, so `events.story_time` was null for every event in
+ * every library, and the story axis was an axis with no coordinates. That is why
+ * the chronology said « aucun événement n'a de position connue » at every
+ * chapter — it was reporting the truth about a field nobody wrote.
+ *
+ * Two shapes, and the missing third one is the point. A chapter says « vingt-deux
+ * ans plus tôt » or « avant la mort de Roger »; it does not say « le 3 mai 1519 ».
+ * Offering an `exact` calendar year here would be offering the model a slot that
+ * only an outside databook can fill, which is the one thing this pipeline exists
+ * to refuse — so the slot does not exist.
+ *
+ * **`quote` is what makes this a fact rather than a guess.** It is a verbatim
+ * fragment of the chapter that states the timing, and it is checked against the
+ * blocks the event already cites, exactly like every other excerpt (ADR 0003).
+ * Without it a model would happily date Ohara from memory, correctly, and the
+ * whole guarantee would be gone — a right answer arrived at the forbidden way is
+ * the failure this project is built to prevent.
+ */
+export const candidateStoryTimeSchema = z.object({
+  /**
+   * `approximate` when the chapter gives a distance — « dix ans plus tôt ».
+   * `relative` when it only gives an order — « avant l'exécution de Roger ».
+   */
+  kind: z.enum(['approximate', 'relative']),
+  /** Years before the chapter's own present. Null unless the text gives a number. */
+  years_ago: z.number().int().min(0).max(5000).nullable(),
+  /** How the chapter puts it, in French, for the page to show. */
+  description: z.string().min(1).max(160),
+  /** The chapter's own words. Must occur in a block the event cites. */
+  quote: z.string().min(1).max(300),
+})
+
 export const candidateEventSchema = z.object({
   local_id: z.string().min(1).max(60),
   summary: z.string().min(1).max(400),
+  /**
+   * When it happens, when the chapter says so — and absent when it does not.
+   *
+   * Optional rather than nullable-and-required for the reason `presence` and
+   * `kind` are: the payloads already in `review_items` are read back as this
+   * type, and a required field would stop every proposal queued before today
+   * from type-checking as what it is.
+   */
+  story_time: candidateStoryTimeSchema.nullable().optional(),
   /**
    * Which of the three occurrence types this scene is.
    *

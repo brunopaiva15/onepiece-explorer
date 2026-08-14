@@ -151,6 +151,15 @@ Les routes de lecture sont publiques ; tout `/admin` demande la session du propr
 - [x] Les sources et les droits sont cités là où on les lit : attribution CC BY-SA 3.0 du One Piece Wiki / Fandom et droits des ayants droit de ONE PIECE dans le pied de page de chaque page, en version longue sur `/mentions-legales`.
 - [x] Les pages publiques sont indexables ; `/admin` pose son propre `noindex`.
 
+## Chronologie
+
+- [x] Une scène porte la date que le chapitre lui donne, et le chapitre est **citable** pour elle : la phrase qui date la scène doit se retrouver dans l'un des blocs que la scène cite déjà en preuve. Une bonne réponse tirée de ce que le modèle sait par ailleurs — « vingt-deux ans plus tôt » est très souvent exact et absent du chapitre — est refusée comme n'importe quelle autre affirmation non ancrée — `tests/temporal/story-time.test.ts`.
+- [x] Une datation refusée coûte la date et jamais la scène : l'événement est publié sans position, et le refus part en quarantaine plutôt que d'être supprimé sans trace — `tests/temporal/story-time.test.ts`.
+- [x] Rien n'est converti ni calculé : un ordre sans distance (« avant l'exécution de Roger ») est enregistré comme un ordre et non comme une durée, et une scène que le chapitre ne date pas est enregistrée `null` et jamais « inconnu » — `tests/review/event-participants.test.ts`.
+- [x] L'axe du temps de l'histoire repose aussi sur ce qui était déjà enregistré : un souvenir dont personne n'a chiffré la distance est placé **avant le présent**, ce qui est vrai, plutôt que rangé dans « position inconnue » — `tests/temporal/chronology.test.ts`.
+- [x] `/chronologie` lit la bibliothèque entière et non le curseur, sans contourner la frontière : elle est interrogée au plafond de la bibliothèque, et un chapitre non importé reste illisible à n'importe quel plafond — `tests/temporal/chronology.test.ts`.
+- [x] Le relecteur voit la phrase qui a valu sa date à une scène, à côté de la date : l'ancrage refuse déjà ce qui n'est pas dans le chapitre, et ce qu'il ne peut pas attraper — une vraie phrase rattachée à la mauvaise scène — se voit là.
+
 ## Exploitation
 
 - [x] Une documentation d'exploitation existe : déploiement, surveillance, sauvegarde, rétention, pannes courantes — [docs/operations.md](operations.md).

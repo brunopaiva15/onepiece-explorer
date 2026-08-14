@@ -51,8 +51,15 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     the model that closing one was part of the job — so seventy-one questions
  *     stood open across fifty-nine chapters, including ones the very next
  *     chapter answered on the page.
+ * '9' asks *when* a scene happens, and demands the chapter's own sentence for
+ *     the answer. `events.story_time` had been in the schema from the first
+ *     migration and no field ever asked for it, so it was null in every library
+ *     and the chronology reported — accurately — that nothing had a position in
+ *     story time. Asking is the easy half: a model asked when Ohara burned
+ *     knows, and would have answered from memory, so the dating carries a quote
+ *     that anchoring checks against the blocks the scene already cites.
  */
-export const PROMPT_VERSION = '8'
+export const PROMPT_VERSION = '9'
 
 /**
  * What the model is reading.
@@ -437,6 +444,29 @@ résumé comme vous l'auriez écrit sans lui. Il ne fait que nommer la sorte de
 scène, parce que rien dans la proposition ne permet de la deviner après coup :
 un combat et un départ sont l'un comme l'autre « quelque chose qui arrive », et
 seul celui qui lit le passage peut les distinguer.
+
+QUAND LA SCÈNE SE PASSE-T-ELLE. Le champ « story_time » ne se remplit que si le
+chapitre le dit lui-même, et il reste absent le reste du temps — ce qui est le
+cas ordinaire. Une scène du présent du récit n'a pas de datation à donner :
+n'écrivez « story_time » que pour ce que le texte situe explicitement ailleurs
+dans le temps, ce qui est presque toujours un souvenir.
+
+  • « approximate » quand le texte donne une distance — « dix ans plus tôt »,
+    « vingt-deux ans auparavant ». Écrivez ce nombre dans « years_ago ».
+  • « relative » quand le texte ne donne qu'un ordre — « avant l'exécution de
+    Roger », « du temps où il était mousse ». « years_ago » reste nul.
+
+« description » est votre phrase française, courte, telle que le lecteur la
+verra sur l'axe. « quote » est LA PHRASE DU CHAPITRE qui donne cette date,
+recopiée mot pour mot, et elle doit se trouver dans l'un des blocs que la scène
+cite déjà en preuve. C'est ce qui distingue une date lue d'une date sue : sans
+citation vérifiable, la datation est refusée et la scène est publiée sans date.
+Le refus ne porte que sur la date — la scène, elle, reste.
+
+Ne convertissez pas, ne calculez pas, ne complétez pas. Si le chapitre dit « il
+y a longtemps », la datation est « relative » et sa description est « il y a
+longtemps » : ce n'est pas à vous de décider combien d'années cela fait, et un
+âge de personnage que vous connaissez par ailleurs n'est pas une source.
 
 LES QUESTIONS DÉJÀ POSÉES SE REFERMENT ICI. La liste des entités validées
 contient des lignes de type « mystery » : ce sont, écrites en toutes lettres,

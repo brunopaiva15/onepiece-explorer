@@ -194,6 +194,51 @@ export function checkEvidence(
   return null
 }
 
+/**
+ * A scene's in-world date, kept only if the chapter says it.
+ *
+ * Checked against the blocks the *event itself* cites, and no others. That
+ * restriction is what stops the field from becoming a back door: a chapter is
+ * full of numbers, and a quote hunted down anywhere in it could date any scene
+ * with any of them. « Dix ans plus tôt » has to be in the same passage that
+ * proves the event, which is the same thing as saying the chapter dated *this*
+ * scene rather than that the words appear somewhere in the volume.
+ *
+ * Visual refs are excluded on purpose. A dating quote is a sentence the chapter
+ * writes; a panel description is a sentence *this run* wrote about a drawing,
+ * and letting a date anchor to it would let the model date a scene against its
+ * own earlier output.
+ */
+function anchorStoryTime(
+  event: CandidateEvent,
+  sources: AnchorSources,
+): { accepted: CandidateEvent['story_time']; rejected: Quarantined | null } {
+  const time = event.story_time
+  if (time === null || time === undefined) return { accepted: null, rejected: null }
+
+  const quote = time.quote.trim()
+  const cited = event.evidence
+    .filter((ref) => ref.kind === 'text')
+    .map((ref) => sources.textByRef.get(ref.ref))
+    .filter((text): text is string => text !== undefined)
+
+  if (quote.length > 0 && cited.some((text) => matches(quote, text, sources.tolerateNoise))) {
+    return { accepted: time, rejected: null }
+  }
+
+  return {
+    accepted: null,
+    rejected: {
+      reason: 'excerpt_not_in_source',
+      detail:
+        `La datation « ${truncate(time.description)} » cite « ${truncate(quote)} », ` +
+        `qui n'apparaît dans aucun des blocs cités par la scène. ` +
+        `L'événement est conservé sans date : c'est la date qui n'est pas prouvée, pas la scène.`,
+      payload: { local_id: event.local_id, story_time: time },
+    },
+  }
+}
+
 export interface OntologyView {
   nodeTypes: Set<string>
   predicates: Set<string>
@@ -396,8 +441,24 @@ export function filterExtraction(
       quarantined.push({ ...failure, payload: event })
       continue
     }
+
+    /*
+     * The dating, held to the same standard as everything else — and dropped on
+     * its own rather than sinking the scene.
+     *
+     * An event whose evidence anchors is a real event; that the model then
+     * paraphrased the sentence giving its date is a fault in one field, and
+     * throwing away « Shanks perd son bras » because « il y a dix ans » was
+     * quoted loosely would lose a fact to punish a footnote. So the scene
+     * publishes undated, and the rejected dating goes to quarantine on its own
+     * — visible in the review centre, where a silent drop would not be.
+     */
+    const dating = anchorStoryTime(event, sources)
+    if (dating.rejected) quarantined.push(dating.rejected)
+
     events.push({
       ...event,
+      story_time: dating.accepted,
       // Participants that did not survive are dropped from the list rather than
       // sinking the whole event: an event is still a real event if one of its
       // participants could not be anchored.

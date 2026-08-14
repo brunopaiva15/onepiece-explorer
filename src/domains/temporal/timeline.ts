@@ -5,19 +5,27 @@ import { chapters } from '@/db/schema/documents.ts'
 import { assertions, entities, entityLabels, events, mysteries } from '@/db/schema/knowledge.ts'
 
 /**
- * Two timelines, kept apart.
+ * The reader's own axis: what they know, in the order they came to know it.
  *
  * *Revelation time* is when the reader learned something. *Story time* is when
- * it happened. A flashback shown in chapter 40 about events fifty years earlier
- * sits at 40 on one axis and far to the left on the other, and collapsing them
- * is exactly the mistake that makes a timeline lie: it would either claim the
- * reader knew about those events all along, or that they happened in chapter 40.
+ * it happened, and this module no longer tries to order by it — `chronology.ts`
+ * does, reading the library whole rather than at the reader's cursor.
+ *
+ * The split is not tidiness. Ordering by story time from here produced a page
+ * that correctly reported having nothing: `events.story_time` was written by
+ * nothing at all, because no extraction field ever asked for it. The column is
+ * filled now, from a dated phrase the chapter can be quoted for, and the axis
+ * that reads it needs the whole library rather than a prefix of it — almost
+ * every ancient scene in this work is dated by a late chapter.
+ *
+ * What stays here is the axis the boundary serves well, and the one `/mysteres`
+ * reads. `describeStoryTime()` stays too: the story thread shows an event's
+ * in-world moment beside it, which is a label on a beat and not an ordering.
  *
  * Story time is deliberately a union of shapes rather than a date. Most events
  * in this work have no date at all, only an order relative to other events.
  * Rendering "unknown" as a position on a line would fabricate precision the
- * pages do not contain, so events with no known time are grouped and labelled as
- * such rather than placed.
+ * pages do not contain.
  */
 
 export interface TimelineEntry {
@@ -63,10 +71,6 @@ export interface Timeline {
   boundaryChapter: number
   /** Ordered by revelation: the order the reader actually met them. */
   byRevelation: TimelineEntry[]
-  /** Events with a known in-world position, ordered by it. */
-  byStoryTime: TimelineEntry[]
-  /** Events the pages place nowhere. Counted, not positioned. */
-  undated: TimelineEntry[]
 }
 
 export async function getTimeline(
@@ -162,17 +166,11 @@ export async function getTimeline(
     })),
   ]
 
-  const dated = all.filter((entry) => entry.storyTime !== null && entry.storyTime.kind !== 'unknown')
-
   return {
     boundaryChapter,
-    byRevelation: [...all].sort(
+    byRevelation: all.sort(
       (a, b) => a.knownFromChapter - b.knownFromChapter || a.recordedAt - b.recordedAt,
     ),
-    byStoryTime: dated.sort(
-      (a, b) => storyOrder(a) - storyOrder(b) || a.recordedAt - b.recordedAt,
-    ),
-    undated: all.filter((entry) => !dated.includes(entry)),
   }
 }
 
@@ -210,19 +208,6 @@ export function describeStoryTime(value: unknown): StoryTimeView | null {
     default:
       return { kind: 'unknown', description: 'moment inconnu' }
   }
-}
-
-/** Sort key for the story axis. Approximate entries sort by their own text. */
-function storyOrder(entry: TimelineEntry): number {
-  const time = entry.storyTime
-  if (!time) return Number.MAX_SAFE_INTEGER
-  if (time.kind === 'exact') {
-    const year = Number(time.description.split('-')[0])
-    return Number.isFinite(year) ? year : Number.MAX_SAFE_INTEGER
-  }
-  // Everything non-exact keeps revelation order among itself: it is the only
-  // ordering the pages actually justify.
-  return Number.MAX_SAFE_INTEGER - 1_000_000 + entry.knownFromChapter
 }
 
 /**

@@ -391,3 +391,82 @@ describe('publishing an event', () => {
     expect(orphans[0]!.count).toBe(0)
   })
 })
+
+/**
+ * The column that existed for a year and was never written.
+ *
+ * `events.story_time` has been in the schema since the first migration, the
+ * chronology has read it since it was written, and publication never set it —
+ * so it was null in every library, and the page said « aucun événement n'a de
+ * position connue » at every chapter, correctly, forever. These two tests are
+ * the seam: what the reviewer accepted has to land in the column.
+ */
+describe('when a scene happens', () => {
+  async function storedStoryTime(): Promise<unknown> {
+    const [row] = await raw<Array<{ story_time: unknown }>>`
+      SELECT story_time FROM events WHERE user_id = ${world.userId}`
+    return row!.story_time
+  }
+
+  it('reaches the column the chronology reads', async () => {
+    const event = await propose('event', {
+      ...scene([]),
+      is_flashback: true,
+      story_time: {
+        kind: 'approximate',
+        years_ago: 10,
+        description: 'dix ans plus tôt',
+        quote: 'Dix ans plus tôt',
+      },
+    })
+
+    await publishDecisions(world.userId, runId, [
+      { reviewItemId: event, decision: 'accept' },
+    ])
+
+    expect(await storedStoryTime()).toEqual({
+      kind: 'approximate',
+      description: 'dix ans plus tôt',
+      yearsAgo: 10,
+    })
+  })
+
+  it('is stored as an order when that is all it is', async () => {
+    /*
+     * « avant l'exécution de Roger » is a true statement about order and a
+     * false one about years. Stored as `approximate` with no `yearsAgo` it
+     * would sort as though somebody had counted, so it is stored as what it is.
+     */
+    const event = await propose('event', {
+      ...scene([]),
+      is_flashback: true,
+      story_time: {
+        kind: 'approximate',
+        years_ago: null,
+        description: "avant l'exécution de Roger",
+        quote: "avant l'exécution de Roger",
+      },
+    })
+
+    await publishDecisions(world.userId, runId, [
+      { reviewItemId: event, decision: 'accept' },
+    ])
+
+    expect(await storedStoryTime()).toEqual({
+      kind: 'relative',
+      note: "avant l'exécution de Roger",
+    })
+  })
+
+  it('is null when the chapter said nothing, never « unknown »', async () => {
+    // The union carries an `unknown` member for rows written before the field
+    // existed. Writing it now would claim the chapter was asked and declined.
+    const event = await propose('event', scene([]))
+
+    await publishDecisions(world.userId, runId, [
+      { reviewItemId: event, decision: 'accept' },
+    ])
+
+    expect(await storedStoryTime()).toBeNull()
+  })
+})

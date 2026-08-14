@@ -1708,6 +1708,17 @@ function ProposalBody({
           </p>
         )}
         {/*
+         * The date, with the sentence that earned it.
+         *
+         * A dating is the one field on this card a reviewer cannot check
+         * against the summary, because it is a claim about a moment the summary
+         * does not mention. Showing the quote beside it is what makes accepting
+         * it a decision rather than a formality — the anchoring already refused
+         * everything that is not in the chapter, and this is where a date that
+         * *is* in the chapter but attached to the wrong scene gets caught.
+         */}
+        <Dating value={record.story_time} />
+        {/*
          * Which sort of node this becomes, said before it is created rather
          * than discovered on the graph. Only when it is not the ordinary case:
          * « Événement » on every card would be a word the reviewer learns to
@@ -1751,6 +1762,33 @@ function ProposalBody({
     <pre className="mt-2 overflow-x-auto rounded-sm bg-surface-overlay p-2 text-xs text-secondary">
       {JSON.stringify(payload, null, 2)}
     </pre>
+  )
+}
+
+/**
+ * A proposed date, with the sentence that earned it.
+ *
+ * The one field on an event card a reviewer cannot check against the summary,
+ * because it is a claim about a moment the summary does not mention. Anchoring
+ * has already refused every quote that is not in the chapter; what it cannot
+ * catch is a real sentence attached to the wrong scene, and that is what
+ * printing the quote here is for.
+ */
+function Dating({ value }: { value: unknown }) {
+  if (value === null || typeof value !== 'object') return null
+  const time = value as Record<string, unknown>
+  if (typeof time.description !== 'string') return null
+
+  return (
+    <p className="mt-1 text-sm text-secondary">
+      Daté : <span className="text-primary">{time.description}</span>
+      {typeof time.years_ago === 'number' && <> — {time.years_ago} ans plus tôt</>}
+      {typeof time.quote === 'string' && (
+        <span className="mt-0.5 block font-mono text-xs text-muted">
+          « {time.quote} »
+        </span>
+      )}
+    </p>
   )
 }
 

@@ -13,6 +13,7 @@ import {
   glossaryTerms,
   mysteries,
   occurrences,
+  type StoryTime,
 } from '@/db/schema/knowledge.ts'
 import { PROMPT_VERSION } from '@/domains/ai/prompts.ts'
 import type {
@@ -806,6 +807,7 @@ export async function publishDecisions(
            */
           shownInChapter: run.chapterNumber,
           toldInChapter: candidate.is_flashback ? run.chapterNumber : null,
+          storyTime: storyTimeOf(candidate),
         })
         await db.insert(entityLabels).values({
           entityId: entity.id,
@@ -1862,6 +1864,30 @@ function precedenceFor(kind: string): number {
     default:
       return 10
   }
+}
+
+/**
+ * The proposal's dating, turned into the union the column stores.
+ *
+ * Two shapes in, three out — and the third is the interesting one. A proposal
+ * that says `approximate` without a number has no distance in it, only an
+ * ordering, so it is stored as `relative`: « avant l'exécution de Roger » is a
+ * true statement about order and a false one about years, and `approximate`
+ * with no `yearsAgo` would sort as though it were the latter.
+ *
+ * A missing dating is stored as null and never as `{ kind: 'unknown' }`. The
+ * union carries that member for rows written before this field existed; writing
+ * it now would say « the chapter addressed this and gave no answer », which is
+ * not what an absent field means.
+ */
+function storyTimeOf(candidate: CandidateEvent): StoryTime | null {
+  const time = candidate.story_time
+  if (time === null || time === undefined) return null
+
+  if (time.kind === 'approximate' && typeof time.years_ago === 'number') {
+    return { kind: 'approximate', description: time.description, yearsAgo: time.years_ago }
+  }
+  return { kind: 'relative', note: time.description }
 }
 
 const UUID_RE =

@@ -499,6 +499,60 @@ l'histoire court de 1 à 45.
 
 ---
 
+## La chronologie, ou l'autre axe
+
+Le mode histoire répond à « qu'ai-je appris, et dans quel ordre ». La
+chronologie répond à « quand est-ce arrivé ». Un souvenir remonte donc à sa
+place, loin du chapitre qui le montre.
+
+Cette page a longtemps affiché « aucun événement n'a de position connue dans le
+temps de l'histoire », et bouger le curseur n'y changeait rien : elle triait sur
+`events.story_time`, une colonne présente depuis la première migration **que
+rien n'écrivait jamais**. Aucun champ d'extraction ne demandait quand une scène
+se passe, donc la colonne était vide dans toutes les bibliothèques. La page
+disait la vérité sur un champ qui n'existait pas en pratique.
+
+L'extraction pose la question maintenant, et n'accepte la réponse que si le
+chapitre peut être **cité** pour elle. Une datation porte la phrase du chapitre
+qui la donne, et cette phrase doit se retrouver dans l'un des blocs que la scène
+cite déjà en preuve — même règle que n'importe quelle autre citation
+([ADR 0003](docs/adr/0003-evidence-anchoring.md)). C'est indispensable et pas
+décoratif : un modèle à qui l'on demande quand Ohara a brûlé le sait, et
+répondrait de mémoire. Une bonne réponse obtenue de la mauvaise manière est
+exactement l'échec que ce projet existe pour empêcher. Une datation non prouvée
+est refusée **et la scène reste** : c'est la date qui n'est pas établie, pas
+l'événement, et le refus part en quarantaine plutôt que d'être effacé.
+
+Ne convertissez rien, ne calculez rien : « il y a longtemps » reste « il y a
+longtemps ». Aucun calendrier n'est importé d'ailleurs pour transformer ça en
+année, parce qu'il n'y en a pas dans vos chapitres.
+
+L'axe repose donc sur trois signaux, et pas seulement sur le premier :
+
+1. **une distance datée**, quand un chapitre en donne une ;
+2. **`is_flashback`**, enregistré depuis toujours, qui dit *avant maintenant*
+   sans dire de combien ;
+3. **le chapitre qui le raconte**, qui ordonne tout le reste.
+
+Le deuxième est celui qui rend la page utile tout de suite : un souvenir dont
+personne n'a chiffré la distance est quand même avant le présent, et le dire est
+plus vrai que le jeter dans « position inconnue ».
+
+**Le curseur ne s'y applique pas**, et c'est le seul endroit du site où c'est le
+cas. La frontière n'est pas contournée — elle est interrogée au plafond de la
+bibliothèque au lieu de la position du lecteur, ce qui est la même politique avec
+un autre argument. Rien qui ne soit pas dans vos chapitres importés ne peut
+apparaître, à aucun plafond. La raison est structurelle : c'est presque toujours
+un chapitre tardif qui date une scène ancienne, donc une chronologie tronquée à
+votre curseur est une chronologie amputée de précisément ce pour quoi elle
+existe.
+
+Les chapitres publiés avant que l'extraction ne pose la question n'ont pas de
+datation. Les retraiter en ajoute ; sans cela ils restent classés par les deux
+autres signaux.
+
+---
+
 ## Le site public et l'atelier
 
 Une seule règle, portée par l'URL : **tout ce qui est sous `/admin` est à vous,
@@ -510,7 +564,7 @@ public                       /admin (connexion requise)
 /                accueil     /admin            poste de commandement
 /histoire        le fil      /admin/connexion  entrer
 /graph           le réseau   /admin/import     importer un chapitre
-/chronologie     deux axes   /admin/chapitres  la bibliothèque, brute
+/chronologie     quand       /admin/chapitres  la bibliothèque, brute
 /mysteres        ouvert /    /admin/runs/[id]  suivre un traitement
                  résolu      /admin/review/…   trancher les propositions
 /recherche       chercher    /admin/reglages   coûts, santé, export

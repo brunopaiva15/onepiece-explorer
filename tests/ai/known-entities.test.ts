@@ -71,9 +71,30 @@ describe('the extraction prompt', () => {
     expect(prompt).toMatch(/Répondre n'est pas approcher/)
   })
 
+  /*
+   * `events.story_time` was in the schema from the first migration and no field
+   * ever asked for it, so it was null in every library and the chronology
+   * reported — accurately — that nothing had a position in story time.
+   *
+   * Asking is the easy half. A model asked when Ohara burned knows, and would
+   * answer from memory, which is the one failure ADR 0003 exists to prevent. So
+   * the prompt demands the chapter's own sentence, and says out loud that a
+   * refused date costs the date and not the scene — an instruction that only
+   * threatened the whole proposal would make the model hedge and date nothing.
+   */
+  it('asks when a scene happens, and demands the chapter’s own words for it', () => {
+    const prompt = extractionSystem('(ontologie)', 'summary')
+    expect(prompt).toContain('story_time')
+    expect(prompt).toMatch(/QUAND LA SCÈNE SE PASSE-T-ELLE/)
+    expect(prompt).toMatch(/recopiée mot pour mot/)
+    expect(prompt).toMatch(/la scène est publiée sans date/)
+    // And the refusal to compute: « il y a longtemps » is not a number.
+    expect(prompt).toMatch(/Ne convertissez pas, ne calculez pas/)
+  })
+
   it('carries a version that moved with the wording', () => {
     // Stored on every assertion the model proposes. Without a bump, a run
     // before this change and a run after it are indistinguishable in the record.
-    expect(PROMPT_VERSION).toBe('8')
+    expect(PROMPT_VERSION).toBe('9')
   })
 })
