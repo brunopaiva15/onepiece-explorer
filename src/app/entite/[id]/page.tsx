@@ -142,7 +142,8 @@ export default async function EntityPage({
               >
                 {portrait.attribution}
               </a>
-              , rapprochée par le nom — pas une preuve tirée de vos pages.
+              , rapprochée par le nom. Ce n&apos;est pas une preuve tirée de vos
+              pages.
             </p>
           )}
         </header>

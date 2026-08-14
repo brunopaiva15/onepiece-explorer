@@ -155,12 +155,12 @@ export function RenameEntity({
     <section className="w-full rounded-sm border border-line bg-surface-raised p-4">
       <h2 className="text-lg font-semibold text-primary">Corriger un nom</h2>
       <p className="mt-1 text-sm text-secondary">
-        Pour une traduction que le pipeline a devinée de travers — Helmeppo
-        s&apos;appelle Hermep en français — ou une orthographe à reprendre. Le
+        Pour une traduction que le pipeline a devinée de travers (Helmeppo
+        s&apos;appelle Hermep en français) ou une orthographe à reprendre. Le
         chapitre de révélation ne bouge pas&nbsp;: c&apos;est le même nom, mieux
         écrit. Les événements et les mystères qui l&apos;écrivent en toutes
         lettres suivent&nbsp;; le texte du chapitre, lui, n&apos;est jamais
-        retouché — c&apos;est ce que la source dit.
+        retouché, car c&apos;est ce que la source dit.
       </p>
 
       {labels.length > 1 && (
@@ -173,7 +173,7 @@ export function RenameEntity({
           >
             {labels.map((label) => (
               <option key={label.id} value={label.id}>
-                {label.label} — {labelKindLabel(label.kind)},{' '}
+                {label.label} · {labelKindLabel(label.kind)},{' '}
                 {revealedAtLabel(label.revealedInChapter)}
               </option>
             ))}
@@ -211,7 +211,7 @@ export function RenameEntity({
 
       {selected && (
         <p className="mt-2 font-mono text-xs text-muted">
-          {revealedAtLabel(selected.revealedInChapter)} — inchangé
+          {revealedAtLabel(selected.revealedInChapter)} · inchangé
         </p>
       )}
 

@@ -174,7 +174,7 @@ export function StoryScroller({
           <div className="panneau">
             <div className="panneau-corps">
               <p className="text-secondary">
-                La suite n&apos;a pas pu être chargée. Rien ne s&apos;est perdu —
+                La suite n&apos;a pas pu être chargée. Rien ne s&apos;est perdu,
                 seulement cette requête.
               </p>
               <button

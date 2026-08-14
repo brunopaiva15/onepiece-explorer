@@ -182,8 +182,8 @@ export function SummaryForm({ suggestedNumber }: Props) {
           </label>
           <p className="mt-1 text-sm text-secondary">
             L’adresse d’un chapitre sur le wiki One Piece, ou son numéro. Les deux
-            versions sont récupérées&nbsp;: l’anglaise devient le texte citable —
-            c’est la plus détaillée — et la française sert à lire la forme
+            versions sont récupérées&nbsp;: l’anglaise devient le texte citable, car
+            c’est la plus détaillée, et la française sert à lire la forme
             française des noms.
           </p>
 
@@ -202,7 +202,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
                   retrieve()
                 }
               }}
-              placeholder="https://onepiece.fandom.com/wiki/Chapter_1 — ou 1"
+              placeholder="https://onepiece.fandom.com/wiki/Chapter_1 ou 1"
               className="min-w-0 flex-1 border-[3px] border-ink bg-surface-overlay px-3 py-2 text-primary placeholder:text-muted/70"
             />
             <button
@@ -325,7 +325,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
             spellCheck
             placeholder={
               'Collez ici le résumé le plus détaillé que vous ayez du chapitre.\n\n' +
-              'Un paragraphe par scène. Les noms tels que le chapitre les donne — ' +
+              'Un paragraphe par scène. Les noms tels que le chapitre les donne, ' +
               "et seulement ceux qu'il donne.\n\n" +
               'Chaque fait du graphe devra citer une phrase de ce texte : ' +
               "ce qui n'y est pas écrit n'entrera pas."
@@ -409,7 +409,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
               role="status"
               className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-2 text-sm text-ink"
             >
-              Je n&apos;arrive pas à trancher — {guess.french} marqueurs
+              Je n&apos;arrive pas à trancher : {guess.french} marqueurs
               français contre {guess.english} anglais, c&apos;est trop serré
               pour décider à votre place. Choisissez ci-dessus.
             </p>
@@ -418,7 +418,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
           <p className="mt-2 text-sm text-muted">
             Le graphe reste en français quelle que soit la réponse. Seuls les
             extraits cités gardent la langue de la source&nbsp;: une citation est
-            une copie, vérifiée caractère par caractère — la traduire la
+            une copie, vérifiée caractère par caractère, et la traduire la
             rendrait invérifiable.
           </p>
         </fieldset>
@@ -439,8 +439,8 @@ export function SummaryForm({ suggestedNumber }: Props) {
             Si vous avez les deux versions, collez la seconde ici. Elle{' '}
             <strong>n’est pas une source</strong>&nbsp;: rien ne pourra la citer, et
             un fait qu’elle seule énonce n’entrera pas dans le graphe. Elle sert à
-            lire la correspondance des noms — « Straw Hat Pirates » en regard de
-            « Équipage du Chapeau de Paille » —, ce qu’aucun texte seul ne peut
+            lire la correspondance des noms, « Straw Hat Pirates » en regard de
+            « Équipage du Chapeau de Paille », ce qu’aucun texte seul ne peut
             donner. Le modèle cesse alors de deviner la forme française&nbsp;: il la
             lit.
           </p>
@@ -468,7 +468,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
           {parallelTrimmed.length > 0 && (
             <p className="mt-2 text-sm text-muted">
               {parallelTrimmed.length} caractères, fournis au modèle à chaque
-              tranche — pour les noms, jamais comme preuve.
+              tranche, pour les noms et jamais comme preuve.
             </p>
           )}
 
@@ -558,11 +558,11 @@ export function SummaryForm({ suggestedNumber }: Props) {
         >
           <p className="font-medium text-primary">
             {state.unchanged
-              ? 'Texte identique au précédent import — rien n’a été réécrit.'
+              ? 'Texte identique au précédent import : rien n’a été réécrit.'
               : state.replaced
                 ? 'Chapitre remplacé'
                 : 'Chapitre importé'}{' '}
-            — {state.passageCount} passage{(state.passageCount ?? 0) > 1 ? 's' : ''}
+            · {state.passageCount} passage{(state.passageCount ?? 0) > 1 ? 's' : ''}
             {state.language === 'en' && ', source en anglais'}.
           </p>
           {state.runError && (
@@ -584,7 +584,7 @@ export function SummaryForm({ suggestedNumber }: Props) {
           </div>
 
           <p className="mt-3 text-sm text-muted">
-            Le formulaire est prêt pour le chapitre {nextNumber} — collez la
+            Le formulaire est prêt pour le chapitre {nextNumber} : collez la
             suite sans recharger la page.
           </p>
         </div>

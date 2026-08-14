@@ -92,9 +92,25 @@ describe('the extraction prompt', () => {
     expect(prompt).toMatch(/Ne convertissez pas, ne calculez pas/)
   })
 
+  /**
+   * The punctuation rule, and why a prompt has one at all.
+   *
+   * Everything the model writes rather than quotes is prose this site displays:
+   * an event's summary, a mystery's question, an entity's label. It came back
+   * using « — » as an aside two sentences out of three, which is the most
+   * recognisable tell there is of text nobody wrote, on a site whose whole
+   * register is a hand-drawn one. The excerpt is carved out by name because it
+   * is a citation, checked character by character against the chapter.
+   */
+  it('keeps the em dash out of the French it writes, and out of nothing else', () => {
+    const prompt = extractionSystem('(ontologie)', 'summary')
+    expect(prompt).toMatch(/Pas de tiret cadratin/)
+    expect(prompt).toMatch(/ne touche pas le champ « excerpt »/)
+  })
+
   it('carries a version that moved with the wording', () => {
     // Stored on every assertion the model proposes. Without a bump, a run
     // before this change and a run after it are indistinguishable in the record.
-    expect(PROMPT_VERSION).toBe('9')
+    expect(PROMPT_VERSION).toBe('10')
   })
 })

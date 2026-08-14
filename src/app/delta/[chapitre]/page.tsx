@@ -72,7 +72,7 @@ export default async function DeltaPage({
           </h2>
           <p className="mt-1 text-sm text-secondary">
             Ces croyances restent visibles dans les chapitres où vous les teniez
-            pour vraies. Elles ne sont pas effacées — seulement fermées ici.
+            pour vraies. Elles ne sont pas effacées, seulement fermées ici.
           </p>
           <ul className="mt-3 space-y-2">
             {delta.refuted.map((fact) => (
@@ -83,7 +83,7 @@ export default async function DeltaPage({
                 <span className="text-primary">{fact.subjectLabel}</span>{' '}
                 <span className="text-accent">{predicateLabel(fact.predicate)}</span>
                 <span className="ml-2 text-muted">
-                  — cru depuis le chapitre {fact.heldSince}
+                  · cru depuis le chapitre {fact.heldSince}
                 </span>
               </li>
             ))}
@@ -106,7 +106,7 @@ export default async function DeltaPage({
                 {name.previous && name.previous !== name.label && (
                   <span className="text-secondary">
                     {' '}
-                    — jusqu&apos;ici « {name.previous} »
+                    · jusqu&apos;ici « {name.previous} »
                   </span>
                 )}
               </li>

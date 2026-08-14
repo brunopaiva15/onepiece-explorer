@@ -101,7 +101,7 @@ export default async function ReviewPage({
             <p className="max-w-3xl text-sm text-secondary">
               Ces propositions n&apos;ont pas pu être rattachées à une preuve
               vérifiable : référence inexistante, ou extrait absent du texte
-              cité. Elles ne sont <strong>pas</strong> proposables — c&apos;est
+              cité. Elles ne sont <strong>pas</strong> proposables, et c&apos;est
               le garde-fou qui empêche une affirmation venue d&apos;ailleurs que
               des pages d&apos;atteindre le graphe. Leur répartition est en
               revanche un bon diagnostic.
@@ -125,14 +125,14 @@ export default async function ReviewPage({
 function quarantineLabel(reason: string): string {
   const labels: Record<string, string> = {
     unknown_ref:
-      'référence de case ou de bloc inexistante — souvent le signe que le découpage a mal tourné',
+      'référence de case ou de bloc inexistante, souvent le signe que le découpage a mal tourné',
     excerpt_not_in_source:
-      "extrait absent du bloc cité — souvent le signe d'une transcription trop dégradée pour ancrer quoi que ce soit",
+      "extrait absent du bloc cité, souvent le signe d'une transcription trop dégradée pour ancrer quoi que ce soit",
     visual_without_description:
       'preuve visuelle sur une case sans description produite',
     unknown_predicate: 'prédicat hors ontologie',
     unknown_node_type: 'type de nœud hors ontologie',
-    unknown_subject: 'sujet introuvable — son entité a été écartée',
+    unknown_subject: 'sujet introuvable : son entité a été écartée',
     unknown_object: 'objet introuvable',
     literal_object: 'objet écrit en toutes lettres au lieu d’une entité',
     empty_excerpt: 'preuve sans extrait',

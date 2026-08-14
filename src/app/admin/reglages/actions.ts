@@ -8,7 +8,7 @@ import {
   type DeletionPreview,
   type DeletionResult,
 } from '@/domains/chapters/delete.ts'
-import { enrichEntityImages } from '@/domains/images/index.ts'
+import { enrichBountyPosters, enrichEntityImages } from '@/domains/images/index.ts'
 import {
   retypeDevilFruitsAsObjects,
   type FruitReclassification,
@@ -194,6 +194,66 @@ export async function enrichImagesAction(
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Enrichissement impossible.',
+    }
+  }
+}
+
+export interface EnrichPostersResult {
+  ok: boolean
+  considered?: number
+  resolved?: number
+  stored?: number
+  unresolved?: string[]
+  failures?: string[]
+  error?: string
+}
+
+/** How many unresolved printings the panel names before it stops listing them. */
+const UNRESOLVED_NAMED = 8
+
+/**
+ * Rapatrier les avis de recherche.
+ *
+ * Separate from the illustration button beside it because it is a different
+ * question with a different answer: that one asks three catalogues « do you
+ * have a picture of this name », this one walks a hand-written list of bounties
+ * and fetches the poster of each printing, dated by the chapter that shows it.
+ *
+ * Rate-limited like the enrichment, and for the same reason: it is a loop of
+ * requests to somebody else's free server, and the limit is there to catch a
+ * script or a tab that replays it, not an intruder.
+ */
+export async function enrichPostersAction(): Promise<EnrichPostersResult> {
+  try {
+    const session = await requireOwner()
+
+    const allowance = await consume(session.userId, 'start_run')
+    if (!allowance.allowed) {
+      return {
+        ok: false,
+        error:
+          `Limite atteinte. Réessayez dans ${allowance.retryInMinutes} minute(s). ` +
+          allowance.explain,
+      }
+    }
+
+    const report = await enrichBountyPosters(session.userId)
+
+    revalidatePath('/admin/reglages')
+    revalidatePath('/')
+
+    return {
+      ok: true,
+      considered: report.considered,
+      resolved: report.resolved,
+      stored: report.stored,
+      unresolved: report.unresolved.slice(0, UNRESOLVED_NAMED),
+      failures: report.failures.map((failure) => `${failure.what} : ${failure.reason}`).slice(0, 5),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Récupération impossible.',
     }
   }
 }

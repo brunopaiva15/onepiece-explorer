@@ -282,7 +282,7 @@ export function CorrectFact({
       <p className="mt-1 text-sm text-secondary">
         Le chapitre où vous l&apos;avez appris ne bouge pas, et la preuve citée
         non plus&nbsp;: c&apos;est la même page, mal lue. Votre version remplace
-        celle du modèle et sera marquée comme vôtre — un réimport du chapitre ne
+        celle du modèle et sera marquée comme vôtre : un réimport du chapitre ne
         la défera pas.
       </p>
 
@@ -442,7 +442,7 @@ export function CorrectFact({
         {confirming ? (
           <>
             <p className="text-sm text-[var(--epi-contradicted)]">
-              Ce fait cessera de paraître partout — fiche, graphe, recherche,
+              Ce fait cessera de paraître partout : fiche, graphe, recherche,
               chronologie. Sa ligne, ses preuves et sa provenance restent en
               base, et un réimport du chapitre ne le reproposera pas.
             </p>

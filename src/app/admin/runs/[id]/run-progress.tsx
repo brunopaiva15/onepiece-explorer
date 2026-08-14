@@ -372,7 +372,7 @@ export function RunProgress({ initial }: { initial: RunView }) {
                 .filter((step) => step.note || step.error)
                 .map((step) => (
                   <p key={step.key} className="break-words">
-                    <span className="text-muted">{step.key} — </span>
+                    <span className="text-muted">{step.key} · </span>
                     <span className={step.error ? 'text-[var(--epi-contradicted)]' : 'text-primary'}>
                       {step.error ?? step.note}
                     </span>
@@ -421,7 +421,7 @@ function providerSentence(provider: string): string {
     case 'local':
       return 'modèle auto-hébergé'
     case 'synthetic':
-      return 'fournisseur synthétique — extraction générée, pas issue des pages'
+      return 'fournisseur synthétique : extraction générée, pas issue des pages'
     case 'replay':
       return 'réponses rejouées'
     default:
@@ -459,7 +459,7 @@ function statusSentence(status: string): string {
     case 'running':
       return 'en cours'
     case 'succeeded':
-      return 'terminé — les propositions attendent votre revue'
+      return 'terminé, les propositions attendent votre revue'
     case 'failed':
       return 'échec'
     case 'cancelled':

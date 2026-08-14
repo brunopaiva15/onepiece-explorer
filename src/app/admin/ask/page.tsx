@@ -53,7 +53,7 @@ export default async function AskPage({
                 L&apos;assistant conversationnel est désactivé.
               </strong>{' '}
               Il se facture à la question, indéfiniment, et cet outil est un
-              explorateur de graphe — pas un moteur de réponses payant.
+              explorateur de graphe, pas un moteur de réponses payant.
             </p>
             <p className="mt-2 text-secondary">
               La{' '}
@@ -87,7 +87,7 @@ export default async function AskPage({
           >
             <strong className="font-medium">Aucune clé Anthropic configurée.</strong>{' '}
             Le mode sans modèle retrouve les assertions correspondantes et vous les
-            montre telles quelles, sans les reformuler — il ne compose pas de
+            montre telles quelles, sans les reformuler : il ne compose pas de
             phrases qu&apos;il ne pourrait pas soutenir.
           </p>
         )}
@@ -166,7 +166,7 @@ export default async function AskPage({
                   {answer.droppedCitations.map((dropped) => (
                     <li key={dropped.assertionId}>
                       <code className="font-mono text-xs">{dropped.assertionId}</code>{' '}
-                      — {dropped.why}
+                      · {dropped.why}
                     </li>
                   ))}
                 </ul>

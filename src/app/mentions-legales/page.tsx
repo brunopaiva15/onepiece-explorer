@@ -65,13 +65,13 @@ export default function MentionsLegalesPage() {
 
       <Section titre="Sources du contenu">
         <p>
-          Les informations narratives — personnages, équipages, lieux, fruits du
-          démon, événements, mystères et leurs résolutions — proviennent
+          Les informations narratives (personnages, équipages, lieux, fruits du
+          démon, événements, mystères et leurs résolutions) proviennent
           principalement du One Piece Wiki hébergé par Fandom, complété par les
           catalogues publics cités ci-dessous.
         </p>
         <p className="border-l-[3px] border-ink bg-surface-raised px-3 py-2 text-primary">
-          Source : One Piece Wiki / Fandom — contenu sous licence{' '}
+          Source : One Piece Wiki / Fandom, contenu sous licence{' '}
           <a
             href="https://creativecommons.org/licenses/by-sa/3.0/deed.fr"
             rel="noreferrer noopener nofollow"

@@ -87,7 +87,7 @@ export function connectionStringIssue(
       }
     }
 
-    return { problem: `ce n'est pas une chaîne de connexion — ${shapeOf(raw)}`, fix: expected }
+    return { problem: `ce n'est pas une chaîne de connexion, ${shapeOf(raw)}`, fix: expected }
   }
 
   let parsed: URL | null = null
@@ -107,7 +107,7 @@ export function connectionStringIssue(
     for (const [char, encoded, why] of RESERVED) {
       if (userinfo.includes(char)) {
         return {
-          problem: `le mot de passe contient « ${char} », que l'URL réserve — ${why}`,
+          problem: `le mot de passe contient « ${char} », que l'URL réserve : ${why}`,
           fix: `Remplacez-le par ${encoded} dans la chaîne, sans changer le mot de passe dans Supabase.`,
         }
       }

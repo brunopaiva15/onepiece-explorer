@@ -83,7 +83,7 @@ export async function fuzzySearch(
         reason:
           score > 0.7
             ? `Nom très proche de ce que vous avez tapé.`
-            : `Nom approchant — orthographe ou transcription différente.`,
+            : `Nom approchant : orthographe ou transcription différente.`,
       })
     }
 

@@ -4,7 +4,12 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import type { Coverage } from '@/domains/images/index.ts'
 import { nodeTypeLabel } from '@/domains/knowledge/predicate-label.ts'
-import { enrichImagesAction, type EnrichImagesResult } from './actions.ts'
+import {
+  enrichImagesAction,
+  enrichPostersAction,
+  type EnrichImagesResult,
+  type EnrichPostersResult,
+} from './actions.ts'
 
 /**
  * The illustrate button, and the coverage it is meant to move.
@@ -188,14 +193,14 @@ export function EnrichImages({ coverage }: { coverage: Coverage[] }) {
           {result.fromWiki ? (
             <p className="mt-1 text-secondary">
               Dont {result.fromWiki} trouvée(s) sur le wiki, faute de
-              correspondance dans les catalogues — c&apos;est la voie des lieux,
+              correspondance dans les catalogues. C&apos;est la voie des lieux,
               des groupes et des espèces, qu&apos;aucun des trois ne référence.
             </p>
           ) : null}
           <p className="mt-1 text-secondary">
             {result.unmatched} sans image : ni les {result.catalogueSize}{' '}
-            illustrations du catalogue ni le wiki n&apos;ont de fiche à ce nom —
-            c&apos;est le cas normal pour un personnage secondaire ou une
+            illustrations du catalogue ni le wiki n&apos;ont de fiche à ce nom.
+            C&apos;est le cas normal pour un personnage secondaire ou une
             désignation provisoire, pas une erreur.
           </p>
 
@@ -281,5 +286,86 @@ function UnmatchedList({
         </p>
       ) : null}
     </details>
+  )
+}
+
+/**
+ * Les avis de recherche, et ce que la galerie du wiki ne tient pas.
+ *
+ * The unresolved list is the useful half of this panel, not an apology. The
+ * wiki's gallery holds a handful of old printings and files them under names
+ * that do not say which is which, so most of the manifest cannot be resolved
+ * automatically and never will be. Printing them is what turns « fourteen
+ * stored » into something a person can act on: each line is a poster somebody
+ * can find, open, and pin in bounties.ts.
+ */
+export function EnrichPosters({ characters }: { characters: number }) {
+  const [result, setResult] = useState<EnrichPostersResult | null>(null)
+  const [pending, start] = useTransition()
+
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-secondary">
+        Les vraies affiches, prises sur le wiki et datées du chapitre qui les
+        montre. Le manifeste couvre {characters} personnages : la prime affichée
+        est celle imprimée sur l&apos;affiche, et une affiche n&apos;apparaît pas
+        avant le chapitre où vous la voyez.
+      </p>
+
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() =>
+          start(async () => {
+            setResult(await enrichPostersAction())
+          })
+        }
+        className="bouton mt-3"
+      >
+        {pending ? 'Récupération…' : 'Récupérer les avis de recherche'}
+      </button>
+
+      {result && !result.ok && (
+        <p className="mt-3 border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
+          {result.error}
+        </p>
+      )}
+
+      {result?.ok && (
+        <div className="mt-3 border-[3px] border-ink bg-surface-raised px-3 py-2 text-sm">
+          <p className="text-primary">
+            {result.stored} affiche(s) stockée(s) pour {result.considered}{' '}
+            personnage(s), sur {result.resolved} tirage(s) rattaché(s) à un
+            fichier.
+          </p>
+
+          {result.unresolved && result.unresolved.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-secondary hover:text-primary">
+                Tirages sans fichier ({result.unresolved.length})
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs text-muted">
+                {result.unresolved.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-muted">
+                La galerie du wiki ne nomme pas ces tirages. Pour en rattacher un,
+                ajoutez son fichier à sa ligne dans{' '}
+                <code>src/domains/images/bounties.ts</code>.
+              </p>
+            </details>
+          )}
+
+          {result.failures && result.failures.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs text-[var(--epi-contradicted)]">
+              {result.failures.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

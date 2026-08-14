@@ -119,7 +119,7 @@ export function RetypeEntity({
           type="button"
           onClick={() => setOpen(true)}
           className="bouton !py-1 !text-sm"
-          title={`Changer le type de « ${displayLabel} » — actuellement ${nodeTypeLabel(nodeType)}`}
+          title={`Changer le type de « ${displayLabel} », actuellement ${nodeTypeLabel(nodeType)}`}
         >
           Changer le type
         </button>
@@ -137,7 +137,7 @@ export function RetypeEntity({
     <section className="w-full rounded-sm border border-line bg-surface-raised p-4">
       <h2 className="text-lg font-semibold text-primary">Changer le type</h2>
       <p className="mt-1 text-sm text-secondary">
-        Pour une classification que le pipeline a devinée de travers — le Bara
+        Pour une classification que le pipeline a devinée de travers : le Bara
         Bara no Mi est un fruit, donc un objet, et le Bara Bara no Hou est le
         pouvoir qu&apos;il donne. Le type décide de ce que l&apos;ontologie
         autorise autour de cette entité&nbsp;: si des faits déjà publiés
@@ -177,7 +177,7 @@ export function RetypeEntity({
         <div className="mt-4 rounded-sm border border-[var(--epi-contradicted)] p-3">
           <p className="text-sm text-[var(--epi-contradicted)]">
             {conflicts.length} fait(s) ne sont pas possibles pour un{' '}
-            {nodeTypeLabel(wanted).toLowerCase()}. Continuer les rejettera —
+            {nodeTypeLabel(wanted).toLowerCase()}. Continuer les rejettera :
             leurs lignes, leurs preuves et leur provenance restent en base, et
             elles cessent d&apos;être affichées.
           </p>

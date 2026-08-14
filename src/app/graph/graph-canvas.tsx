@@ -526,10 +526,10 @@ export function GraphCanvas({ projection, portraits, onSelect }: Props) {
       {status === 'failed' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center">
           <p className="text-primary">Le rendu WebGL a échoué.</p>
+          <p className="max-w-md text-sm text-secondary">{message}</p>
           <p className="max-w-md text-sm text-secondary">
-            {message}
-            {' — '}la vue tableau contient exactement les mêmes données et ne
-            demande pas de GPU.
+            La vue tableau contient exactement les mêmes données et ne demande
+            pas de GPU.
           </p>
         </div>
       )}

@@ -244,7 +244,7 @@ export function BoundarySlider({
         >
           Vous lisez ce que l&apos;on sait{' '}
           <strong>à la fin du chapitre {shown}</strong>. Tout ce qui est révélé
-          après est masqué — y compris rétroactivement.
+          après est masqué, y compris rétroactivement.
         </p>
       )}
     </div>
