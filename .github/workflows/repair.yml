@@ -18,11 +18,6 @@ name: Réparations (production)
 #     defect found by reading it. Nothing tracks it, so every script here is
 #     written to be re-runnable and to say « déjà fait » rather than do it twice.
 #
-# One repair is deliberately not in the list below. `repair:illustrations` has
-# its own file — illustrations.yml — because it deletes from the bucket as well
-# as from the database, which needs credentials none of these scripts take, and
-# because it is half of a pair: what it forgets, `images:enrich` refills.
-#
 # Hence the default below. `dry-run` is the mode you get unless you ask for the
 # other one, because the interesting output of a repair is usually the list of
 # what it *would* touch — that list is what tells you the script found the right
@@ -30,7 +25,8 @@ name: Réparations (production)
 #
 # What it needs, once: the repository secret PRODUCTION_DIRECT_URL, which
 # migrate.yml already uses. Nothing new to configure if migrations have ever
-# been run from here.
+# been run from here — unless you run `illustrations`, which is the one script
+# that also needs the bucket. See below.
 #
 # One order to respect, and it is not enforced here on purpose. `chapitre-1`
 # writes a name with no revelation chapter, which the schema only accepts from
@@ -44,6 +40,20 @@ name: Réparations (production)
 # opened at 31 is re-answered — so run the shorter one first. Out of order it
 # does not fail: the lines that cannot find their scene say « introuvable » and
 # a second run picks them up.
+#
+# `illustrations` is the only one that touches the **bucket**. The others move
+# knowledge between rows; this one forgets pictures, and forgetting a picture
+# means deleting the bytes as well as the row. So it wants three more secrets —
+# NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and
+# SUPABASE_SERVICE_ROLE_KEY — and the check below asks for them only when it is
+# the script being run. Without them it still deletes the rows and says which
+# files it left behind, which is a degradation rather than a failure, and not one
+# to accept on purpose.
+#
+# It also leaves holes deliberately: a wiki illustration the current rules refuse
+# is forgotten and nothing replaces it in the same pass. Filling them is the
+# « Chercher une image pour N entité(s) » button in /admin/reglages, which is the
+# ordinary enrichment and needs no workflow. Run the repair here, then press it.
 #
 # One of them is not like the others, and it is worth knowing before pressing
 # the button. `mysteres` reads: it asks a model, once per open question, whether
@@ -70,6 +80,7 @@ on:
           - chapitre-1
           - details
           - luffy-crew
+          - illustrations
           - mysteres
       limit:
         description: 'mysteres : n''examiner que les N plus anciennes (vide = toutes)'
@@ -98,8 +109,10 @@ jobs:
     name: ${{ inputs.script }} (${{ inputs.mode }})
     runs-on: ubuntu-latest
     # A SQL repair that has not finished in a quarter of an hour is stuck. The
-    # sweep is not stuck — it is a model call per open question, in sequence.
-    timeout-minutes: ${{ inputs.script == 'mysteres' && 60 || 15 }}
+    # sweep is not stuck — it is a model call per open question, in sequence —
+    # and neither is the illustration pass, which is one wiki lookup per stored
+    # picture, paced on purpose.
+    timeout-minutes: ${{ inputs.script == 'mysteres' && 60 || inputs.script == 'illustrations' && 45 || 15 }}
 
     steps:
       # Only the writing mode asks for a typed answer. A dry run reads and
@@ -120,6 +133,31 @@ jobs:
             echo "Le secret PRODUCTION_DIRECT_URL n'est pas configuré."
             echo "Settings → Secrets and variables → Actions → New repository secret."
             echo "Valeur : la chaîne du pooler Supabase en mode session (port 5432)."
+            exit 1
+          fi
+
+      # Only `illustrations` deletes files, so only `illustrations` is stopped
+      # for want of a bucket credential. Named one by one rather than « il
+      # manque un secret » — three values, and a run that stops to say which one
+      # is a run somebody can act on. Written as three `if`s rather than three
+      # `[ … ] && …` lines: the shell runs with `-e`, and a bare test that comes
+      # out false is a step that fails.
+      - name: Check the bucket credentials
+        if: inputs.script == 'illustrations'
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          missing=""
+          if [ -z "$SUPABASE_URL" ]; then missing="$missing NEXT_PUBLIC_SUPABASE_URL"; fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then missing="$missing NEXT_PUBLIC_SUPABASE_ANON_KEY"; fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then missing="$missing SUPABASE_SERVICE_ROLE_KEY"; fi
+          if [ -n "$missing" ]; then
+            echo "« illustrations » supprime des fichiers, pas seulement des lignes."
+            echo "Secrets manquants :$missing"
+            echo "Settings → Secrets and variables → Actions → New repository secret."
+            echo "Valeurs : projet Supabase → Settings → API."
             exit 1
           fi
 
@@ -145,6 +183,12 @@ jobs:
           # conditional env is one more thing to get wrong for a value the other
           # two never look at.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Same reasoning for the bucket: only `illustrations` opens it, and the
+          # step above has already refused to start without these three when it
+          # is the script chosen.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           # Through the environment, not through `${{ }}` in the script below.
           # `script` and `mode` are `choice` inputs and GitHub only ever sends
           # one of the listed values; `limit` is free text, and free text
@@ -166,3 +210,11 @@ jobs:
             args="$args --limit=$limit"
           fi
           pnpm repair:${{ inputs.script }} -- $args
+
+      # This one takes pictures away and puts none back, on purpose. The person
+      # reading the log is the one who decides whether to fill the holes.
+      - name: What is left to do
+        if: inputs.script == 'illustrations' && inputs.mode == 'appliquer'
+        run: |
+          echo "Les entités qui viennent de perdre leur image n'en ont plus aucune."
+          echo "Pour les remplir : /admin/reglages → « Chercher une image pour N entité(s) »."

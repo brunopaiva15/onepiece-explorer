@@ -115,44 +115,36 @@ fonctionnelle tout en fuyant. S'ils échouent, arrêtez-vous là.
 
 ### Réparer les illustrations sans machine locale
 
-`Actions → Illustrations (production) → Run workflow`. Même principe que les
-migrations — déclenchement manuel, confirmation tapée pour écrire — avec une
-différence qui explique le fichier séparé : c'est le seul workflow qui touche au
-**seau**. Il oublie des images et en télécharge d'autres, donc il lui faut les
-identifiants Supabase en plus de la chaîne de connexion, et une exécution sans
-eux supprimerait des lignes en laissant leurs octets derrière.
+`Actions → Réparations (production) → Run workflow`, script `illustrations` —
+le même bouton que les autres réparations, avec le même `dry-run` par défaut et
+la même confirmation tapée pour écrire.
 
-Deux étapes, dans cet ordre :
+Ce qu'il fait : réinterroger le wiki sur chaque image de tête stockée, et
+oublier celles que les règles d'aujourd'hui ne produisent plus. C'est ainsi
+qu'une correction du rapprochement atteint une bibliothèque déjà illustrée. Le
+bouton « Revérifier les rapprochements » de `/admin/reglages` ne suffit pas : il
+ne rejuge que les rapprochements faits sur une **ressemblance**, et un article
+de wiki trouvé par son titre exact l'est toujours.
 
-- **`reparer`** réinterroge le wiki sur chaque image de tête stockée et oublie
-  celles que les règles d'aujourd'hui ne produisent plus. C'est ainsi qu'une
-  correction du rapprochement atteint une bibliothèque déjà illustrée — la
-  passe `recheck` de l'enrichissement ne rejuge que les rapprochements faits sur
-  une ressemblance, et un article trouvé par son titre exact l'est toujours.
-- **`reillustrer`** remplit ce qui manque, dont les trous que la première étape
-  vient de faire. Il n'écrit que du neuf : une entité qui a déjà une image est
-  sautée, donc rien n'est remplacé.
+Deux particularités valent d'être connues avant d'appuyer :
 
-Lancez-les séparément la première fois. Le `dry-run` de la réparation — le mode
-par défaut — imprime la liste de ce qu'elle oublierait, et c'est cette liste qui
-dit qu'elle a trouvé les bonnes lignes avant qu'on l'autorise à écrire.
-`reillustrer` n'a pas de mode d'essai et le workflow refuse la combinaison : une
-passe à blanc interrogerait trois services communautaires et un wiki pour des
-réponses que personne ne stockerait.
+- C'est le seul script de réparation qui touche au **seau**. Oublier une image,
+  c'est supprimer ses octets autant que sa ligne, donc il lui faut
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` et
+  `SUPABASE_SERVICE_ROLE_KEY` en plus de `PRODUCTION_DIRECT_URL`. Le workflow
+  les réclame nommément, et seulement pour ce script.
+- Il laisse des trous exprès : rien ne remplace dans la même passe l'image qu'il
+  vient de refuser. Pour les remplir, `/admin/reglages` →
+  « Chercher une image pour N entité(s) », qui est l'enrichissement ordinaire et
+  n'a besoin d'aucun workflow.
 
-Prérequis, une fois : `PRODUCTION_DIRECT_URL` (déjà là si les migrations ont
-jamais tourné depuis GitHub), plus `NEXT_PUBLIC_SUPABASE_URL`,
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY`. Le workflow
-nomme celui qui manque plutôt que d'échouer sur « il manque un secret ».
+Le `dry-run` imprime la liste de ce qu'il oublierait ; c'est elle qui dit qu'il a
+trouvé les bonnes lignes avant qu'on l'autorise à écrire. Et si le wiki ne
+répond à aucun article, il s'arrête sans rien supprimer — une panne n'est pas un
+verdict.
 
-Rien n'est planifié, exprès. Une illustration n'est pas une connaissance et rien
-ici ne peut changer ce que le graphe affirme, mais tout cela télécharge depuis
-des services gratuits et un wiki qui ne nous doit rien ; un cron leur
-redemanderait chaque semaine des réponses qui n'ont pas changé.
-
-Les mêmes deux étapes en local, si la machine a `DIRECT_URL` :
-`pnpm repair:illustrations -- --dry-run`, puis sans le drapeau, puis
-`pnpm images:enrich`.
+En local, si la machine a `DIRECT_URL` : `pnpm repair:illustrations -- --dry-run`,
+puis sans le drapeau, puis `pnpm images:enrich`.
 
 ---
 
