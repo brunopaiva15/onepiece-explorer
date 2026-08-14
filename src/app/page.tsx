@@ -89,6 +89,15 @@ export default async function HomePage({
     poster: PosterView | null
   }> = []
   let questions: OpenQuestion[] = []
+  /**
+   * What the wall turned out to be.
+   *
+   * `affiches` when the reader has reached at least one real wanted poster,
+   * `visages` when they have not. It decides the heading, the sentence under it
+   * and whether the cards are drawn as paper, because a wall of faces must not
+   * announce itself as a wall of posters.
+   */
+  let mur: 'affiches' | 'visages' = 'visages'
 
   /*
    * Degrades rather than throws. A visitor arriving at a deployment whose
@@ -118,17 +127,49 @@ export default async function HomePage({
     ])
 
     /*
-     * Drawn first, illustrated second.
+     * The posters first, and they decide what the wall is.
      *
-     * The order matters: `displayImages` signs the first entities in the list
-     * that have a picture, so shuffling before signing is what makes the wall
-     * a draw rather than a ranking with a shuffled layout.
+     * Six characters dressed in a drawn poster frame was worse than the
+     * portraits it replaced: Laboon is a whale and Kaloo is a duck, and neither
+     * has ever been wanted for anything. A frame reading « avis de recherche »
+     * around a duck is the interface inventing the one thing this site does not
+     * invent.
+     *
+     * So the wall shows real posters, or it is not a wall of posters. Asked
+     * over the whole draw rather than over six of it, because only the
+     * characters the manifest knows have a poster row at all: the query returns
+     * what exists, which is a handful, and asking about sixty costs no more.
      */
     const drawn = tirage(cast)
-    const images = await displayImages(
+    const posters = await postersFor(
       session.userId,
       boundary,
       drawn.flatMap((member) => member.memberIds),
+      new Map(drawn.flatMap((member) => member.memberIds.map((id) => [id, member.label]))),
+    )
+
+    const posterOf = (member: CastMember): PosterView | null => {
+      for (const id of member.memberIds) {
+        const found = posters.get(id)
+        if (found) return found
+      }
+      return null
+    }
+
+    const wanted = drawn.filter((member) => posterOf(member) !== null).slice(0, MUR)
+    mur = wanted.length > 0 ? 'affiches' : 'visages'
+
+    /*
+     * Portraits, for whichever cards are actually going to be drawn.
+     *
+     * Signed after the choice rather than before it: each one is a round trip,
+     * and a wall of four posters has no use for fifty-six faces.
+     */
+    const shown = wanted.length > 0 ? wanted : drawn
+    const images = await displayImages(
+      session.userId,
+      boundary,
+      shown.flatMap((member) => member.memberIds),
       PORTRAITS,
     )
 
@@ -141,33 +182,23 @@ export default async function HomePage({
     }
 
     /*
-     * Faces first, then anyone. A library whose catalogue matched nobody still
-     * gets a wall, drawn as initials, rather than an empty section that reads
-     * as a page half-built.
+     * Nobody wanted yet, which is most of the story: the earliest poster the
+     * wiki can be pinned to is Arlong's at chapter 69, and a reader before that
+     * has none at all. They get faces instead, under a heading that says faces.
+     * Same draw, same cards, no poster chrome and no pretending.
      */
-    const illustrated = drawn.filter((member) => faceOf(member) !== null)
-    const rest = drawn.filter((member) => faceOf(member) === null)
-    const chosen = [...illustrated, ...rest].slice(0, MUR)
-
-    /*
-     * The real poster, when the reader has read the chapter that prints it.
-     *
-     * Asked only for the six on the wall, because each one is a signed URL and
-     * the other fifty-four would be minted to be thrown away. The bounty comes
-     * back with it, dated the same way, so the number under the picture is the
-     * one the reader has seen and not the one it became.
-     */
-    const posters = await postersFor(
-      session.userId,
-      boundary,
-      chosen.flatMap((member) => member.memberIds),
-      new Map(chosen.flatMap((member) => member.memberIds.map((id) => [id, member.label]))),
-    )
+    const chosen =
+      wanted.length > 0
+        ? wanted
+        : [
+            ...drawn.filter((member) => faceOf(member) !== null),
+            ...drawn.filter((member) => faceOf(member) === null),
+          ].slice(0, MUR)
 
     wall = chosen.map((member) => ({
       member,
       portrait: faceOf(member),
-      poster: member.memberIds.map((id) => posters.get(id)).find((found) => found) ?? null,
+      poster: posterOf(member),
     }))
 
     questions = tirage(open).slice(0, 3)
@@ -193,7 +224,6 @@ export default async function HomePage({
         .filter((name): name is string => name !== undefined),
     ),
   ]
-  const hasPoster = wall.some((poster) => poster.poster !== null)
 
   return (
     <main id="contenu" className="mx-auto max-w-6xl px-5 py-8 sm:py-10">
@@ -235,14 +265,16 @@ export default async function HomePage({
         <section className="mt-14">
           <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
             <h2 className="font-display text-2xl uppercase text-primary">
-              Avis de recherche
+              {mur === 'affiches' ? 'Avis de recherche' : 'Vus dans vos chapitres'}
             </h2>
             <p className="text-sm text-secondary">
-              Tirés au sort. Rechargez : l&apos;équipage change.
+              {mur === 'affiches'
+                ? "Les affiches que vous avez vues, avec la prime qui était dessus."
+                : 'Tirés au sort. Rechargez : les visages changent.'}
             </p>
           </div>
 
-          <ul className="mur mt-5">
+          <ul className={`mur mt-5 ${mur === 'affiches' ? 'mur-affiches' : ''}`}>
             {wall.map(({ member, portrait, poster }) => (
               <li key={member.entityId}>
                 <Link
@@ -250,12 +282,19 @@ export default async function HomePage({
                   className={`affiche ${poster ? 'affiche-vraie' : ''}`}
                 >
                   {/*
-                   * The real poster wins, when the reader has read the chapter
-                   * that prints it.
+                   * A poster, or a face. Never a face dressed as a poster.
                    *
-                   * `object-fit: contain` rather than the portrait's crop: a
-                   * wanted poster is a document, and cropping one is throwing
-                   * away the half that says what it is.
+                   * The frame was drawn around portraits for one release and it
+                   * was a mistake worth writing down: Laboon is a whale, Kaloo
+                   * is a duck, and « avis de recherche » printed around either
+                   * is the interface asserting something no chapter ever did.
+                   * The wall now shows the real ones when the reader has
+                   * reached any, and plain faces under a plain heading when
+                   * they have not.
+                   *
+                   * `object-fit: contain` on the poster, because it is a
+                   * document: cropping one throws away the half that says what
+                   * it is. The portrait keeps its own crop, from the top.
                    */}
                   {poster ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
@@ -275,7 +314,7 @@ export default async function HomePage({
                     />
                   ) : (
                     <span className="affiche-vide" aria-hidden="true">
-                      <span className="chiffre text-4xl opacity-70">
+                      <span className="chiffre text-4xl">
                         {member.label.slice(0, 1).toUpperCase()}
                       </span>
                     </span>
@@ -284,14 +323,14 @@ export default async function HomePage({
                     <span className="affiche-nom">{member.label}</span>
                   </span>
                   {/*
-                   * The band a bounty is printed on, and what may go on it.
+                   * The band under the name, and what may go on it.
                    *
-                   * A figure when there is a real one, dated like everything
-                   * else: the printing this reader has read, from a manifest
-                   * somebody maintains by hand. Otherwise the chapter they met
-                   * them in, which is also a fact. What never goes here is an
-                   * invented berry amount — on a page whose whole claim is that
-                   * its numbers come from chapters, that would be the one lie.
+                   * A figure when it comes off a poster the reader has read,
+                   * dated by the printing rather than by their chapter.
+                   * Otherwise the chapter they met the character in, which is
+                   * also a fact. What never goes here is an invented berry
+                   * amount: on a page whose whole claim is that its numbers
+                   * come from chapters, that would be the one lie.
                    */}
                   <span className="affiche-prime">
                     {poster ? (
@@ -325,8 +364,8 @@ export default async function HomePage({
             <p className="mt-4 text-xs text-muted">
               Illustrations : {sources.join(', ')}. Ce n&apos;est pas une preuve
               tirée de vos pages.
-              {hasPoster
-                ? " Les primes sont celles qu'affiche l'avis de recherche, daté du chapitre qui le montre."
+              {mur === 'affiches'
+                ? " La prime affichée est celle imprimée sur l'affiche, datée du chapitre qui la montre."
                 : ' Les portraits sont rapprochés de chaque personnage par le nom.'}
             </p>
           )}

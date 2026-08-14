@@ -682,6 +682,22 @@ hr.regle {
   }
 }
 
+/*
+ * The poster wall holds whatever the reader has reached, which is three at
+ * chapter 124 and none at all before 69.
+ *
+ * Tracks that collapse when empty and stop growing at 11rem, centred: a wall of
+ * three posters is three ordinary posters in the middle of the wall. Left to
+ * `1fr` they would stretch to the size of a paperback each, and left to
+ * `auto-fill` they would sit in the left half of an empty row.
+ */
+@media (width >= 40rem) {
+  .mur-affiches {
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 11rem));
+    justify-content: center;
+  }
+}
+
 .affiche {
   display: flex;
   flex-direction: column;
@@ -747,16 +763,16 @@ hr.regle {
   padding: 0.15rem;
 }
 
-/* No picture in the catalogue for this one. An initial on deep water, rather
+/* No picture in the catalogue for this one. An initial on the paper, rather
    than a grey box apologising for itself. */
 .affiche-vide {
   display: flex;
   align-items: center;
   justify-content: center;
   aspect-ratio: 3 / 4;
-  background: var(--sea);
-  color: #fff;
-  border-bottom: 3px solid var(--ink);
+  background: #e0cda4;
+  color: rgba(33, 27, 23, 0.45);
+  border: 1px solid rgba(33, 27, 23, 0.55);
 }
 
 .affiche-corps {
