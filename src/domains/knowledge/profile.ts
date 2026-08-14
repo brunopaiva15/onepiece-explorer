@@ -265,8 +265,15 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'knocks_out:out',
       'knocks_out:in',
     ]),
+    // Se servir de quelqu'un n'est ni le commander ni le posséder, et la
+    // personne dont on se sert n'est pas rangée parmi les affaires de l'autre.
+    section('emprise', 'Emprise', [
+      'uses:out:character|group>se sert de',
+      'uses:in:character|group',
+    ]),
     section('rencontres', 'Rencontres', [
-      'knows:out',
+      'knows:out:character|group',
+      'knows:in:character|group',
       'meets:out',
       'speaks_to:out',
       'speaks_to:in',
@@ -278,7 +285,10 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'travels_to:out',
       'leaves:out:place',
     ]),
-    section('avoir', 'Possessions et pouvoirs', ['owns:out', 'uses:out']),
+    section('avoir', 'Possessions et pouvoirs', ['owns:out', 'uses:out:object|power']),
+    section('savoirs', 'Ce qu’il ou elle connaît', [
+      'knows:out:object|place|concept',
+    ]),
     section('dons', 'Dons', ['gives:out', 'receives:out']),
     section('faconne', 'Créations et destructions', ['creates:out', 'destroys:out']),
     section('objectifs', 'Ce qu’il ou elle cherche', ['seeks:out']),
@@ -323,7 +333,17 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'knocks_out:out',
       'knocks_out:in',
     ]),
-    section('rencontres', 'Rencontres', ['speaks_to:in']),
+    section('emprise', 'Emprise', [
+      'uses:out:character|group>se sert de',
+      'uses:in:character|group',
+    ]),
+    section('rencontres', 'Rencontres', [
+      'knows:out:character|group',
+      'knows:in:character|group',
+      'meets:out',
+      'speaks_to:out',
+      'speaks_to:in',
+    ]),
     section('promesses', 'Promesses', ['promises:in']),
     section('lieux', 'Lieux', [
       'located_at:out',
@@ -331,10 +351,14 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'travels_to:out',
       'leaves:out:place',
     ]),
-    section('avoir', 'Possessions', ['owns:out', 'uses:out']),
+    section('avoir', 'Possessions', ['owns:out', 'uses:out:object|power']),
+    section('savoirs', 'Ce que le groupe connaît', [
+      'knows:out:object|place|concept',
+    ]),
     section('dons', 'Dons', ['gives:out', 'receives:out']),
     section('faconne', 'Créations et destructions', ['creates:out', 'destroys:out']),
     section('objectifs', 'Ce que le groupe cherche', ['seeks:out']),
+    section('recherche-par', 'Recherché par', ['seeks:in']),
     section('evenements', 'Événements', [
       'participates_in:out',
       'causes:out',
@@ -364,6 +388,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
     section('tenu-par', 'Qui le tient', ['owns:in', 'protects:in', 'creates:in']),
     section('detruit-par', 'Détruit par', ['destroys:in']),
     section('convoite', 'Convoité par', ['seeks:in']),
+    section('connu-de', 'Qui le connaît', ['knows:in']),
     MYSTERES,
     IDENTITE,
     RECIT,
@@ -389,6 +414,9 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
     section('detruit-par', 'Détruit par', ['destroys:in']),
     section('convoite', 'Convoité par', ['seeks:in', 'promises:in>promis par']),
     section('protege-par', 'Protégé par', ['protects:in']),
+    // « Robin connaît les Poneglyphes » se lit d'abord ici : la question qu'on
+    // pose d'une chose rare est qui, dans le monde, sait ce qu'elle est.
+    section('connu-de', 'Qui le connaît', ['knows:in']),
     MYSTERES,
     IDENTITE,
     RECIT,
@@ -416,6 +444,7 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
   concept: [
     section('origine', 'Origine', ['creates:in']),
     section('porte-par', 'Qui s’en réclame', ['seeks:in', 'promises:in>promis par']),
+    section('connu-de', 'Qui le connaît', ['knows:in']),
     MYSTERES,
     IDENTITE,
     RECIT,
@@ -478,7 +507,9 @@ const ROLES: Record<string, readonly [outgoing: string, incoming: string]> = {
   injures: ['blesse', 'blessé par'],
   knocks_out: ['assomme', 'assommé par'],
 
-  knows: ['connaît', 'connaît'],
+  // « connaît » est dirigé depuis qu'il peut désigner une chose : la pierre ne
+  // rend pas à Robin la connaissance qu'elle en a.
+  knows: ['connaît', 'connu de'],
   meets: ['a rencontré', 'a rencontré'],
   speaks_to: ['parle à', 'lui parle'],
 
