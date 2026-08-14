@@ -1,6 +1,7 @@
 import postgres from 'postgres'
 import { randomUUID } from 'node:crypto'
 import type { StoryTime } from '@/db/schema/knowledge.ts'
+import { normalizeText } from '@/domains/knowledge/normalize.ts'
 
 /**
  * Raw connection to the local test database, used to seed fixtures and to
@@ -115,7 +116,7 @@ export async function addLabel(
       (entity_id, user_id, label, normalized_label, kind, revealed_in_chapter,
        reveal_source, precedence)
     VALUES
-      (${entityId}, ${world.userId}, ${label}, ${label.toLowerCase()},
+      (${entityId}, ${world.userId}, ${label}, ${normalizeText(label)},
        ${kind}::label_kind, ${revealedInChapter}, ${revealSource ?? null},
        ${precedence})
   `

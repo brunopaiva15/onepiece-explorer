@@ -125,6 +125,33 @@ confirmés, ils sont rejetés plutôt que supprimés, lignes et preuves intactes
 un nœud qui porte un résumé d'événement ou la question d'un mystère est refusé
 plutôt que cascadé — personne n'a demandé la suppression d'une phrase.
 
+**Et un fait se corrige, ou se retire.** « Baggy appartient à l'Équipage du
+Roux », affirmé au chapitre 19, sur cette preuve : « He has a flashback about
+their time as fellow pirates ». Les deux étaient mousses sur le navire de
+Roger ; l'équipage de Shanks n'existe pas encore et Baggy n'en sera jamais.
+Aucun garde-fou n'avait de prise — le prédicat prend un groupe, l'objet est un
+groupe, l'extrait est ancré mot pour mot — et la fiche l'imprimait dans la même
+typographie que tout ce qui est vrai. Chaque fait du relevé porte donc un bouton
+« Corriger », qui offre les trois façons dont un fait est faux : **la relation**,
+choisie parmi les seules que l'ontologie accepte entre ces deux types ; **l'autre
+bout**, cherché — jamais tapé — parmi ce que vous avez lu jusqu'au curseur ; et
+**le texte**, pour un fait qui porte une valeur plutôt qu'un nœud. Rien n'est
+modifié sur place : la correction est une **nouvelle ligne** qui reprend la
+preuve et le chapitre de révélation de l'ancienne — corriger ce qu'un fait dit
+ne déplace pas le moment où vous pouviez l'apprendre — pendant que l'ancienne
+survit, marquée remplacée, et disparaît de toutes les lectures d'un seul coup.
+Elle est écrite comme vôtre et **verrouillée** : un réimport du chapitre ne peut
+pas la défaire, et la décision est classée sous l'empreinte de la proposition
+d'origine, donc la question ne se repose pas.
+
+Et quand rien n'est presque juste — au chapitre 19 l'Équipage de Roger n'est pas
+encore un nœud, il n'y a aucune bonne cible — la réponse est « ce fait est
+faux ». Il est **rejeté, pas supprimé** : la ligne, sa preuve et sa provenance
+restent en base, avec son identifiant au journal d'audit, et la phrase cesse
+simplement d'être affirmée partout à la fois — fiche, graphe, recherche,
+chronologie. Le bouton demande deux fois, parce que la fiche n'a ensuite plus
+rien à vous reproposer.
+
 **Et une fiche se lit par ce qu'elle est.** Elle ouvrait sur « Ce que l'on
 sait » : tous les faits, dans l'ordre des chapitres, la famille entre un
 déplacement et une mention. Personne ne lit un personnage comme ça — on demande

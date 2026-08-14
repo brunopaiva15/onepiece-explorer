@@ -2,12 +2,17 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getViewerSession } from '@/domains/auth/session.ts'
-import { getEntitySheet, type SheetFact } from '@/domains/temporal/entity-sheet.ts'
+import {
+  getEntitySheet,
+  type EntitySheet,
+  type SheetFact,
+} from '@/domains/temporal/entity-sheet.ts'
 import { displayImage } from '@/domains/images/index.ts'
 import { epistemicColour, epistemicLabel } from '@/domains/knowledge/epistemic-label.ts'
 import { labelKindLabel, revealedAtLabel } from '@/domains/knowledge/label-kind.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 import { buildEntityProfile } from '@/domains/knowledge/profile.ts'
+import { CorrectFact } from './correct-fact.tsx'
 import { EntityProfile } from './entity-profile.tsx'
 import { RenameEntity } from './rename-entity.tsx'
 import { RetypeEntity } from './retype-entity.tsx'
@@ -236,6 +241,8 @@ export default async function EntityPage({
               <p className="text-sm text-secondary">
                 Chaque fait porte le chapitre où vous avez pu l&apos;apprendre et la
                 case qui le prouve. Un fait sans preuve n&apos;entre pas ici.
+                {session.isOwner &&
+                  ' Un fait qui a mal lu sa page se corrige ou se retire depuis sa ligne.'}
               </p>
 
               <FactList
@@ -243,6 +250,8 @@ export default async function EntityPage({
                 facts={outgoing}
                 boundary={session.boundaryChapter}
                 empty="Rien d’affirmé à propos de cette entité à ce chapitre."
+                sheet={sheet}
+                canCorrect={session.isOwner}
               />
 
               {incoming.length > 0 && (
@@ -251,6 +260,8 @@ export default async function EntityPage({
                   facts={incoming}
                   boundary={session.boundaryChapter}
                   empty=""
+                  sheet={sheet}
+                  canCorrect={session.isOwner}
                 />
               )}
             </div>
@@ -266,11 +277,17 @@ function FactList({
   facts,
   boundary,
   empty,
+  sheet,
+  canCorrect,
 }: {
   title: string
   facts: SheetFact[]
   boundary: number
   empty: string
+  /** The entity these facts are read from: the other end of every sentence. */
+  sheet: EntitySheet
+  /** A visitor reading a public library gets no button; the actions check too. */
+  canCorrect: boolean
 }) {
   if (facts.length === 0 && empty === '') return null
 
@@ -380,6 +397,25 @@ function FactList({
                     </li>
                   ))}
                 </ul>
+              )}
+
+              {/*
+               * Under the evidence, and only for the owner.
+               *
+               * Under it because the excerpt is what the decision is made
+               * against: « He has a flashback about their time as fellow
+               * pirates » is the whole reason to know that « appartient à
+               * l'Équipage du Roux » was read into a sentence that does not say
+               * it. Reading first, then correcting.
+               */}
+              {canCorrect && (
+                <CorrectFact
+                  fact={fact}
+                  entityIds={sheet.memberIds}
+                  entityLabel={sheet.displayLabel}
+                  entityNodeType={sheet.nodeType}
+                  boundary={boundary}
+                />
               )}
             </li>
           ))}
