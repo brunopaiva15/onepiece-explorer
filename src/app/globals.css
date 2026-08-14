@@ -747,16 +747,57 @@ hr.regle {
   padding: 0.15rem;
 }
 
-/* No picture in the catalogue for this one. An initial on deep water, rather
+/*
+ * The paper, printed here, around a portrait that is not one.
+ *
+ * The wall is a wall of wanted posters and the wiki has fourteen of them, none
+ * visible before chapter 398. Everybody else was getting a bare portrait crop
+ * under a heading that said « avis de recherche », which is the interface
+ * promising something it then did not draw. So it draws it: parchment, a ruled
+ * heading, the illustration inset like a printed photograph. The paper stays
+ * paper in the dark theme, because that is what the object is.
+ */
+.affiche-papier {
+  display: block;
+  background:
+    radial-gradient(rgba(92, 58, 33, 0.09) 1px, transparent 1.1px) 0 0 / 5px 5px,
+    #efdfba;
+  padding: 0.3rem 0.3rem 0.35rem;
+  border-bottom: 3px solid var(--ink);
+}
+
+.affiche-entete {
+  display: block;
+  border-top: 1px solid rgba(33, 27, 23, 0.55);
+  border-bottom: 1px solid rgba(33, 27, 23, 0.55);
+  margin-bottom: 0.3rem;
+  padding: 0.1rem 0;
+  color: #211b17;
+  font-family: var(--font-display);
+  font-size: 0.56rem;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  line-height: 1.5;
+}
+
+/* Inside the frame the picture is a printed photograph: ruled, not bled to the
+   edge of the paper. */
+.affiche-papier .affiche-vue {
+  border: 1px solid rgba(33, 27, 23, 0.55);
+  border-bottom-width: 1px;
+}
+
+/* No picture in the catalogue for this one. An initial on the paper, rather
    than a grey box apologising for itself. */
 .affiche-vide {
   display: flex;
   align-items: center;
   justify-content: center;
   aspect-ratio: 3 / 4;
-  background: var(--sea);
-  color: #fff;
-  border-bottom: 3px solid var(--ink);
+  background: #e0cda4;
+  color: rgba(33, 27, 23, 0.45);
+  border: 1px solid rgba(33, 27, 23, 0.55);
 }
 
 .affiche-corps {
