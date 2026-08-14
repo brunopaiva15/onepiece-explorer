@@ -359,30 +359,49 @@ export const PREDICATES = [
   },
 
   // --- Acquaintance --------------------------------------------------------
+  //
+  // Connaître va dans un sens.
+  //
+  // « connaît » joignait deux personnages et se disait mutuel, ce qui est juste
+  // de deux amis et faux partout ailleurs : la moitié de cette histoire est
+  // quelqu'un qui connaît un homme n'ayant jamais entendu parler de lui. Et dès
+  // que l'autre bout peut être une chose — Robin et les Poneglyphes, qui est
+  // tout ce qu'elle est —, la réciprocité n'est plus imprécise, elle n'a pas de
+  // sens : une pierre ne connaît personne. Un prédicat symétrique dont les deux
+  // bouts n'acceptent pas les mêmes types est une contradiction, et la fiche
+  // l'aurait montrée telle quelle : le repli d'une relation symétrique aurait
+  // écrit « connaît · Robin » sur la fiche de la pierre. Il est donc dirigé, et
+  // l'autre bout se lit « connu de ». « rencontre » reste symétrique — une
+  // rencontre arrive vraiment aux deux.
   {
     key: 'knows',
     labelFr: 'connaît',
-    directed: false,
-    symmetric: true,
-    subjectTypes: ['character'],
-    objectTypes: ['character'],
-    description: 'Connaissance mutuelle établie.',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ACTORS,
+    objectTypes: ['character', 'group', 'object', 'place', 'concept'],
+    description:
+      'Sait qui est quelqu’un, ou sait ce qu’est quelque chose : une personne, ' +
+      'un équipage, un objet, un lieu, une notion. Sans réciprocité — ' +
+      'connaître n’est pas être connu. Se voir se dit avec « rencontre ».',
   },
   {
     key: 'meets',
     labelFr: 'rencontre',
     directed: false,
     symmetric: true,
-    subjectTypes: ['character'],
-    objectTypes: ['character'],
-    description: 'Première rencontre ou rencontre notable.',
+    subjectTypes: ACTORS,
+    objectTypes: ACTORS,
+    description:
+      'Première rencontre ou rencontre notable. Symétrique, et vraiment : ' +
+      'aucun des deux ne rencontre l’autre sans que l’autre le rencontre.',
   },
   {
     key: 'speaks_to',
     labelFr: 'parle à',
     directed: true,
     symmetric: false,
-    subjectTypes: ['character'],
+    subjectTypes: ACTORS,
     objectTypes: ['character', 'group'],
     description: 'Adresse la parole, attesté par un dialogue.',
   },
@@ -403,8 +422,12 @@ export const PREDICATES = [
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
-    objectTypes: ['object', 'power'],
-    description: 'Emploie un objet ou un pouvoir.',
+    objectTypes: ['object', 'power', 'character', 'group'],
+    description:
+      'Emploie un objet, un pouvoir — ou quelqu’un, quand une personne est le ' +
+      'moyen : Arlong utilise Nami pour ses cartes. Se servir de quelqu’un ne ' +
+      'dit ni l’appartenance ni le commandement, qui ont leurs prédicats, et ' +
+      'la fiche le range sous « Emprise » et non parmi les possessions.',
   },
   {
     key: 'grants_power',
@@ -461,8 +484,11 @@ export const PREDICATES = [
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
-    objectTypes: ['object', 'group', 'concept', 'place'],
-    description: 'Fabrique ou fonde.',
+    objectTypes: ['object', 'group', 'concept', 'place', 'power'],
+    description:
+      'Fabrique, fonde — ou invente : une technique nommée est un pouvoir, et ' +
+      'quelqu’un l’a mise au point. La fiche d’un pouvoir demandait déjà son ' +
+      'origine ; l’ontologie ne laissait personne l’écrire.',
   },
   {
     key: 'destroys',
@@ -551,8 +577,10 @@ export const PREDICATES = [
     directed: true,
     symmetric: false,
     subjectTypes: ACTORS,
-    objectTypes: ['object', 'place', 'character', 'concept', 'mystery'],
-    description: 'Poursuit un but.',
+    objectTypes: ['object', 'place', 'character', 'group', 'concept', 'mystery'],
+    description:
+      'Poursuit un but : un trésor, une île, quelqu’un — ou un équipage tout ' +
+      'entier, que la Marine recherche comme elle recherche ses capitaines.',
   },
   {
     key: 'dies_at',
