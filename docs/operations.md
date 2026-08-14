@@ -128,11 +128,13 @@ de wiki trouvé par son titre exact l'est toujours.
 
 Deux particularités valent d'être connues avant d'appuyer :
 
-- C'est le seul script de réparation qui touche au **seau**. Oublier une image,
-  c'est supprimer ses octets autant que sa ligne, donc il lui faut
+- C'est le seul script de réparation qui peut toucher au **seau**. Oublier une
+  image, c'est supprimer ses octets autant que sa ligne, donc il lit
   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` et
-  `SUPABASE_SERVICE_ROLE_KEY` en plus de `PRODUCTION_DIRECT_URL`. Le workflow
-  les réclame nommément, et seulement pour ce script.
+  `SUPABASE_SERVICE_ROLE_KEY` s'ils sont là. **Ils ne sont pas obligatoires** :
+  sans eux la réparation tourne, oublie les bonnes lignes et dit combien de
+  fichiers elle a laissés — du stockage inutilisé, pas une image cassée.
+  `repair:chapitre-1` fait le même compromis depuis toujours.
 - Il laisse des trous exprès : rien ne remplace dans la même passe l'image qu'il
   vient de refuser. Pour les remplir, `/admin/reglages` →
   « Chercher une image pour N entité(s) », qui est l'enrichissement ordinaire et

@@ -41,14 +41,18 @@ name: Réparations (production)
 # does not fail: the lines that cannot find their scene say « introuvable » and
 # a second run picks them up.
 #
-# `illustrations` is the only one that touches the **bucket**. The others move
-# knowledge between rows; this one forgets pictures, and forgetting a picture
-# means deleting the bytes as well as the row. So it wants three more secrets —
-# NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and
-# SUPABASE_SERVICE_ROLE_KEY — and the check below asks for them only when it is
-# the script being run. Without them it still deletes the rows and says which
-# files it left behind, which is a degradation rather than a failure, and not one
-# to accept on purpose.
+# `illustrations` is the only one that can touch the **bucket**. The others move
+# knowledge between rows; this one forgets pictures, and a picture is a row plus
+# two objects in the private bucket. So it reads three more secrets when they
+# exist — NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY (wanted by the
+# configuration schema rather than by the bucket, which validates the whole
+# object at once) and SUPABASE_SERVICE_ROLE_KEY.
+#
+# *When they exist.* Without them the repair still runs, forgets the right rows
+# and names the files it could not delete; what is left is unreachable storage,
+# not a broken picture. That is the same trade `repair:chapitre-1` has always
+# made — it deletes `entity_images` rows and never opens the bucket — so
+# demanding them here would have been a stricter rule than the repair beside it.
 #
 # It also leaves holes deliberately: a wiki illustration the current rules refuse
 # is forgotten and nothing replaces it in the same pass. Filling them is the
@@ -136,13 +140,19 @@ jobs:
             exit 1
           fi
 
-      # Only `illustrations` deletes files, so only `illustrations` is stopped
-      # for want of a bucket credential. Named one by one rather than « il
-      # manque un secret » — three values, and a run that stops to say which one
-      # is a run somebody can act on. Written as three `if`s rather than three
-      # `[ … ] && …` lines: the shell runs with `-e`, and a bare test that comes
-      # out false is a step that fails.
-      - name: Check the bucket credentials
+      # A warning, not a gate — and the difference is the whole point of this
+      # step. `illustrations` is the only repair that can clean the bucket, so
+      # it is the only one that has anything to say about these three secrets;
+      # but without them it still forgets the right rows and still names the
+      # files it could not delete. `repair:chapitre-1` has always deleted
+      # `entity_images` rows and left their bytes, so refusing to start here
+      # would have been a stricter rule than the repair beside it, for a cost
+      # measured in kilobytes of unreachable file.
+      #
+      # Written as three `if`s rather than three `[ … ] && …` lines: the shell
+      # runs with `-e`, and a bare test that comes out false is a step that
+      # fails — which is exactly what this step must not do.
+      - name: Note the bucket credentials
         if: inputs.script == 'illustrations'
         env:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -154,11 +164,10 @@ jobs:
           if [ -z "$SUPABASE_ANON_KEY" ]; then missing="$missing NEXT_PUBLIC_SUPABASE_ANON_KEY"; fi
           if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then missing="$missing SUPABASE_SERVICE_ROLE_KEY"; fi
           if [ -n "$missing" ]; then
-            echo "« illustrations » supprime des fichiers, pas seulement des lignes."
-            echo "Secrets manquants :$missing"
-            echo "Settings → Secrets and variables → Actions → New repository secret."
-            echo "Valeurs : projet Supabase → Settings → API."
-            exit 1
+            echo "::warning::Sans$missing, les lignes seront oubliées mais leurs fichiers resteront dans le seau."
+            echo "La réparation tourne quand même : c'est du stockage inutilisé, pas une image cassée."
+            echo "Pour qu'elle nettoie aussi les octets, ajoutez ces secrets"
+            echo "(Settings → Secrets and variables → Actions ; valeurs : projet Supabase → Settings → API)."
           fi
 
       - uses: actions/checkout@v4

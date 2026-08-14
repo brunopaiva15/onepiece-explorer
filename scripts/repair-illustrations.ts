@@ -154,19 +154,28 @@ async function main(): Promise<void> {
      * The bytes, after the rows — the recoverable order, as in `enrich.ts`. A
      * file left in the bucket is an orphan nobody reads; a row pointing at a
      * file that is gone is a broken picture on a fiche.
+     *
+     * Which is why the failure is reported and not raised. Somewhere without
+     * the Supabase credentials — a CI job given only the connection string —
+     * this is the whole of what goes wrong: the rows are forgotten, the reader
+     * stops seeing the wrong picture, and some kilobytes stay behind in a
+     * private bucket. Saying how many, and why, is the right amount of noise.
      */
+    const keys = removed
+      .flatMap((row) => [row.storage_key, row.thumb_key])
+      .filter((key): key is string => typeof key === 'string' && key.length > 0)
+
     try {
       const { storage } = await import('../src/domains/storage/index.ts')
-      await storage().remove(
-        removed
-          .flatMap((row) => [row.storage_key, row.thumb_key])
-          .filter((key): key is string => typeof key === 'string' && key.length > 0),
-      )
+      await storage().remove(keys)
     } catch (error: unknown) {
       console.log(
-        `  (fichiers laissés dans le seau : ${
-          error instanceof Error ? error.message : String(error)
-        })`,
+        `\n${keys.length} fichier(s) laissé(s) dans le seau, faute de pouvoir l’ouvrir :`,
+      )
+      console.log(`  ${error instanceof Error ? error.message : String(error)}`)
+      console.log(
+        '  Les lignes, elles, sont bien supprimées : c’est du stockage inutilisé, ' +
+          'pas une image cassée.',
       )
     }
 
