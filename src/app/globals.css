@@ -682,6 +682,22 @@ hr.regle {
   }
 }
 
+/*
+ * The poster wall holds whatever the reader has reached, which is three at
+ * chapter 124 and none at all before 69.
+ *
+ * Tracks that collapse when empty and stop growing at 11rem, centred: a wall of
+ * three posters is three ordinary posters in the middle of the wall. Left to
+ * `1fr` they would stretch to the size of a paperback each, and left to
+ * `auto-fill` they would sit in the left half of an empty row.
+ */
+@media (width >= 40rem) {
+  .mur-affiches {
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 11rem));
+    justify-content: center;
+  }
+}
+
 .affiche {
   display: flex;
   flex-direction: column;
@@ -745,47 +761,6 @@ hr.regle {
   object-position: center;
   background: #f2e2bd;
   padding: 0.15rem;
-}
-
-/*
- * The paper, printed here, around a portrait that is not one.
- *
- * The wall is a wall of wanted posters and the wiki has fourteen of them, none
- * visible before chapter 398. Everybody else was getting a bare portrait crop
- * under a heading that said « avis de recherche », which is the interface
- * promising something it then did not draw. So it draws it: parchment, a ruled
- * heading, the illustration inset like a printed photograph. The paper stays
- * paper in the dark theme, because that is what the object is.
- */
-.affiche-papier {
-  display: block;
-  background:
-    radial-gradient(rgba(92, 58, 33, 0.09) 1px, transparent 1.1px) 0 0 / 5px 5px,
-    #efdfba;
-  padding: 0.3rem 0.3rem 0.35rem;
-  border-bottom: 3px solid var(--ink);
-}
-
-.affiche-entete {
-  display: block;
-  border-top: 1px solid rgba(33, 27, 23, 0.55);
-  border-bottom: 1px solid rgba(33, 27, 23, 0.55);
-  margin-bottom: 0.3rem;
-  padding: 0.1rem 0;
-  color: #211b17;
-  font-family: var(--font-display);
-  font-size: 0.56rem;
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  line-height: 1.5;
-}
-
-/* Inside the frame the picture is a printed photograph: ruled, not bled to the
-   edge of the paper. */
-.affiche-papier .affiche-vue {
-  border: 1px solid rgba(33, 27, 23, 0.55);
-  border-bottom-width: 1px;
 }
 
 /* No picture in the catalogue for this one. An initial on the paper, rather
