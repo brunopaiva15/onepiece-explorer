@@ -3,6 +3,7 @@ import { and, asc, eq, gte, lte, sql } from 'drizzle-orm'
 import { withBoundary, withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
+import { OCCURRENCE_TYPES } from '@/domains/knowledge/ontology.ts'
 import {
   nodeTypeLabel,
   predicateLabel,
@@ -698,6 +699,32 @@ interface Mention {
 }
 
 /**
+ * One entity's claim on a short form: who claims it, and under which name.
+ *
+ * Both halves decide whether the claim is real. « Luffy » out of « Monkey D.
+ * Luffy » is a character answering to a name; « Luffy » out of « chapeau de
+ * paille de Luffy » is an object *named after* him and never called that.
+ */
+interface Claim {
+  entityId: string
+  label: string
+  isCharacter: boolean
+}
+
+/**
+ * Kinds whose label is a sentence, not a name.
+ *
+ * An event is named by its own summary — « Baggy s'empare du chapeau de paille
+ * de Luffy » is the label of a row in `entities`, exactly like « Monkey D.
+ * Luffy » is. Nobody answers to the first one, so it lends no short form:
+ * before this, one event recounting what someone did to Luffy was enough to
+ * make « Luffy » a name two entities claimed, and the thread stopped putting a
+ * face beside it — in that chapter and in every chapter after, since the labels
+ * are read from the whole library rather than from the chapter.
+ */
+const TOLD_NOT_NAMED = new Set<string>([...OCCURRENCE_TYPES, 'mystery'])
+
+/**
  * The last word of a name, when the name has several.
  *
  * The chapter calls him Luffy. The graph calls him « Monkey D. Luffy », because
@@ -712,8 +739,8 @@ interface Mention {
  * « Bar » out of « Partys Bar » is too short and « bandits » never matches
  * « Bandits ».
  *
- * A short form claimed by two different entities is dropped entirely rather
- * than guessed at — see readMentions().
+ * A short form claimed by two different *names* is dropped entirely rather than
+ * guessed at — see readMentions().
  */
 function shortForm(label: string): string | null {
   const last = label.trim().split(/\s+/).at(-1) ?? ''
@@ -751,7 +778,7 @@ async function readMentions(
 
   const rows = await withBoundary({ userId, boundaryChapter: chapter }, async (db) =>
     db.execute(sql`
-      SELECT l.entity_id AS "entityId", l.label
+      SELECT l.entity_id AS "entityId", l.label, en.node_type AS "nodeType"
         FROM entity_labels l
         JOIN entities en ON en.id = l.entity_id
        WHERE char_length(l.label) >= ${MENTION_MIN_LENGTH}
@@ -764,34 +791,59 @@ async function readMentions(
 
   const seen = new Set<string>()
   const full: Mention[] = []
-  /** Short form → the entities claiming it. More than one means ambiguous. */
-  const short = new Map<string, Set<string>>()
+  /** Short form → the claims on it. More than one *name* means ambiguous. */
+  const short = new Map<string, Claim[]>()
 
-  for (const row of rows as unknown as Mention[]) {
+  for (const row of rows as unknown as Array<Mention & { nodeType: string }>) {
     const key = `${row.entityId}|${row.label}`
     if (!seen.has(key)) {
       seen.add(key)
-      full.push(row)
+      full.push({ entityId: row.entityId, label: row.label })
     }
+    if (TOLD_NOT_NAMED.has(row.nodeType)) continue
     const brief = shortForm(row.label)
     if (brief === null) continue
-    const claimants = short.get(brief) ?? new Set<string>()
-    claimants.add(row.entityId)
-    short.set(brief, claimants)
+    const claims = short.get(brief) ?? []
+    claims.push({
+      entityId: row.entityId,
+      label: row.label,
+      isCharacter: row.nodeType === 'character',
+    })
+    short.set(brief, claims)
   }
 
   const out = [...full]
-  for (const [label, claimants] of short) {
-    /*
-     * Two characters whose names end the same way — « Monkey D. Luffy » and
-     * « Monkey D. Garp » would not collide, but « Portgas D. Ace » and « Ace »
-     * as an alias of someone else would. When the short form does not identify
-     * one entity, no face is better than a coin flip.
-     */
-    if (claimants.size !== 1) continue
-    const entityId = [...claimants][0]!
+  for (const [label, claims] of short) {
     if (full.some((mention) => mention.label === label)) continue
-    out.push({ label, entityId })
+
+    /*
+     * A person outranks what is named after them.
+     *
+     * « Luffy » is claimed by the character and by the straw hat filed as
+     * « chapeau de paille de Luffy », and the sentence saying that Baggy threw
+     * it on the ground means the person both times — a hat is not something a
+     * chapter calls Luffy. So the characters decide the question when there is
+     * one, and everything else only when there is not.
+     */
+    const named = claims.filter((claim) => claim.isCharacter)
+    const contenders = named.length > 0 ? named : claims
+
+    /*
+     * Two names ending the same way — « Monkey D. Luffy » and « Monkey D. Garp »
+     * would not collide, but « Portgas D. Ace » and « Bannis D. Ace » do. When
+     * the short form does not identify one name, no face is better than a coin
+     * flip.
+     *
+     * One name held by two entity rows is a different thing: entity resolution
+     * did not merge two appearances of the same person, which the thread
+     * already deduplicates elsewhere. Both are offered, and the one that has a
+     * face answers — dropping the name there would punish the reader for a
+     * duplicate they cannot see.
+     */
+    const claimants = new Set(contenders.map((claim) => claim.entityId))
+    const names = new Set(contenders.map((claim) => claim.label))
+    if (claimants.size > 1 && names.size > 1) continue
+    for (const entityId of claimants) out.push({ label, entityId })
   }
 
   // Longest first, so « Monkey D. Luffy » wins over « Luffy » at the same spot.

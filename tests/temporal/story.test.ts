@@ -567,6 +567,78 @@ describe('the faces on the thread', () => {
     ])
   })
 
+  /*
+   * What a chapter *recounts* about someone is not a rival claim on their name.
+   *
+   * An event is a row in `entities` and its label is its own summary, so
+   * « Baggy s'empare du chapeau de paille de Luffy » ended on the short name
+   * « Luffy » exactly like « Monkey D. Luffy » does — two entities claiming it,
+   * a coin flip refused, and no face beside the one character the sentence is
+   * about. Worse, the labels are read from the whole library rather than from
+   * the chapter, so one such event anywhere silenced every chapter after it.
+   */
+  it('keeps a short name a sentence merely ends with', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, { matchedLabel: 'Monkey D. Luffy', revealedIn: 1 })
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Baggy s’empare du chapeau de paille de Luffy'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const parts = at(await read(1, 1, 4), 1, 'evenement')[0]!.textParts
+
+    expect(parts!.filter((part) => part.portrait).map((part) => part.text)).toEqual([
+      'Luffy',
+    ])
+  })
+
+  it('gives a name to its owner rather than to what is named after them', async () => {
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, { matchedLabel: 'Monkey D. Luffy', revealedIn: 1 })
+
+    const hat = await createEntity(world, 'object', 1)
+    await addLabel(world, hat, 'Chapeau de paille de Luffy', 'true_name', 1, 100)
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Baggy jette le chapeau au sol et crache dessus devant Luffy.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const parts = at(await read(1, 1, 4), 1, 'evenement')[0]!.textParts
+
+    expect(parts!.filter((part) => part.portrait).map((part) => part.text)).toEqual([
+      'Luffy',
+    ])
+  })
+
+  it('answers a short name filed twice under the same full name', async () => {
+    /*
+     * Two rows, one person: entity resolution did not merge them. The reader
+     * cannot see the duplicate and should not pay for it — one name held twice
+     * is not two names, so the half that has a face answers.
+     */
+    const twin = await createEntity(world, 'character', 1)
+    await addLabel(world, twin, 'Monkey D. Luffy', 'true_name', 1, 100)
+
+    const luffy = await createEntity(world, 'character', 1)
+    await addLabel(world, luffy, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPortrait(world, luffy, { matchedLabel: 'Monkey D. Luffy', revealedIn: 1 })
+
+    const event = await createEntity(world, 'event', 1)
+    const phrase = 'Luffy frappe Baggy à l’estomac, sans un mot de plus.'
+    await addLabel(world, event, phrase, 'true_name', 1, 100)
+    await addEvent(world, event, { summary: phrase, toldIn: 1 })
+
+    const parts = at(await read(1, 1, 4), 1, 'evenement')[0]!.textParts
+
+    expect(parts!.filter((part) => part.portrait).map((part) => part.text)).toEqual([
+      'Luffy',
+    ])
+  })
+
   it('leaves a name alone when the library has no face for it', async () => {
     const shanks = await createEntity(world, 'character', 1)
     await addLabel(world, shanks, 'Shanks', 'true_name', 1, 100)
