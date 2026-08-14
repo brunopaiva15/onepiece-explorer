@@ -138,7 +138,7 @@ export default async function StoryPage({
                 <>
                   <p className="text-secondary">
                     {session.isOwner
-                      ? 'Le fil suit ce que vos chapitres publiés ont mis dans le graphe. Aucun ne l’est encore — importez-en un, puis revoyez ses propositions.'
+                      ? 'Le fil suit ce que vos chapitres publiés ont mis dans le graphe. Aucun ne l’est encore : importez-en un, puis revoyez ses propositions.'
                       : 'Le fil suit les chapitres publiés. Aucun ne l’est encore : revenez quand le premier sera relu.'}
                   </p>
                   {session.isOwner && (

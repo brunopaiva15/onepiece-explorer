@@ -58,8 +58,14 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     story time. Asking is the easy half: a model asked when Ohara burned
  *     knows, and would have answered from memory, so the dating carries a quote
  *     that anchoring checks against the blocks the scene already cites.
+ * '10' rules the em dash out of the French the model writes. Event summaries,
+ *     mystery questions and labels are prose displayed on the site, and they
+ *     came back peppered with « — » as an aside, which is the single most
+ *     recognisable tell of text nobody wrote. The rule is about the sentences
+ *     the model composes and stops at the quoted excerpt, which is copied and
+ *     therefore keeps whatever punctuation the chapter used.
  */
-export const PROMPT_VERSION = '9'
+export const PROMPT_VERSION = '10'
 
 /**
  * What the model is reading.
@@ -158,6 +164,12 @@ Deux réserves :
 Sur une source anglaise, cela donne : libellé « Chapeau de paille », extrait
 « he hands over his straw hat ». La citation reste anglaise, tout le reste est
 français.
+
+PONCTUATION DES PHRASES QUE VOUS RÉDIGEZ. Pas de tiret cadratin « — » ni de
+tiret demi-cadratin « – » comme incise : une virgule, un deux-points, une
+parenthèse ou une phrase de plus disent la même chose sans signer le texte comme
+écrit par une machine. Cette règle ne touche pas le champ « excerpt », qui est
+une citation et se recopie tel quel, tiret compris.
 
 QUAND VOUS NE SAVEZ PAS, DEMANDEZ. Pour chaque entité :
   • « source_term » : la formulation exacte de la source, quand elle diffère du

@@ -197,7 +197,7 @@ export default async function ChapterPage({
           <p className="mt-10 border-t border-line pt-6 text-sm text-muted">
             Chaque proposition devra citer mot pour mot un de ces passages. Un
             extrait qui n&apos;y apparaît pas est mis en quarantaine et
-            n&apos;atteint jamais la revue — c&apos;est ce qui empêche le modèle
+            n&apos;atteint jamais la revue, et c&apos;est ce qui empêche le modèle
             d&apos;ajouter ce qu&apos;il sait de One&nbsp;Piece par ailleurs.
           </p>
         </>

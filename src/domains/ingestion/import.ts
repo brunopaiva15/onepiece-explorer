@@ -70,7 +70,7 @@ export async function importChapter(request: ImportRequest): Promise<ImportResul
   if (!request.file === !request.images) {
     throw new IngestionRejection(
       'invalid_request',
-      'Fournissez soit un fichier, soit une liste d’images — pas les deux.',
+      'Fournissez soit un fichier, soit une liste d’images, mais pas les deux.',
       'Sélectionnez un PDF, une archive CBZ, ou un ensemble d’images.',
     )
   }

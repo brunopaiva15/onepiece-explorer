@@ -235,7 +235,7 @@ export async function enrichEntityImages(
               user_id, entity_id, source, source_ref, source_url, attribution,
               storage_key, thumb_key, width, height, mime, bytes,
               matched_label, match_method, match_score, revealed_in_chapter, era,
-              is_primary
+              kind, is_primary
             )
             VALUES (
               ${userId}, ${row.entity_id}, ${match.candidate.source},
@@ -245,6 +245,7 @@ export async function enrichEntityImages(
               ${stored.mime}, ${stored.bytes},
               ${match.matchedLabel}, ${match.method}, ${match.score},
               ${match.revealedInChapter}, ${match.candidate.era},
+              'portrait',
               NOT EXISTS (
                 SELECT 1 FROM entity_images
                 WHERE entity_id = ${row.entity_id} AND is_primary
@@ -334,7 +335,7 @@ async function dropRefusedImages(
     }>(sql`
       SELECT entity_id, source, source_ref, revealed_in_chapter
       FROM entity_images
-      WHERE user_id = ${userId} AND match_method = 'trigram'
+      WHERE user_id = ${userId} AND match_method = 'trigram' AND kind = 'portrait'
     `),
   )
 
@@ -353,6 +354,7 @@ async function dropRefusedImages(
     db.execute<{ storage_key: string; thumb_key: string | null }>(sql`
       DELETE FROM entity_images
       WHERE user_id = ${userId} AND entity_id IN ${[...refused]}
+        AND kind = 'portrait'
       RETURNING storage_key, thumb_key
     `),
   )
@@ -592,7 +594,8 @@ async function pending(userId: string, options: EnrichOptions): Promise<Row[]> {
           options.includeIllustrated
             ? sql``
             : sql`AND NOT EXISTS (
-                SELECT 1 FROM entity_images i WHERE i.entity_id = e.id
+                SELECT 1 FROM entity_images i
+                WHERE i.entity_id = e.id AND i.kind = 'portrait'
               )`
         }
       GROUP BY e.id, e.node_type
@@ -662,7 +665,7 @@ export async function imagesFor(
         matched_label, match_method, match_score, revealed_in_chapter, width, height,
         era
       FROM entity_images
-      WHERE entity_id IN ${entityIds}
+      WHERE entity_id IN ${entityIds} AND kind = 'portrait'
       ORDER BY entity_id,
         CASE era WHEN ${eraAtChapter(boundaryChapter)} THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END,
         is_primary DESC, match_score DESC, created_at
@@ -712,7 +715,8 @@ export async function imageCoverage(userId: string): Promise<Coverage[]> {
         count(i.entity_id)::int AS illustrated
       FROM entities e
       LEFT JOIN LATERAL (
-        SELECT 1 AS entity_id FROM entity_images WHERE entity_id = e.id LIMIT 1
+        SELECT 1 AS entity_id FROM entity_images
+        WHERE entity_id = e.id AND kind = 'portrait' LIMIT 1
       ) i ON true
       WHERE e.user_id = ${userId}
         AND e.review_status = 'accepted'

@@ -80,7 +80,7 @@ function remediation(): string {
   if (isVercelRuntime()) {
     return (
       'Renseignez ces variables dans les réglages du projet chez votre hébergeur, ' +
-      'puis redéployez — une variable ajoutée après le dernier build ne se trouve ' +
+      'puis redéployez : une variable ajoutée après le dernier build ne se trouve ' +
       'pas dans celui qui tourne. /etat dit lesquelles sont vues par le déploiement.'
     )
   }

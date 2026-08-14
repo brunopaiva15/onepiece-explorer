@@ -33,3 +33,20 @@ export {
   lookupFandomImages,
   lookupFandomPortraits,
 } from './sources/fandom.ts'
+export {
+  BOUNTY_HISTORY,
+  bountiesUpTo,
+  bountyAtChapter,
+  bountyCharacter,
+  formatBerries,
+  type Bounty,
+  type BountyHistory,
+} from './bounties.ts'
+export {
+  bountyCharacterCount,
+  enrichBountyPosters,
+  postersFor,
+  type PosterOptions,
+  type PosterReport,
+  type PosterView,
+} from './posters.ts'

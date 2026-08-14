@@ -197,7 +197,7 @@ export async function importSummary(
         'ambiguous_language',
         "Impossible de dire si ce texte est en français ou en anglais.",
         `Marqueurs relevés : ${guess.french} français, ${guess.english} anglais. ` +
-          'Choisissez la langue vous-même — elle décide de la langue dans laquelle ' +
+          'Choisissez la langue vous-même : elle décide de la langue dans laquelle ' +
           'les extraits de ce chapitre seront cités.',
       )
     }

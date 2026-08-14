@@ -132,6 +132,7 @@ Les images viennent de trois catalogues publics ; la connaissance, jamais.
 - [x] Une quinzaine d'entités sont illustrées sans qu'on le demande à chaque chapitre ouvert à la lecture, après la réponse : une illustration n'est pas une connaissance, elle ne demande pas de décision — seulement un moment.
 - [x] Chaque image affiche sa source, son attribution et le nom qui l'a trouvée. Un visage sans provenance se lirait comme un résultat du pipeline.
 - [x] Les fichiers sont recopiés dans le bucket privé, servis par URL signée courte, jamais chargés depuis un tiers.
+- [x] Un chapitre montre **tous** les visages qu'il a, quel qu'en soit le nombre : la signature se fait en une requête pour la page entière, il n'y a donc plus de quota par chapitre. L'ancien plafond de seize tombait dans l'ordre « libellé le plus long d'abord » — un tri emprunté à la découpe des phrases, qui ne dit rien de ce que la page dessine — et un chapitre chargé le dépensait en figurants aux longs noms descriptifs avant d'arriver à « Smoker », « Sanji » et « Nami », nommés dans la phrase et laissés sans visage — `tests/temporal/story.test.ts`, `tests/storage/private-assets.test.ts`.
 - [x] L'enrichissement est rejouable : ni doublon, ni portrait principal en double.
 - [x] Les tests n'ouvrent aucune connexion réseau ; le catalogue est une fixture.
 - [ ] Couverture complète. Impossible : les catalogues gratuits plafonnent à 369 personnages, 94 fruits, 16 navires et 31 îles. Les absences sont affichées par type dans `/admin/reglages` plutôt que passées sous silence.

@@ -149,20 +149,20 @@ async function connects(url: string | undefined): Promise<string | null> {
 /** Why the Supabase URL is not one, in the terms of the fix. */
 function urlProblem(value: string | undefined): string | null {
   const raw = value?.trim() ?? ''
-  if (/^["']|["']$/.test(raw)) return 'entourée de guillemets — retirez-les'
+  if (/^["']|["']$/.test(raw)) return 'entourée de guillemets, retirez-les'
 
   let parsed: URL
   try {
     parsed = new URL(raw)
   } catch {
     return raw.includes('://')
-      ? "définie, mais ce n'est pas une URL valide — attendu https://<ref>.supabase.co"
-      : 'définie, mais sans « https:// » — attendu https://<ref>.supabase.co'
+      ? "définie, mais ce n'est pas une URL valide. Attendu : https://<ref>.supabase.co"
+      : 'définie, mais sans « https:// ». Attendu : https://<ref>.supabase.co'
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    return `schéma « ${parsed.protocol}// » — attendu https://`
+    return `schéma « ${parsed.protocol}// ». Attendu : https://`
   }
-  if (!parsed.hostname.includes('.')) return 'hôte sans domaine — attendu https://<ref>.supabase.co'
+  if (!parsed.hostname.includes('.')) return 'hôte sans domaine. Attendu : https://<ref>.supabase.co'
   return null
 }
 
@@ -178,7 +178,7 @@ export default async function StatePage() {
 
   for (const name of required) {
     if (!presence(name)) {
-      checks.push({ label: name, state: 'fail', detail: 'ABSENTE — chaque page échouera' })
+      checks.push({ label: name, state: 'fail', detail: 'ABSENTE, chaque page échouera' })
       continue
     }
     /*
@@ -210,7 +210,7 @@ export default async function StatePage() {
        * the exact ceiling the local setup exists to escape.
        */
       detail:
-        "présente hors déploiement — vient probablement de `vercel env pull`. Supprimez les lignes VERCEL* de .env.local : elles plafonneraient l'import à 4,5 Mo.",
+        "présente hors déploiement, vient probablement de `vercel env pull`. Supprimez les lignes VERCEL* de .env.local : elles plafonneraient l'import à 4,5 Mo.",
     })
   }
 
@@ -219,13 +219,13 @@ export default async function StatePage() {
     state: presence('SUPABASE_SERVICE_ROLE_KEY') ? 'ok' : 'warn',
     detail: presence('SUPABASE_SERVICE_ROLE_KEY')
       ? 'définie'
-      : "absente — l'import et l'affichage des pages échoueront, la lecture du graphe non",
+      : "absente, l'import et l'affichage des pages échoueront, la lecture du graphe non",
   })
 
   for (const [name, note] of [
-    ['ANTHROPIC_API_KEY', "absente — extraction synthétique, avec bannière"],
-    ['ASSISTANT_ENABLED', 'absente — /admin/ask est éteint, et rien ne se facture'],
-    ['PUBLIC_LIBRARY_OWNER_ID', 'absente — les visiteurs lisent la seule bibliothèque de cette installation'],
+    ['ANTHROPIC_API_KEY', "absente, extraction synthétique avec bannière"],
+    ['ASSISTANT_ENABLED', 'absente, /admin/ask est éteint et rien ne se facture'],
+    ['PUBLIC_LIBRARY_OWNER_ID', 'absente, les visiteurs lisent la seule bibliothèque de cette installation'],
   ] as const) {
     checks.push({
       label: name,
@@ -265,8 +265,8 @@ export default async function StatePage() {
       state: schema.missingTables.length === 0 ? 'ok' : 'fail',
       detail:
         schema.missingTables.length === 0
-          ? `à jour — ${schema.appliedCount} migration(s), la dernière étant ${schema.lastMigration ?? 'inconnue'}`
-          : `EN RETARD — table(s) absente(s) : ${schema.missingTables.join(', ')}. ` +
+          ? `à jour : ${schema.appliedCount} migration(s), la dernière étant ${schema.lastMigration ?? 'inconnue'}`
+          : `EN RETARD, table(s) absente(s) : ${schema.missingTables.join(', ')}. ` +
             `Dernière migration appliquée : ${schema.lastMigration ?? 'aucune'}.`,
     })
   }
@@ -280,7 +280,7 @@ export default async function StatePage() {
         Cette page ne dépend d&apos;aucune des choses qu&apos;elle contrôle : ni
         de la configuration validée, ni d&apos;une session, ni du client
         Supabase. C&apos;est ce qui lui permet de répondre quand tout le reste
-        renvoie une erreur serveur. Elle n&apos;affiche jamais une valeur —
+        renvoie une erreur serveur. Elle n&apos;affiche jamais une valeur,
         seulement si elle est là.
       </p>
 
@@ -288,7 +288,7 @@ export default async function StatePage() {
         <p className="mt-8 rounded-sm border border-line bg-surface-raised p-4 text-primary">
           Tout répond et le schéma est à jour. Si une page échoue malgré ça, le
           message complet est dans les journaux d&apos;exécution de
-          l&apos;hébergeur — la page en erreur affiche une référence à y
+          l&apos;hébergeur, et la page en erreur affiche une référence à y
           chercher.
         </p>
       ) : (
@@ -303,7 +303,7 @@ export default async function StatePage() {
               <code>.env.local</code> :{' '}
               <code className="text-accent">pnpm db:push</code>, puis{' '}
               <code>pnpm doctor</code>. Rien ne l&apos;applique au
-              déploiement&nbsp;: c&apos;est délibéré — une migration qui
+              déploiement&nbsp;: c&apos;est délibéré, car une migration qui
               s&apos;exécute à chaud pendant qu&apos;une ancienne version tourne
               encore est le pire moment pour la lancer.
             </p>
@@ -312,7 +312,7 @@ export default async function StatePage() {
             {broken.map((check) => (
               <li key={check.label}>
                 <span className="font-mono text-xs text-primary">{check.label}</span>{' '}
-                — {check.detail}
+                · {check.detail}
               </li>
             ))}
           </ul>
@@ -352,8 +352,8 @@ export default async function StatePage() {
             Une chaîne de connexion est une URL, et l&apos;URL réserve{' '}
             <code>#</code>, <code>/</code> et <code>?</code>. Un mot de passe qui
             en contient un rend la chaîne illisible sans que rien ne dise lequel.
-            Encodez-le dans la chaîne — <code>%23</code>, <code>%2F</code>,{' '}
-            <code>%3F</code> — sans toucher au mot de passe dans Supabase.
+            Encodez-le dans la chaîne (<code>%23</code>, <code>%2F</code>,{' '}
+            <code>%3F</code>) sans toucher au mot de passe dans Supabase.
           </li>
           <li>
             <strong className="font-medium text-primary">
@@ -386,7 +386,7 @@ export default async function StatePage() {
         </ol>
         <p className="mt-4">
           La cause 2 ne concerne qu&apos;un déploiement : en local, les variables
-          sont relues à chaque démarrage — il suffit de redémarrer{' '}
+          sont relues à chaque démarrage, il suffit de redémarrer{' '}
           <code>pnpm dev</code>. Et sur votre machine,{' '}
           <code>pnpm doctor</code> dit la même chose que cette page en plus
           détaillé : il essaie chaque connexion et affiche l&apos;hôte

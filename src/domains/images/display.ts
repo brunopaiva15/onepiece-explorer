@@ -30,14 +30,25 @@ export interface DisplayImage {
 }
 
 /**
- * `limit` caps how many pictures are *signed*, not how many are looked up.
+ * Every picture these entities have, signed — or the first `limit` of them.
  *
- * The distinction is the whole point. Signing is a round trip per file against
- * the storage provider; the lookup is one query. A caller that trims its list
- * of candidates before calling spends its budget on entities that may have no
- * picture at all, and comes back with nothing — which is indistinguishable, on
- * the page, from a catalogue that matched nobody. Hand over every candidate in
- * priority order and let the cap fall on the ones that really have a face.
+ * **`limit` is only ever legitimate when `entityIds` is in an order the caller
+ * chose on purpose.** It counts entities that really have a face rather than
+ * candidates, so a caller hands over its whole list and the cap falls on the
+ * tail; which means the cap is only as meaningful as the sort in front of it.
+ * The home page qualifies: it shuffles the cast and then asks for ten, so the
+ * truncation is the draw. Story mode did not — it handed over its mentions
+ * « longest label first », a tie-break belonging to the regex that cuts
+ * sentences, and a busy chapter spent its whole allowance on walk-ons with long
+ * descriptive names before reaching « Smoker », « Sanji » and « Nami », named
+ * in the sentence and left bare. If you cannot say why your order is the right
+ * one to truncate, do not pass a limit.
+ *
+ * The reason it used to be *unavoidable* is gone: signing was a round trip per
+ * file, so thirty portraits meant sixty requests. `signedUrls` makes it one for
+ * the whole page, whatever its length, and the lookup was always a single
+ * query. What remains is a way to not sign what will not be shown, not a
+ * ration.
  */
 export async function displayImages(
   userId: string,
@@ -48,11 +59,8 @@ export async function displayImages(
   const found = await imagesFor(userId, boundaryChapter, entityIds)
   if (found.size === 0) return new Map()
 
-  const store = storage()
-  const out = new Map<string, DisplayImage>()
-
   const seen = new Set<string>()
-  const wanted =
+  const images =
     limit === undefined
       ? [...found.values()]
       : entityIds
@@ -64,36 +72,43 @@ export async function displayImages(
           .slice(0, limit)
           .map((id) => found.get(id)!)
 
-  await Promise.all(
-    wanted.map(async (image) => {
-      try {
-        const [url, thumbUrl] = await Promise.all([
-          store.signedUrl(image.storageKey),
-          image.thumbKey ? store.signedUrl(image.thumbKey) : null,
-        ])
+  /*
+   * A key that will not sign is a picture that is gone — a bucket emptied, a
+   * storage driver swapped. It is simply absent from the map, which leaves its
+   * entity looking exactly as it did before it had a portrait: a perfectly
+   * good page. Failing the whole render over decoration would be the wrong
+   * trade, so the whole call is guarded too.
+   */
+  let signed: Map<string, string>
+  try {
+    signed = await storage().signedUrls(
+      images.flatMap((image) =>
+        image.thumbKey ? [image.storageKey, image.thumbKey] : [image.storageKey],
+      ),
+    )
+  } catch {
+    return new Map()
+  }
 
-        out.set(image.entityId, {
-          url,
-          thumbUrl: thumbUrl ?? url,
-          attribution: image.attribution,
-          sourceUrl: image.sourceUrl,
-          matchedLabel: image.matchedLabel,
-          matchMethod: image.matchMethod,
-          matchScore: image.matchScore,
-          width: image.width,
-          height: image.height,
-        })
-      } catch {
-        /*
-         * A key that will not sign is a picture that is gone — a bucket
-         * emptied, a storage driver swapped. Skipping it leaves the entity
-         * looking exactly as it did before it had a portrait, which is a
-         * perfectly good page. Failing the whole render over decoration would
-         * be the wrong trade.
-         */
-      }
-    }),
-  )
+  const out = new Map<string, DisplayImage>()
+  for (const image of images) {
+    const url = signed.get(image.storageKey)
+    if (!url) continue
+
+    out.set(image.entityId, {
+      url,
+      /* A thumbnail that did not sign falls back to the full picture, which is
+         what an entity with no thumbnail at all already does. */
+      thumbUrl: (image.thumbKey ? signed.get(image.thumbKey) : null) ?? url,
+      attribution: image.attribution,
+      sourceUrl: image.sourceUrl,
+      matchedLabel: image.matchedLabel,
+      matchMethod: image.matchMethod,
+      matchScore: image.matchScore,
+      width: image.width,
+      height: image.height,
+    })
+  }
 
   return out
 }

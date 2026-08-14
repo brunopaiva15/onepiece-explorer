@@ -53,7 +53,7 @@ export function ReopenPanel({
       <div className="panneau-corps">
         <p className="max-w-3xl text-sm text-secondary">
           Rouvrir une proposition la remet dans la file <em>et</em> efface la
-          décision enregistrée — sans quoi le prochain ré-import y répondrait de
+          décision enregistrée, sans quoi le prochain ré-import y répondrait de
           nouveau tout seul, avec la réponse que vous venez de retirer. Une
           proposition déjà publiée n&apos;est pas ici : elle est dans le graphe,
           et ce qui l&apos;en retire est la suppression du chapitre.

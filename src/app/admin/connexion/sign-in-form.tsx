@@ -45,8 +45,8 @@ function translateError(message: string): string {
       "La clé NEXT_PUBLIC_SUPABASE_ANON_KEY n'est pas acceptée par ce projet. " +
       "Trois causes : elle vient d'un autre projet que NEXT_PUBLIC_SUPABASE_URL, " +
       'elle a été tronquée au collage (une clé JWT fait plus de 200 caractères, ' +
-      'sur une seule ligne), ou les clés héritées sont désactivées dans Supabase ' +
-      '— auquel cas prenez la clé « publishable ». Rien à voir avec votre mot de passe.'
+      'sur une seule ligne), ou les clés héritées sont désactivées dans Supabase, ' +
+      'auquel cas prenez la clé « publishable ». Rien à voir avec votre mot de passe.'
     )
   }
   return message

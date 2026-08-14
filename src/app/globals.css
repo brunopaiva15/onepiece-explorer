@@ -552,6 +552,268 @@ hr.regle {
 
 
 /* --------------------------------------------------------------------------
+   The front door — a poster wall and a sea.
+
+   The home page used to be six links, three counters and a paragraph about a
+   knowledge graph. Everything a visitor came for was one click away, and the
+   one screen that has to make them want to click looked like the settings page
+   of an internal tool.
+
+   Three devices, and all three are borrowed from how the *world* of a pirate
+   story is drawn rather than from any published artwork:
+
+     1. **Posters.** Faces are pinned to the page, slightly crooked, with a
+        heading and a chapter number where a bounty would be. The number is
+        real: it is the chapter the reader met them in. Nothing on a poster is
+        invented, which rules out the obvious joke of a fake bounty.
+     2. **The sea.** A drawn wave closes the banner instead of a straight edge.
+        Two overlapping crests, in ink and deep water, so it reads as drawn
+        rather than as a divider somebody found in a component library.
+     3. **A route.** The arcs already crossed, as ports on a line, ending where
+        the reader is. It stops there: naming what comes next would be the one
+        thing this whole site exists not to do.
+   -------------------------------------------------------------------------- */
+
+/* --- The banner ---------------------------------------------------------- */
+
+.banniere {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 4px solid var(--ink);
+  background: var(--sea-deep);
+  color: #fff;
+  box-shadow: var(--shadow-hard);
+}
+
+/* Speed lines from the top corner, in the water's own value so they read as
+   light on a swell rather than as a texture laid over it. */
+.banniere::before {
+  content: '';
+  position: absolute;
+  inset: -30% -10% 20%;
+  z-index: -1;
+  background: repeating-conic-gradient(
+    from 200deg at 85% 0%,
+    rgba(255, 255, 255, 0.07) 0deg 1.4deg,
+    transparent 1.4deg 5deg
+  );
+  pointer-events: none;
+}
+
+.vague {
+  display: block;
+  width: 100%;
+  height: clamp(1.5rem, 3vw, 2.5rem);
+  color: var(--surface-base);
+}
+
+/* --- The route already sailed -------------------------------------------- */
+
+.traversee {
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+}
+
+/*
+ * The ports, on the line they were called at.
+ *
+ * The line is the track's own background rather than the scroller's, and the
+ * track is `max-content` wide: on the scroller it ran the full width of the
+ * page and drew three hundred pixels of route past the port the reader is
+ * standing in, which is the one direction this page must never point.
+ */
+.traversee-piste {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: max-content;
+  max-width: 100%;
+  background-image: linear-gradient(var(--ink), var(--ink));
+  background-size: 100% 3px;
+  background-position: 0 calc(50% - 0.2rem);
+  background-repeat: no-repeat;
+}
+
+.escale {
+  flex: none;
+  border: 3px solid var(--ink);
+  background: var(--surface-raised);
+  padding: 0.15rem 0.6rem;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Where the reader is. The only chip that shouts, and it is the last one. */
+.escale-ici {
+  background: var(--accent);
+  color: var(--ink);
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.escale-avant {
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+
+/* --- The wall ------------------------------------------------------------ */
+
+.mur {
+  display: grid;
+  gap: 1rem 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (width >= 40rem) {
+  .mur {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (width >= 64rem) {
+  .mur {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.affiche {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 3px solid var(--ink);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-hard-sm);
+  text-decoration: none;
+  transition: rotate 90ms ease, translate 90ms ease, box-shadow 90ms ease;
+}
+
+/* Pinned by hand, not laid out by a grid that has never seen a cork board. The
+   angles are small and they alternate, which is enough: a wall of cards all
+   tilted the same way looks like a mistake in one stylesheet rule. */
+.mur > li:nth-child(odd) .affiche {
+  rotate: -1.1deg;
+}
+
+.mur > li:nth-child(even) .affiche {
+  rotate: 0.9deg;
+}
+
+.affiche:hover,
+.affiche:focus-visible {
+  rotate: 0deg;
+  translate: -2px -3px;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.affiche-vue {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  /* From the top, like every other portrait here: catalogue art is often a
+     full figure, and a centred square crop of one is a picture of a torso. */
+  object-position: center top;
+  background: var(--surface-sunken);
+  border-bottom: 3px solid var(--ink);
+}
+
+/* A poster the work actually printed sits straight, and the wall tilts around
+   it. It is the real thing among the stand-ins, and that is worth one degree. */
+.mur > li:nth-child(odd) .affiche-vraie,
+.mur > li:nth-child(even) .affiche-vraie {
+  rotate: 0deg;
+  box-shadow: var(--shadow-hard);
+}
+
+/*
+ * A real wanted poster, which is a document rather than a picture of somebody.
+ *
+ * Contained rather than cropped, on the paper the poster is printed on: the
+ * half a crop would throw away is the half that says what the thing is, and a
+ * portrait crop of a bounty poster is a close-up of a face with the number cut
+ * off. The parchment behind it is the same value in both themes, because the
+ * poster's own paper is part of the drawing.
+ */
+.affiche-vue-entiere {
+  object-fit: contain;
+  object-position: center;
+  background: #f2e2bd;
+  padding: 0.15rem;
+}
+
+/* No picture in the catalogue for this one. An initial on deep water, rather
+   than a grey box apologising for itself. */
+.affiche-vide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 3 / 4;
+  background: var(--sea);
+  color: #fff;
+  border-bottom: 3px solid var(--ink);
+}
+
+.affiche-corps {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.5rem;
+  text-align: center;
+}
+
+.affiche-nom {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* The band a bounty is printed on, carrying the one number this site is
+   allowed to print there. */
+.affiche-prime {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-top: 3px solid var(--ink);
+  background: var(--accent);
+  color: var(--ink);
+  padding: 0.15rem 0.4rem 0.25rem;
+  line-height: 1;
+}
+
+.affiche-prime-mot {
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  opacity: 0.75;
+}
+
+/*
+ * A bounty is a long number and the poster is a narrow card, so this one shrinks
+ * with the card instead of setting a size and hoping. « 1 111 000 000 ฿ » is
+ * fourteen characters and has to fit next to « 50 ฿ » without either looking
+ * like a mistake.
+ */
+.affiche-prime-somme {
+  font-size: clamp(0.85rem, 2.1cqi + 0.55rem, 1.5rem);
+  white-space: nowrap;
+}
+
+.mur > li {
+  container-type: inline-size;
+}
+
+/* --------------------------------------------------------------------------
    Story mode — the thread.
 
    One line down the page, drawn as the reader scrolls, with a bead for every

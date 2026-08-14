@@ -17,9 +17,10 @@ import {
   publicLibraryOwnerId,
 } from '@/lib/env.ts'
 import { imageCoverage } from '@/domains/images/index.ts'
+import { bountyCharacterCount } from '@/domains/images/posters.ts'
 import { devilFruitsFiledAsPowers } from '@/domains/knowledge/retype.ts'
 import { DeleteChapter } from './delete-chapter.tsx'
-import { EnrichImages } from './enrich-images.tsx'
+import { EnrichImages, EnrichPosters } from './enrich-images.tsx'
 import { ReclassifyFruits } from './reclassify-fruits.tsx'
 import { predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
@@ -189,11 +190,11 @@ export default async function SettingsPage() {
           L&apos;accueil, l&apos;histoire, le graphe, la chronologie, les
           myst&egrave;res, les fiches et la recherche sont publics : n&apos;importe
           qui peut les lire et d&eacute;placer le curseur o&ugrave; il en est de sa
-          lecture. Les pages de manga, elles, ne le sont pas — un visiteur voit
+          lecture. Les pages de manga, elles, ne le sont pas : un visiteur voit
           la r&eacute;f&eacute;rence de la case et l&apos;extrait cit&eacute;,
-          jamais l&apos;image. Tout <code className="text-primary">/admin</code> —
-          import, traitement, revue, suppression, export, enrichissement,
-          assistant — reste &agrave; vous seul.
+          jamais l&apos;image. Tout <code className="text-primary">/admin</code>
+          (import, traitement, revue, suppression, export, enrichissement,
+          assistant) reste &agrave; vous seul.
         </p>
         <p className="mt-2 max-w-2xl text-sm text-secondary">
           {publicLibraryOwnerId() === null ? (
@@ -201,7 +202,7 @@ export default async function SettingsPage() {
               Les visiteurs lisent la seule biblioth&egrave;que de cette
               installation, r&eacute;solue automatiquement : aucune variable
               &agrave; poser. Si vous cr&eacute;ez un second compte, plus rien
-              n&apos;est automatique — il faudra alors d&eacute;signer celle
+              n&apos;est automatique : il faudra alors d&eacute;signer celle
               &agrave; publier avec{' '}
               <code className="text-primary">PUBLIC_LIBRARY_OWNER_ID</code>.
             </>
@@ -237,7 +238,7 @@ export default async function SettingsPage() {
         <h2 className="text-lg font-semibold text-primary">Illustrations</h2>
         <p className="mt-2 max-w-2xl text-sm text-secondary">
           Les portraits, fruits, navires et lieux viennent de trois catalogues
-          publics et gratuits — onepieceapi.com, api-onepiece.com et AniList —
+          publics et gratuits (onepieceapi.com, api-onepiece.com et AniList),
           rapprochés de vos entités par leur nom. Ce sont des illustrations, pas
           des sources : aucune ne peut justifier un fait, et une image
           n&apos;apparaît qu&apos;à partir du chapitre où vous apprenez le nom qui
@@ -246,6 +247,22 @@ export default async function SettingsPage() {
           la liste des personnages que vous consultez.
         </p>
         <EnrichImages coverage={coverage} />
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-lg font-semibold text-primary">Avis de recherche</h2>
+        <p className="mt-2 max-w-2xl text-sm text-secondary">
+          Les vraies affiches du manga, prises sur la galerie du One Piece Wiki.
+          Elles ne sont pas rapprochées par le nom comme les portraits : chaque
+          tirage est écrit à la main dans{' '}
+          <code className="text-primary">src/domains/images/bounties.ts</code>{' '}
+          avec le chapitre qui le montre, parce qu&apos;une prime est un chiffre
+          daté et qu&apos;une affiche prise «&nbsp;au hasard&nbsp;» raconterait à
+          un lecteur du chapitre 100 ce que vaut Luffy mille chapitres plus loin.
+          La galerie n&apos;en tient qu&apos;une partie ; le reste des
+          personnages garde son portrait.
+        </p>
+        <EnrichPosters characters={bountyCharacterCount()} />
       </section>
 
       <section className="mt-12">
@@ -271,7 +288,7 @@ export default async function SettingsPage() {
         </h2>
         <p className="mt-2 max-w-2xl text-sm text-secondary">
           Les opérations qui appellent un modèle sont plafonnées par heure. Ce
-          n&apos;est pas une protection contre un intrus — vous êtes seul ici —
+          n&apos;est pas une protection contre un intrus, puisque vous êtes seul ici,
           mais contre une boucle : un script relancé, un onglet qui rejoue une
           requête à chaque focus. La facture, elle, ne fait pas la différence.
           La lecture, la navigation et le graphe ne sont jamais comptés.
@@ -364,7 +381,7 @@ export default async function SettingsPage() {
         <p className="mt-2 max-w-2xl text-sm text-secondary">
           L&apos;export contient tout : chapitres, entités, assertions, preuves,
           vos théories et chacune de vos décisions de revue. Pas les pages
-          elles-mêmes — ce sont vos fichiers, vous les avez déjà, et un export
+          elles-mêmes : ce sont vos fichiers, vous les avez déjà, et un export
           qui les embarquerait ferait de cet outil un canal de redistribution.
         </p>
         <a
