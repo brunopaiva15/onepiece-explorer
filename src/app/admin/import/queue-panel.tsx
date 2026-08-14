@@ -66,7 +66,7 @@ export function QueuePanel({ chapters }: Props) {
         Chacun démarre à la publication du chapitre précédent. Le rapprochement
         des entités ne compare une proposition qu’à ce qui est <em>déjà</em> dans
         le graphe&nbsp;: les traiter tout de suite, c’est perdre les questions
-        d’identité — un alias nommé au chapitre suivant devient deux entités,
+        d’identité : un alias nommé au chapitre suivant devient deux entités,
         sans que rien ne vous le demande.
       </p>
 

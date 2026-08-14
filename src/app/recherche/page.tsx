@@ -70,7 +70,7 @@ export default async function SearchPage({
 
         <p className="mt-2 text-sm text-muted">
           Cherche dans les noms, le texte des pages, les descriptions de cases,
-          les événements et les mystères — le tout limité à ce que vous avez lu.
+          les événements et les mystères, le tout limité à ce que vous avez lu.
           Les accents et les fautes de frappe sont tolérés.
         </p>
 
@@ -88,7 +88,7 @@ export default async function SearchPage({
                   }`}
                 >
                   {modeLabel(mode.mode)}
-                  {!mode.ran && ' — indisponible'}
+                  {!mode.ran && ' · indisponible'}
                 </li>
               ))}
             </ul>
@@ -131,7 +131,7 @@ export default async function SearchPage({
           <p className="mt-1 max-w-2xl text-sm text-secondary">
             La chaîne de relations la plus courte, telle que vous la connaissez à
             ce chapitre. C&apos;est là qu&apos;apparaissent les liens auxquels on
-            n&apos;avait pas pensé — et reculer le curseur montre à partir de quand
+            n&apos;avait pas pensé, et reculer le curseur montre à partir de quand
             le lien existait.
           </p>
 
@@ -169,7 +169,7 @@ export default async function SearchPage({
 
           {path && path.steps.length === 0 && (
             <p className="mt-4 text-secondary">
-              Ce sont la même entité — fusionnées par une identité révélée.
+              Ce sont la même entité, fusionnées par une identité révélée.
             </p>
           )}
 

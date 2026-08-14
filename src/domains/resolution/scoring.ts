@@ -132,7 +132,7 @@ function scoreName(signals: ResolutionSignals): ScoredSignal {
         reason:
           `Les deux désignations sont identiques (« ${signals.candidate.label} »), mais ce sont ` +
           `des descriptions visuelles, pas des noms. Deux personnages peuvent partager un ` +
-          `détail vestimentaire — parfois délibérément.`,
+          `détail vestimentaire, parfois délibérément.`,
       }
     }
     return {

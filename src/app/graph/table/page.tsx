@@ -7,7 +7,7 @@ import { Portrait } from '@/app/components/portrait.tsx'
 import { epistemicLabel } from '@/domains/knowledge/epistemic-label.ts'
 import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-label.ts'
 
-export const metadata: Metadata = { title: 'Graphe — vue tableau' }
+export const metadata: Metadata = { title: 'Graphe, vue tableau' }
 export const dynamic = 'force-dynamic'
 
 /**
@@ -63,7 +63,7 @@ export default async function GraphTablePage({
       <main id="contenu" className="mx-auto max-w-5xl px-6 py-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <h1 className="text-3xl font-semibold text-primary">
-            Graphe — vue tableau
+            Graphe, vue tableau
           </h1>
           <Link
             href={`/graph?ch=${session.boundaryChapter}`}

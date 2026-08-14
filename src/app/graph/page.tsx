@@ -107,7 +107,7 @@ export default async function GraphPage({
           className="mt-3 border-[3px] border-ink bg-[var(--accent)] px-3 py-1.5 text-sm text-ink"
         >
           Graphe tronqué : {projection.truncated.shown} nœuds sur{' '}
-          {projection.truncated.total}. Les plus connectés sont conservés —
+          {projection.truncated.total}. Les plus connectés sont conservés :
           c&apos;est l&apos;ossature de l&apos;histoire. Filtrez par type pour
           voir le reste.
         </p>

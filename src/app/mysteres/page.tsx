@@ -60,7 +60,7 @@ export default async function MysteriesPage({
       <p className="mt-2 max-w-2xl text-sm text-secondary">
         Ce que l&apos;histoire a demandé sans y répondre, et ce qu&apos;elle a
         fini par éclaircir. Une question est ouverte tant que <em>vous</em>{' '}
-        n&apos;avez pas lu sa réponse — reculez le curseur et une question
+        n&apos;avez pas lu sa réponse : reculez le curseur et une question
         refermée redevient ouverte.
       </p>
 

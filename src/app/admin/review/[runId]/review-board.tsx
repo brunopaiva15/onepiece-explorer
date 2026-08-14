@@ -710,7 +710,7 @@ export function ReviewBoard({ queue }: Props) {
                   }
                   title={
                     settled
-                      ? `Doublon reporté d’office · copie ${item.duplicate?.rank}/${item.duplicate?.total} — cliquez pour décider vous-même`
+                      ? `Doublon reporté d’office · copie ${item.duplicate?.rank}/${item.duplicate?.total} · cliquez pour décider vous-même`
                       : item.duplicate
                         ? `Doublon · copie ${item.duplicate.rank}/${item.duplicate.total}`
                         : undefined
@@ -799,7 +799,7 @@ function PublishSummary({
         {result.entitiesCreated > 0 && <li>{result.entitiesCreated} entité(s)</li>}
         {result.entitiesMerged > 0 && (
           <li>
-            {result.entitiesMerged} rapprochée(s) avec une entité déjà connue —
+            {result.entitiesMerged} rapprochée(s) avec une entité déjà connue :
             rien de créé, les faits du chapitre sont allés sur elle
           </li>
         )}
@@ -908,7 +908,7 @@ function ProposalCard({
         <div className="panneau-corps">
           {item.evidence.length === 0 ? (
             <p className="border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-white">
-              Aucune preuve rattachée — cette proposition ne devrait pas être ici.
+              Aucune preuve rattachée : cette proposition ne devrait pas être ici.
             </p>
           ) : (
             <ul className="space-y-5">
@@ -1125,7 +1125,7 @@ function TypeMismatchNotice({
       <p className="mt-1 text-sm">
         « {predicateLabel(mismatch.predicate)} » n&apos;accepte pas{' '}
         {culprit.role === 'objet' ? 'un objet' : 'un sujet'} de type «{' '}
-        {culprit.type} » — or {culprit.end} en est un. Attendu :{' '}
+        {culprit.type} », or {culprit.end} en est un. Attendu :{' '}
         {culprit.expected.join(', ')}. Acceptée telle quelle, elle sera refusée à
         l&apos;écriture et le lien manquera dans le graphe.
       </p>
@@ -1140,7 +1140,7 @@ function TypeMismatchNotice({
             onChange={(event) => onChoose(event.target.value)}
             className="mt-1 w-full border-[3px] border-ink bg-surface-raised px-2 py-1 text-base text-primary"
           >
-            <option value="">— garder « {predicateLabel(mismatch.predicate)} » (sera refusée) —</option>
+            <option value="">garder « {predicateLabel(mismatch.predicate)} » (sera refusée)</option>
             {mismatch.alternatives.map((alternative) => (
               <option key={alternative.key} value={alternative.key}>
                 {alternative.labelFr} ({alternative.key})
@@ -1247,7 +1247,7 @@ function DuplicateNotice({
           : markedElsewhere
             ? 'Une autre copie est déjà marquée « accepter ». Une seule suffit.'
             : 'Le chapitre est extrait par tranches, et la même proposition revient ' +
-              'd’une tranche à l’autre. N’en acceptez qu’une — sauf si vous jugez ' +
+              'd’une tranche à l’autre. N’en acceptez qu’une, sauf si vous jugez ' +
               'qu’il s’agit de deux apparitions différentes.'}
       </p>
 
@@ -1485,7 +1485,7 @@ function ProposalBody({
 
           {unsure && (
             <p className="mt-2 text-sm text-muted">
-              Le modèle ne sait pas trancher — traduire ou garder tel quel est une
+              Le modèle ne sait pas trancher : traduire ou garder tel quel est une
               convention, pas un fait du texte. Votre réponse est enregistrée pour
               toute l’œuvre : la question ne sera plus posée.
             </p>
@@ -1698,7 +1698,7 @@ function ProposalBody({
         <p className="text-primary">{shown}</p>
         {shown !== written && (
           <p className="mt-1.5 text-sm text-[var(--epi-validated)]">
-            Récrit avec les noms que vous avez tranchés dans ce lot — c’est cette
+            Récrit avec les noms que vous avez tranchés dans ce lot. C’est cette
             version qui sera enregistrée.
           </p>
         )}
@@ -1734,7 +1734,7 @@ function ProposalBody({
         )}
         {cast.length > 0 && (
           <p className="mt-1 text-sm text-secondary">
-            Dans la scène : {cast.join(', ')} — enregistrés comme présents à ce
+            Dans la scène : {cast.join(', ')}, enregistrés comme présents à ce
             chapitre.
           </p>
         )}
@@ -1782,7 +1782,7 @@ function Dating({ value }: { value: unknown }) {
   return (
     <p className="mt-1 text-sm text-secondary">
       Daté : <span className="text-primary">{time.description}</span>
-      {typeof time.years_ago === 'number' && <> — {time.years_ago} ans plus tôt</>}
+      {typeof time.years_ago === 'number' && <> · {time.years_ago} ans plus tôt</>}
       {typeof time.quote === 'string' && (
         <span className="mt-0.5 block font-mono text-xs text-muted">
           « {time.quote} »
@@ -1819,7 +1819,7 @@ function epistemicLabel(status: string): string {
   const labels: Record<string, string> = {
     explicit: 'affirmé ou montré directement',
     inferred_strong: 'déduit des pages, sans y être dit',
-    hypothetical: 'lecture possible — revue explicite requise',
+    hypothetical: 'lecture possible, revue explicite requise',
   }
   return labels[status] ?? status
 }

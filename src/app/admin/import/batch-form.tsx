@@ -138,7 +138,7 @@ export function BatchForm({ suggestedNumber }: { suggestedNumber: number }) {
           premier est traité tout de suite et <strong>chacun des suivants démarre
           à la publication du précédent</strong>. C’est ce qui permet au chapitre
           13 de vous demander si « Kaelo Renn » est l’homme au tablier de cuir
-          rencontré au 12 — question qui ne se pose qu’une fois, et seulement
+          rencontré au 12. La question ne se pose qu’une fois, et seulement
           contre ce qui est déjà dans le graphe.
         </p>
 
@@ -301,12 +301,12 @@ function BatchRow({
       {tooShort && (
         <p className="mt-2 text-sm text-[var(--coral)]">
           Trop court pour être une source ({MIN_SUMMARY_CHARS} caractères
-          minimum) — ce chapitre ne sera pas importé.
+          minimum) : ce chapitre ne sera pas importé.
         </p>
       )}
       {tooLong && (
         <p className="mt-2 text-sm text-[var(--coral)]">
-          Au-delà de {MAX_SUMMARY_CHARS} caractères — ce chapitre ne sera pas
+          Au-delà de {MAX_SUMMARY_CHARS} caractères : ce chapitre ne sera pas
           importé.
         </p>
       )}
@@ -333,7 +333,7 @@ function BatchRow({
             className="mt-2 w-full resize-y rounded-sm border border-line-strong bg-surface-overlay px-3 py-2 font-sans text-primary"
           />
           <label className="mt-2 block text-sm text-secondary">
-            Le même chapitre dans l’autre langue — pour les noms, jamais comme
+            Le même chapitre dans l’autre langue, pour les noms et jamais comme
             preuve.
             <textarea
               value={entry.parallelText}

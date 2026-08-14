@@ -23,7 +23,7 @@ export default async function SignInPage({
         <h1 className="panneau-titre !text-lg">Entrer dans l&apos;atelier</h1>
         <div className="panneau-corps">
           <p className="text-secondary">
-            L&apos;atelier — import, traitement, revue, réglages — est réservé à
+            L&apos;atelier (import, traitement, revue, réglages) est réservé à
             la personne qui tient cette bibliothèque. La lecture, elle, est
             ouverte à tout le monde :{' '}
             <Link href="/" className="text-accent-strong underline underline-offset-2">

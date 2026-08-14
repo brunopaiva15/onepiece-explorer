@@ -1,6 +1,14 @@
 import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
 import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts'
+import { displayImages, type DisplayImage } from '@/domains/images/index.ts'
+import { ARCS, arcOf, type Arc } from '@/domains/temporal/arcs.ts'
+import {
+  castAtChapter,
+  openQuestionsAtChapter,
+  type CastMember,
+  type OpenQuestion,
+} from '@/domains/temporal/spotlight.ts'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,38 +16,58 @@ export const dynamic = 'force-dynamic'
  * The public front door.
  *
  * There was not one. `/` was the workshop's command deck with a four-card
- * consolation prize bolted underneath for anyone not signed in — a page that
- * opened on "Ça vous attend" for a visitor who has never been here and has
- * nothing waiting. The workshop moved to `/admin`, and this is what took its
- * place.
+ * consolation prize bolted underneath for anyone not signed in. The workshop
+ * moved to `/admin`, and a page that says what this thing is took its place.
  *
- * It has one job, and it is not to list features: it is to say what this thing
- * is and why it is not the wiki you already have open in another tab. The
- * answer is the slider — every page is read *at a chapter*, so someone who is
- * on chapter 300 can explore a graph built from a thousand and be told only
- * what a reader of 300 knows. That claim is the whole product, so it is the
- * first thing on the page, not a footnote under the navigation.
+ * That page was right and it was inert: six links, three counters and two
+ * paragraphs about a knowledge graph, on the one screen that has to make
+ * somebody want to click. Nothing of the story was on it. So the claim is
+ * still first, because it is the whole product and it is not the wiki you
+ * already have open in another tab: every page here is read *at a chapter*,
+ * and someone on chapter 300 explores a graph built from a thousand while
+ * being told only what a reader of 300 knows.
  *
- * Everything here is read through `getViewerSession()`, which resolves the
- * published library for an anonymous visitor. Nothing on this page requires an
- * account, and nothing on it can write.
+ * What is new is that the page now proves it instead of promising it. The
+ * faces on the wall are drawn from the reader's own boundary, the names on
+ * them are the names that boundary allows, the route stops at the arc they are
+ * in, and the open questions are open because *they* have not read the answer.
+ * Every ornament on this page is a load-bearing demonstration of the one rule.
+ *
+ * Everything is read through `getViewerSession()`, which resolves the published
+ * library for an anonymous visitor. Nothing here requires an account, and
+ * nothing here can write.
  */
 
-function Carte({
-  titre,
-  href,
-  detail,
-}: {
-  titre: string
-  href: string
-  detail: string
-}) {
-  return (
-    <Link href={href} className="panneau no-underline">
-      <p className="panneau-titre panneau-titre-vedette">{titre}</p>
-      <p className="panneau-corps text-sm text-secondary">{detail}</p>
-    </Link>
-  )
+/** How many faces the wall holds. One row of six on a wide screen. */
+const MUR = 6
+
+/**
+ * Portraits signed per render.
+ *
+ * Higher than the wall on purpose: the cap falls on entities that *have* a
+ * picture, and a merged character can hold two. Asking for exactly six would
+ * hand back five posters whenever one of them did.
+ */
+const PORTRAITS = 10
+
+/** Ports named on the route before it folds into a count. */
+const ESCALES = 8
+
+/**
+ * Drawn fresh on every visit, and deliberately not seeded.
+ *
+ * A stable draw would make the page identical for a week, which defeats the
+ * point of having one. The pool it draws from is ranked by how connected the
+ * characters are, so the wall varies without ever falling through to six
+ * names mentioned once each.
+ */
+function tirage<T>(items: readonly T[]): T[] {
+  const drawn = [...items]
+  for (let i = drawn.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[drawn[i], drawn[j]] = [drawn[j]!, drawn[i]!]
+  }
+  return drawn
 }
 
 export default async function HomePage({
@@ -50,11 +78,14 @@ export default async function HomePage({
   const { ch } = await searchParams
   let published: ChapterSummary[] = []
   let boundary = 0
+  let wall: Array<{ member: CastMember; portrait: DisplayImage | null }> = []
+  let questions: OpenQuestion[] = []
 
   /*
    * Degrades rather than throws. A visitor arriving at a deployment whose
-   * database is unreachable should read what the site is, not a stack trace —
-   * the pages that need data say so themselves.
+   * database is unreachable should read what the site is, not a stack trace.
+   * The pages that need data say so themselves, and so does this one: no cast
+   * means no wall, not a broken home page.
    */
   try {
     const session = await getViewerSession(ch)
@@ -63,121 +94,277 @@ export default async function HomePage({
     /*
      * Bounded like every other page, and for the same reason.
      *
-     * A chapter title is a spoiler — "La mort de X" is the whole event — so the
-     * list stops where the reader stopped. The home page is the one screen where
-     * it would be easy to forget that and show « les derniers chapitres » of a
-     * library a thousand chapters ahead of the person reading.
+     * A chapter title is a spoiler: « La mort de X » is the whole event, so the
+     * list stops where the reader stopped. The home page is the one screen
+     * where it would be easy to forget that and show « les derniers chapitres »
+     * of a library a thousand chapters ahead of the person reading.
      */
     published = chapters
       .filter((chapter) => chapter.status === 'published' && chapter.number <= boundary)
       .sort((a, b) => b.number - a.number)
+
+    const [cast, open] = await Promise.all([
+      castAtChapter(session.userId, boundary, { nodeTypes: ['character'] }),
+      openQuestionsAtChapter(session.userId, boundary),
+    ])
+
+    /*
+     * Drawn first, illustrated second.
+     *
+     * The order matters: `displayImages` signs the first entities in the list
+     * that have a picture, so shuffling before signing is what makes the wall
+     * a draw rather than a ranking with a shuffled layout.
+     */
+    const drawn = tirage(cast)
+    const images = await displayImages(
+      session.userId,
+      boundary,
+      drawn.flatMap((member) => member.memberIds),
+      PORTRAITS,
+    )
+
+    const faceOf = (member: CastMember): DisplayImage | null => {
+      for (const id of member.memberIds) {
+        const found = images.get(id)
+        if (found) return found
+      }
+      return null
+    }
+
+    /*
+     * Faces first, then anyone. A library whose catalogue matched nobody still
+     * gets a wall, drawn as initials, rather than an empty section that reads
+     * as a page half-built.
+     */
+    const illustrated = drawn.filter((member) => faceOf(member) !== null)
+    const rest = drawn.filter((member) => faceOf(member) === null)
+    wall = [...illustrated, ...rest]
+      .slice(0, MUR)
+      .map((member) => ({ member, portrait: faceOf(member) }))
+
+    questions = tirage(open).slice(0, 3)
   } catch {
     published = []
   }
 
-  const derniers = published.slice(0, 6)
+  const derniers = published.slice(0, MUR)
+  const arc = arcOf(boundary)
+  const route = ARCS.filter((port) => port.from <= boundary)
+  const sources = [
+    ...new Set(
+      wall
+        .map((poster) => poster.portrait?.attribution)
+        .filter((name): name is string => name !== undefined),
+    ),
+  ]
 
   return (
-    <main id="contenu" className="mx-auto max-w-6xl px-5 py-6">
-      {/* --- What this is ------------------------------------------------ */}
-      <section
-        className="border-[4px] border-ink bg-[var(--sea-deep)] px-5 py-6 text-white sm:px-8 sm:py-8"
-        style={{ boxShadow: 'var(--shadow-hard)' }}
-      >
-        <h1 className="font-display text-4xl uppercase leading-none sm:text-6xl">
-          One Piece Explorer
-        </h1>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-white/90 sm:text-lg">
-          Un graphe de connaissances de One Piece qui <strong>ne vous spoile pas</strong>.
-          Chaque fait, chaque nom, chaque relation est daté du chapitre qui l&apos;a
-          révélé. Dites où vous en êtes, et le site oublie tout le reste.
-        </p>
-        <p className="mt-3 max-w-2xl text-sm text-white/75">
-          Le curseur en haut de l&apos;écran est le réglage : posez-le sur votre
-          chapitre. Les personnages n&apos;y portent que les noms que vous leur
-          connaissez, les mystères y sont ouverts tant que vous n&apos;avez pas lu
-          leur résolution, et la chronologie s&apos;arrête où vous vous êtes arrêté.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/histoire" className="bouton bouton-primaire">
-            Commencer par l&apos;histoire
-          </Link>
-          <Link href="/graph" className="bouton">
-            Ouvrir le graphe
-          </Link>
-        </div>
-      </section>
-
-      {/* --- The ways in -------------------------------------------------- */}
-      <section className="mt-8">
-        <h2 className="font-display text-xl uppercase text-primary">Explorer</h2>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Carte
-            titre="L'histoire"
-            href="/histoire"
-            detail="Depuis le chapitre 1, en défilant : ce qui arrive, qui entre en scène, ce qui tombe."
-          />
-          <Carte
-            titre="Le graphe"
-            href="/graph"
-            detail="Tout le réseau : personnages, équipages, îles, fruits, promesses."
-          />
-          <Carte
-            titre="La chronologie"
-            href="/chronologie"
-            detail="Deux axes jamais confondus : l'ordre où vous l'avez appris, et l'ordre où c'est arrivé."
-          />
-          <Carte
-            titre="Les mystères"
-            href="/mysteres"
-            detail="Ce qui est ouvert, ce qui a été résolu, et au bout de combien de chapitres."
-          />
-          <Carte
-            titre="La recherche"
-            href="/recherche"
-            detail="Un nom, une phrase, un lieu — ou le chemin le plus court entre deux personnages."
-          />
-          <Carte
-            titre="Les sources"
-            href="/mentions-legales"
-            detail="D'où vient le contenu, sous quelle licence, et à qui appartiennent les images."
-          />
-        </div>
-      </section>
-
-      {/* --- The state of the library ------------------------------------- */}
-      <section className="mt-8">
-        <h2 className="font-display text-xl uppercase text-primary">La bibliothèque</h2>
-
-        {published.length === 0 ? (
-          <p className="mt-3 border-[3px] border-ink bg-surface-raised px-4 py-3 text-secondary">
-            {boundary === 0
-              ? "Rien à lire pour l'instant : le curseur est au chapitre 0, ou aucun chapitre n'a encore été publié. Le graphe se remplit chapitre après chapitre, et rien n'y entre avant d'avoir été relu."
-              : `Aucun chapitre publié jusqu'au ${boundary}. Avancez le curseur en haut de l'écran pour lire plus loin.`}
+    <main id="contenu" className="mx-auto max-w-6xl px-5 py-8 sm:py-10">
+      {/*
+       * What this is, in one claim.
+       *
+       * It said the same thing three times: a paragraph on the graph, a
+       * paragraph on the slider, and a paragraph on what the slider does to
+       * each page. All true, all correct, and a wall of prose is not an
+       * invitation. The rest of the page demonstrates every sentence that used
+       * to be here, which is why they could go.
+       */}
+      <section className="banniere">
+        <div className="px-6 pt-10 pb-4 sm:px-12 sm:pt-14 sm:pb-6">
+          <p className="font-display text-[0.72rem] uppercase tracking-[0.2em] text-[var(--accent)]">
+            {arc ? `Journal de bord · chapitre ${boundary} · ${arc.name}` : 'Journal de bord'}
           </p>
-        ) : (
-          <>
-            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {[
-                ['Chapitres lisibles', published.length],
+          <h1 className="mt-3 font-display text-5xl uppercase leading-none sm:text-7xl">
+            One Piece Explorer
+          </h1>
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/90 sm:text-xl">
+            Tout One Piece, arrêté au chapitre où vous en êtes.{' '}
+            <strong>Rien de ce qui vient après.</strong>
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href="/histoire" className="bouton bouton-primaire">
+              Commencer par l&apos;histoire
+            </Link>
+            <Link href="/graph" className="bouton">
+              Ouvrir le graphe
+            </Link>
+          </div>
+        </div>
+        <Vague />
+      </section>
+
+      {/* --- The wall ------------------------------------------------------ */}
+      {wall.length > 0 && (
+        <section className="mt-14">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
+            <h2 className="font-display text-2xl uppercase text-primary">
+              Avis de recherche
+            </h2>
+            <p className="text-sm text-secondary">
+              Tirés au sort. Rechargez : l&apos;équipage change.
+            </p>
+          </div>
+
+          <ul className="mur mt-5">
+            {wall.map(({ member, portrait }) => (
+              <li key={member.entityId}>
+                <Link href={`/entite/${member.entityId}?ch=${boundary}`} className="affiche">
+                  {portrait ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={portrait.thumbUrl}
+                      alt={`Illustration de ${member.label}`}
+                      loading="lazy"
+                      className="affiche-vue"
+                    />
+                  ) : (
+                    <span className="affiche-vide" aria-hidden="true">
+                      <span className="chiffre text-4xl opacity-70">
+                        {member.label.slice(0, 1).toUpperCase()}
+                      </span>
+                    </span>
+                  )}
+                  <span className="affiche-corps">
+                    <span className="affiche-nom">{member.label}</span>
+                  </span>
+                  {/*
+                   * Where a bounty would be, and it is a real number.
+                   *
+                   * The obvious joke was a berry amount, which this project
+                   * cannot make: an invented figure on a page whose whole claim
+                   * is that every number on it comes from a chapter would be
+                   * the one lie on the site. The chapter the reader met them in
+                   * is a fact, it moves with the cursor, and it is the number a
+                   * reader of this site actually wants.
+                   */}
+                  <span className="affiche-prime">
+                    <span className="affiche-prime-mot">Vu au chapitre</span>
+                    <span className="chiffre text-2xl">{member.firstSeenChapter}</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          {/*
+           * Where the faces come from, next to the faces.
+           *
+           * These pictures are matched to an entity by name, which is a guess,
+           * and a face shown without saying so reads as something the pipeline
+           * established from the pages. It did not. The rule is the same one
+           * `Portrait` states, applied to a place that does not have room for a
+           * caption under every picture: one line under the wall, naming the
+           * catalogues and what a match is worth.
+           */}
+          {sources.length > 0 && (
+            <p className="mt-4 text-xs text-muted">
+              Illustrations : {sources.join(', ')}, rapprochées par le nom. Ce
+              n&apos;est pas une preuve tirée de vos pages.
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* --- The route sailed so far -------------------------------------- */}
+      {published.length > 0 && (
+        <section className="mt-14">
+          <h2 className="font-display text-2xl uppercase text-primary">
+            Votre traversée
+          </h2>
+
+          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {(
+              [
                 ['Vous en êtes au', boundary],
+                ['Chapitres lisibles', published.length],
+                ['Escales franchies', route.length],
                 [
                   'Unités citables',
                   published.reduce((sum, c) => sum + c.passageCount + c.pageCount, 0),
                 ],
-              ].map(([label, value]) => (
-                <div
-                  key={String(label)}
-                  className="border-[3px] border-ink bg-surface-raised px-3 py-2"
-                  style={{ boxShadow: 'var(--shadow-hard-sm)' }}
-                >
-                  <p className="cartouche">{label}</p>
-                  <p className="chiffre chiffre-l mt-0.5">{value}</p>
-                </div>
-              ))}
-            </div>
+              ] as const
+            ).map(([label, value]) => (
+              <div
+                key={label}
+                className="border-[3px] border-ink bg-surface-raised px-4 py-3"
+                style={{ boxShadow: 'var(--shadow-hard-sm)' }}
+              >
+                <p className="cartouche">{label}</p>
+                <p className="chiffre chiffre-l mt-1">{value}</p>
+              </div>
+            ))}
+          </div>
 
-            <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/*
+           * The arcs, and only the ones already opened.
+           *
+           * An arc name is not knowledge held behind the boundary (see
+           * arcs.ts): it is the table of contents of a work published for
+           * thirty years. What it must never do is name what comes next, so
+           * this list is cut at the reader's chapter rather than greyed out
+           * past it. « Elbaf » on the home page of someone in Alabasta would
+           * be a spoiler served by the decoration.
+           */}
+          {route.length > 0 && <Route ports={route} arc={arc} />}
+        </section>
+      )}
+
+      {/* --- Two columns: the questions, and the last chapters ------------- */}
+      <div className="mt-14 grid gap-10 lg:grid-cols-2">
+        {questions.length > 0 && (
+          <section>
+            <h2 className="font-display text-2xl uppercase text-primary">
+              Sans réponse
+            </h2>
+            <ul className="mt-5 space-y-4">
+              {questions.map((question) => (
+                <li key={question.entityId} className="panneau">
+                  <div className="panneau-corps">
+                    <p className="text-primary">
+                      <Link
+                        href={`/entite/${question.entityId}?ch=${boundary}`}
+                        className="hover:underline"
+                      >
+                        {question.question}
+                      </Link>
+                    </p>
+                    <p className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="badge badge-mer">Ouverte</span>
+                      <span className="cartouche">
+                        posée au chapitre {question.openedInChapter}
+                      </span>
+                      {boundary - question.openedInChapter > 0 && (
+                        <span className="cartouche">
+                          · sans réponse depuis {boundary - question.openedInChapter}{' '}
+                          chapitre{boundary - question.openedInChapter > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4">
+              <Link href="/mysteres" className="text-accent-strong hover:underline">
+                Toutes les questions ouvertes →
+              </Link>
+            </p>
+          </section>
+        )}
+
+        <section>
+          <h2 className="font-display text-2xl uppercase text-primary">
+            Derniers chapitres
+          </h2>
+
+          {published.length === 0 ? (
+            <p className="mt-5 border-[3px] border-ink bg-surface-raised px-4 py-3 text-secondary">
+              {boundary === 0
+                ? "Rien à lire pour l'instant : le curseur est au chapitre 0, ou rien n'est encore publié."
+                : `Aucun chapitre publié jusqu'au ${boundary}. Avancez le curseur pour lire plus loin.`}
+            </p>
+          ) : (
+            <ul className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
               {derniers.map((chapter) => (
                 <li key={chapter.id} className="panneau flex items-stretch">
                   <Link
@@ -200,21 +387,39 @@ export default async function HomePage({
                 </li>
               ))}
             </ul>
-          </>
-        )}
+          )}
+        </section>
+      </div>
+
+      {/*
+       * The ways in.
+       *
+       * Six cards that each explained themselves in a sentence and a half,
+       * under a rail that already lists the same six destinations with icons.
+       * A door does not need a paragraph: the name and four words are the
+       * whole of what a visitor reads before clicking anyway.
+       */}
+      <section className="mt-14">
+        <h2 className="font-display text-2xl uppercase text-primary">Explorer</h2>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Carte titre="L'histoire" href="/histoire" detail="Le fil, depuis le chapitre 1" />
+          <Carte titre="Le graphe" href="/graph" detail="Tout le réseau, d'un coup d'œil" />
+          <Carte titre="La chronologie" href="/chronologie" detail="Dans l'ordre où c'est arrivé" />
+          <Carte titre="Les mystères" href="/mysteres" detail="Ouverts, refermés, et depuis quand" />
+          <Carte titre="La recherche" href="/recherche" detail="Un nom, une phrase, un chemin" />
+          <Carte titre="Les sources" href="/mentions-legales" detail="D'où vient tout ceci" />
+        </div>
       </section>
 
       {/* --- The honest small print ---------------------------------------- */}
-      <section className="mt-8 border-[3px] border-ink bg-surface-raised px-4 py-3">
+      <section className="mt-14 border-[3px] border-ink bg-surface-raised px-5 py-4">
         <h2 className="font-display text-base uppercase text-primary">
           Un projet de fan, et rien d&apos;autre
         </h2>
-        <p className="mt-1.5 text-sm text-secondary">
-          Le contenu textuel s&apos;appuie sur le One Piece Wiki (Fandom), sous
-          licence CC BY-SA 3.0. Aucune page de manga n&apos;est publiée ici : vous
-          lisez des faits, des relations et des références de chapitre, jamais les
-          planches. One Piece Explorer est un projet non officiel, sans lien avec
-          Eiichiro Oda, Shueisha ou Toei Animation.{' '}
+        <p className="mt-2 text-sm leading-relaxed text-secondary">
+          Contenu tiré du One Piece Wiki (Fandom), sous licence CC BY-SA 3.0.
+          Aucune planche de manga n&apos;est publiée ici. Projet non officiel,
+          sans lien avec Eiichiro Oda, Shueisha ou Toei Animation.{' '}
           <Link
             href="/mentions-legales"
             className="text-accent-strong underline underline-offset-2"
@@ -225,5 +430,87 @@ export default async function HomePage({
         </p>
       </section>
     </main>
+  )
+}
+
+function Carte({
+  titre,
+  href,
+  detail,
+}: {
+  titre: string
+  href: string
+  detail: string
+}) {
+  return (
+    <Link href={href} className="panneau no-underline">
+      <p className="panneau-titre panneau-titre-vedette">{titre}</p>
+      <p className="px-4 py-3 text-sm text-secondary">{detail}</p>
+    </Link>
+  )
+}
+
+/**
+ * The ports of call, ending where the reader is.
+ *
+ * Long libraries fold: a reader at chapter 1100 has crossed thirty arcs, and
+ * thirty chips is a strip nobody reads to the end of. The ones kept are the
+ * last ones, which is where the reader actually is, and the rest are counted
+ * rather than dropped silently.
+ */
+function Route({ ports, arc }: { ports: readonly Arc[]; arc: Arc | null }) {
+  const shown = ports.slice(-ESCALES)
+  const folded = ports.length - shown.length
+
+  return (
+    <div className="traversee mt-4" aria-label="Les arcs que vous avez traversés">
+      <div className="traversee-piste">
+        {folded > 0 && (
+          <span className="escale escale-avant">
+            + {folded} escale{folded > 1 ? 's' : ''}
+          </span>
+        )}
+        {shown.map((port) => (
+          <span
+            key={port.name}
+            className={`escale ${port.name === arc?.name ? 'escale-ici' : ''}`}
+          >
+            {port.name}
+            {port.name === arc?.name && (
+              <span className="ml-1.5 text-[0.62rem] tracking-[0.14em]">vous êtes ici</span>
+            )}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The sea, closing the banner.
+ *
+ * Two crests rather than one, the back one in ink at a low opacity, so the
+ * edge reads as water drawn by hand instead of as a section divider. Inline
+ * because it takes its colour from the page below it: the wave is the hole the
+ * banner leaves, not a shape laid on top of it.
+ */
+function Vague() {
+  return (
+    <svg
+      className="vague"
+      viewBox="0 0 1200 40"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M0 22 Q 75 4 150 22 T 300 22 T 450 22 T 600 22 T 750 22 T 900 22 T 1050 22 T 1200 22 V40 H0 Z"
+        fill="currentColor"
+        opacity="0.35"
+      />
+      <path
+        d="M0 30 Q 100 12 200 30 T 400 30 T 600 30 T 800 30 T 1000 30 T 1200 30 V40 H0 Z"
+        fill="currentColor"
+      />
+    </svg>
   )
 }

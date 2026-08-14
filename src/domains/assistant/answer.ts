@@ -74,7 +74,7 @@ export async function ask(
       trimmed,
       boundaryChapter,
       "L'assistant conversationnel est désactivé. Chaque question appelle un " +
-        'modèle et se facture à la question, indéfiniment — ce n’est pas ce que cet ' +
+        'modèle et se facture à la question, indéfiniment, et ce n’est pas ce que cet ' +
         'outil est. Pour l’activer malgré tout : ASSISTANT_ENABLED=1. La recherche ' +
         'plein texte, approchante et par graphe, elle, ne coûte rien et cherche dans ' +
         'les mêmes données.',

@@ -219,7 +219,7 @@ export async function AppShell({
         <footer className="mt-10 border-t-[3px] border-ink px-5 py-5">
           <div className="mx-auto max-w-4xl space-y-2 text-xs leading-relaxed text-muted">
             <p>
-              Source : One Piece Wiki / Fandom — contenu sous{' '}
+              Source : One Piece Wiki / Fandom, contenu sous{' '}
               <a
                 href="https://creativecommons.org/licenses/by-sa/3.0/deed.fr"
                 rel="noreferrer noopener nofollow"

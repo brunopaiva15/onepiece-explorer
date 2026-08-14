@@ -49,8 +49,8 @@ export default async function ChronologiePage({
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-secondary">
         L&apos;ordre où les choses se sont <strong>produites</strong>, et non
         l&apos;ordre où les chapitres les racontent. Un souvenir remonte donc
-        ici, loin du chapitre qui le montre. Pour l&apos;autre axe — chapitre par
-        chapitre, dans l&apos;ordre de lecture — c&apos;est{' '}
+        ici, loin du chapitre qui le montre. Pour l&apos;autre axe, chapitre par
+        chapitre et dans l&apos;ordre de lecture, c&apos;est{' '}
         <Link href="/histoire" className="text-accent underline underline-offset-2">
           l&apos;histoire
         </Link>
@@ -66,13 +66,13 @@ export default async function ChronologiePage({
           <Section
             title="Avant, et de combien"
             events={chronology.dated}
-            note="Ce que vos chapitres datent explicitement. La distance est celle qu'ils donnent — elle n'est ni calculée, ni convertie, et la phrase qui la dit est citable."
-            empty="Aucun de vos chapitres ne donne encore de distance en années. Ceux qui en donnent une la placeront ici — voyez la note en bas de page."
+            note="Ce que vos chapitres datent explicitement. La distance est celle qu'ils donnent : elle n'est ni calculée, ni convertie, et la phrase qui la dit est citable."
+            empty="Aucun de vos chapitres ne donne encore de distance en années. Ceux qui en donnent une la placeront ici ; voyez la note en bas de page."
           />
           <Section
             title="Avant, sans que rien dise de combien"
             events={chronology.earlier}
-            note="Des souvenirs : le chapitre les présente comme du passé sans chiffrer lequel. Ils sont donc avant le présent du récit, dans l'ordre où on vous les a racontés — c'est tout ce que les pages permettent d'affirmer."
+            note="Des souvenirs : le chapitre les présente comme du passé sans chiffrer lequel. Ils sont donc avant le présent du récit, dans l'ordre où on vous les a racontés. C'est tout ce que les pages permettent d'affirmer."
             empty="Aucun souvenir parmi ce que vous avez importé."
           />
           <Section
@@ -87,8 +87,8 @@ export default async function ChronologiePage({
       <p className="mt-14 border-t-[3px] border-ink pt-4 text-xs leading-relaxed text-muted">
         Tout ce qui est sur cette page vient de vos chapitres importés, et rien
         d&apos;autre. Une date n&apos;y apparaît que si un chapitre l&apos;énonce
-        et que la phrase qui l&apos;énonce a été retrouvée dans le texte —
-        l&apos;âge d&apos;un personnage connu par ailleurs n&apos;est pas une
+        et que la phrase qui l&apos;énonce a été retrouvée dans le texte.
+        L&apos;âge d&apos;un personnage connu par ailleurs n&apos;est pas une
         source. Les chapitres publiés avant que l&apos;extraction ne pose la
         question n&apos;ont pas de datation : les retraiter en ajoute.
       </p>
@@ -237,7 +237,7 @@ function When({ placement }: { placement: Placement }) {
   if (placement.kind === 'earlier') {
     return (
       <span className="cartouche">
-        {placement.description ?? 'plus tôt — sans distance connue'}
+        {placement.description ?? 'plus tôt, sans distance connue'}
       </span>
     )
   }

@@ -32,7 +32,7 @@ export default function ErrorBoundary({
       <p className="mt-4 text-secondary">
         Le message exact n&apos;arrive pas jusqu&apos;ici : en production il est
         remplacé par une référence avant d&apos;atteindre le navigateur, et
-        c&apos;est voulu — une erreur peut contenir une chaîne de connexion.
+        c&apos;est voulu : une erreur peut contenir une chaîne de connexion.
         Cette page ne sait donc pas ce qui a échoué, et ne va pas le deviner.
       </p>
 
@@ -53,7 +53,7 @@ export default function ErrorBoundary({
           Si seule cette action échoue
         </strong>{' '}
         : la cause est dans cette action, pas dans la configuration. Sur un
-        envoi de fichier, le suspect habituel est la taille — le corps
+        envoi de fichier, le suspect habituel est la taille : le corps
         d&apos;une requête est plafonné par l&apos;hébergeur, et Next.js ne
         transmet pas de message quand la limite est franchie.
       </p>
@@ -79,7 +79,7 @@ export default function ErrorBoundary({
           {/* The digest is the only thing that survives to the browser, and it
               is what lets the real message be found in the host's runtime
               logs. Useless on its own; the whole key when it is not. */}
-          Référence : <code className="text-secondary">{error.digest}</code> — à
+          Référence : <code className="text-secondary">{error.digest}</code>, à
           chercher dans les journaux d&apos;exécution de l&apos;hébergeur, où le
           message complet est conservé.
         </p>

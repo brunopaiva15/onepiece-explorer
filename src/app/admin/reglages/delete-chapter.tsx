@@ -76,7 +76,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
           {chapters.map((chapter) => (
             <option key={chapter.id} value={chapter.id}>
               Chapitre {chapter.number}
-              {chapter.title ? ` — ${chapter.title}` : ''} ({chapter.pageCount} p.)
+              {chapter.title ? ` · ${chapter.title}` : ''} ({chapter.pageCount} p.)
             </option>
           ))}
         </select>
@@ -102,7 +102,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
             {keepKnowledge ? (
               <>
                 {preview.assertionsRevealed} fait(s) resteront dans votre graphe
-                mais deviendront <strong>non vérifiables</strong> — leur preuve
+                mais deviendront <strong>non vérifiables</strong> : leur preuve
                 aura disparu. Un réimport les recolle.
               </>
             ) : (
@@ -172,7 +172,7 @@ export function DeleteChapter({ chapters }: { chapters: Chapter[] }) {
             )}
             {result.assertionsStillSourced > 0 && (
               <li>
-                {result.assertionsStillSourced} fait(s) toujours vérifiables — ils
+                {result.assertionsStillSourced} fait(s) toujours vérifiables : ils
                 citaient aussi un autre chapitre
               </li>
             )}
