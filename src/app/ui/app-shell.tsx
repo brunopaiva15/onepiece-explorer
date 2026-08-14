@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { BoundarySlider } from '@/app/graph/boundary-slider.tsx'
 import { GlobalSearch } from './global-search.tsx'
 import { RailLink } from './rail-link.tsx'
+import { StickyChrome } from './sticky-chrome.tsx'
 
 /**
  * The application's frame, which it did not have.
@@ -164,7 +165,11 @@ export async function AppShell({
 
       {/* --- Content ---------------------------------------------------- */}
       <div className="flex min-w-0 flex-col">
-        <div className="sticky top-0 z-30 border-b-[3px] border-ink bg-[var(--surface-raised)]">
+        {/*
+         * Folded away on a phone while the reader scrolls down — see
+         * StickyChrome. On a wide screen it is the bar it always was.
+         */}
+        <StickyChrome>
           <div className="flex items-center gap-3 px-4 py-2">
             <GlobalSearch />
           </div>
@@ -182,7 +187,7 @@ export async function AppShell({
               chapters={boundary.chapters}
             />
           )}
-        </div>
+        </StickyChrome>
 
         <div className="min-w-0 flex-1">{children}</div>
 
