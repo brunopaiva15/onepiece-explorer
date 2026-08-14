@@ -256,6 +256,11 @@ Points d'exploitation :
 - **Une image sans correspondance est normale.** Un personnage secondaire, une
   désignation provisoire, un lieu absent des 31 îles du catalogue : ce sont des
   absences, pas des erreurs. La couverture par type est dans `/reglages`.
+- **Les entités sans image sont nommées, pas seulement comptées.** Le résultat du
+  bouton de `/reglages` les liste sous « Voir lesquelles » (200 au plus, le
+  reste est annoncé), et `pnpm images:enrich` en imprime vingt. Un nom lié à sa
+  fiche est actionnable : renommer une entité vers la graphie du catalogue suffit
+  souvent, là où un total ne dit rien.
 - **Une image n'est jamais une preuve.** Si un jour l'enrichissement écrivait une
   assertion, la promesse centrale du produit tomberait. Un test le vérifie.
 

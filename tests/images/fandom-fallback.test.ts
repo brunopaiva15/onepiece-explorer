@@ -160,6 +160,38 @@ describe('what the catalogues cannot illustrate', () => {
     expect(await imagesOf(vague)).toHaveLength(0)
   })
 
+  it('names what it could not illustrate, with the label it looked up', async () => {
+    /*
+     * The count on its own is not actionable — see EnrichReport. Two entities
+     * so the assertion covers the list rather than a single lucky entry, and
+     * the alias is checked because the label reported must be the one that was
+     * tried: a reader comparing it against the wiki is otherwise comparing a
+     * spelling this run never used.
+     */
+    const alley = await createEntity(world, 'place', 1)
+    await addLabel(world, alley, 'la ruelle derrière le bar', 'alias', 1, 10)
+    const walkOn = await createEntity(world, 'character', 1)
+    await addLabel(world, walkOn, 'le second matelot', 'alias', 1, 10)
+
+    const report = await enrichEntityImages(world.userId, {
+      ...CATALOGUE,
+      download: stored,
+      lookup: async () => [],
+    })
+
+    expect(report.unmatched).toBe(2)
+    expect(report.unmatchedEntities).toEqual(
+      expect.arrayContaining([
+        {
+          entityId: alley,
+          label: 'la ruelle derrière le bar',
+          nodeType: 'place',
+        },
+        { entityId: walkOn, label: 'le second matelot', nodeType: 'character' },
+      ]),
+    )
+  })
+
   it('never asks the wiki about an event or a mystery', async () => {
     const event = await createEntity(world, 'event', 1)
     await addLabel(world, event, 'La bataille du quai', 'true_name', 1, 100)
