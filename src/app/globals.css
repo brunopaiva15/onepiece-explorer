@@ -1468,17 +1468,6 @@ hr.regle {
   line-height: 1.4;
 }
 
-/* Where the faces came from. Small, and not optional — a portrait is a name
-   match against a fan catalogue, and full screen is where it looks most like a
-   result the pipeline established. */
-.cine-source {
-  margin-top: 0.6rem;
-  font-family: var(--font-display);
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-muted);
-}
 
 /* --- The chapter card, and the end of the reel --------------------------- */
 
