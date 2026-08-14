@@ -436,8 +436,8 @@ function Attente({
       <div className="cine-carton">
         <p className="cartouche">Coupure</p>
         <p className="cine-carton-titre">
-          La suite du fil n&apos;a pas pu être chargée. Rien ne s&apos;est perdu
-          — seulement cette requête.
+          La suite du fil n&apos;a pas pu être chargée. Rien ne s&apos;est perdu,
+          seulement cette requête.
         </p>
         <button type="button" className="bouton bouton-primaire mt-4" onClick={onRetry}>
           Réessayer

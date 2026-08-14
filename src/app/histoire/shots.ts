@@ -250,9 +250,11 @@ export function credit(images: readonly DisplayImage[]): string {
     bySource.set(image.attribution, names)
   }
 
+  // A semicolon between two catalogues, not a dash: the interface spends its
+  // dashes on prose and this line already has a separator doing a job.
   return [...bySource]
     .map(([source, names]) => `${source} · ${names.join(', ')}`)
-    .join(' — ')
+    .join(' ; ')
 }
 
 /** Reading time for one line, floored and capped. */
