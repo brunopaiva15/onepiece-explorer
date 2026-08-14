@@ -113,6 +113,47 @@ promesse plutôt qu'une connexion :
 Ces deux-là sont les seules pannes qui laisseraient l'application parfaitement
 fonctionnelle tout en fuyant. S'ils échouent, arrêtez-vous là.
 
+### Réparer les illustrations sans machine locale
+
+`Actions → Illustrations (production) → Run workflow`. Même principe que les
+migrations — déclenchement manuel, confirmation tapée pour écrire — avec une
+différence qui explique le fichier séparé : c'est le seul workflow qui touche au
+**seau**. Il oublie des images et en télécharge d'autres, donc il lui faut les
+identifiants Supabase en plus de la chaîne de connexion, et une exécution sans
+eux supprimerait des lignes en laissant leurs octets derrière.
+
+Deux étapes, dans cet ordre :
+
+- **`reparer`** réinterroge le wiki sur chaque image de tête stockée et oublie
+  celles que les règles d'aujourd'hui ne produisent plus. C'est ainsi qu'une
+  correction du rapprochement atteint une bibliothèque déjà illustrée — la
+  passe `recheck` de l'enrichissement ne rejuge que les rapprochements faits sur
+  une ressemblance, et un article trouvé par son titre exact l'est toujours.
+- **`reillustrer`** remplit ce qui manque, dont les trous que la première étape
+  vient de faire. Il n'écrit que du neuf : une entité qui a déjà une image est
+  sautée, donc rien n'est remplacé.
+
+Lancez-les séparément la première fois. Le `dry-run` de la réparation — le mode
+par défaut — imprime la liste de ce qu'elle oublierait, et c'est cette liste qui
+dit qu'elle a trouvé les bonnes lignes avant qu'on l'autorise à écrire.
+`reillustrer` n'a pas de mode d'essai et le workflow refuse la combinaison : une
+passe à blanc interrogerait trois services communautaires et un wiki pour des
+réponses que personne ne stockerait.
+
+Prérequis, une fois : `PRODUCTION_DIRECT_URL` (déjà là si les migrations ont
+jamais tourné depuis GitHub), plus `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY`. Le workflow
+nomme celui qui manque plutôt que d'échouer sur « il manque un secret ».
+
+Rien n'est planifié, exprès. Une illustration n'est pas une connaissance et rien
+ici ne peut changer ce que le graphe affirme, mais tout cela télécharge depuis
+des services gratuits et un wiki qui ne nous doit rien ; un cron leur
+redemanderait chaque semaine des réponses qui n'ont pas changé.
+
+Les mêmes deux étapes en local, si la machine a `DIRECT_URL` :
+`pnpm repair:illustrations -- --dry-run`, puis sans le drapeau, puis
+`pnpm images:enrich`.
+
 ---
 
 ## Surveiller

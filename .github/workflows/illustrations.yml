@@ -1,0 +1,207 @@
+name: Illustrations (production)
+
+# Repairs and refills the library's illustrations, on a button press.
+#
+# The third of the manual workflows, beside migrate.yml and repair.yml, and it
+# exists for the reason the other two do: the operation needs the repository,
+# Node, pnpm and a production credential in one place, and a laptop is not always
+# that place. It is separate from repair.yml because it touches something the
+# repairs there never do — the **bucket**. A repair rewrites knowledge; this
+# forgets pictures and downloads new ones, so it needs the Supabase credentials
+# as well as the database string, and a run without them would delete rows and
+# leave their bytes behind.
+#
+# Two steps, in this order, and the order is the whole design:
+#
+#   * `reparer` (`pnpm repair:illustrations`) re-asks the wiki about every
+#     picture stored under an article's lead image, and forgets those today's
+#     rules no longer produce. Reading, then a delete. This is what carries a
+#     correction to the lookup — see scripts/repair-illustrations.ts — to a
+#     library that was illustrated before it.
+#   * `reillustrer` (`pnpm images:enrich`) fills what is missing, which after the
+#     first step includes the holes it just made. Writing only: it skips an
+#     entity that already has a picture, so it never replaces anything.
+#
+# Run them apart the first time. The repair's dry run prints the list of what it
+# would forget, and that list is what tells you it found the right rows before
+# anything is allowed to write.
+#
+# `dry-run` is the default, as in repair.yml. It applies to the repair alone —
+# enrichment has no such mode, so in dry-run the enrichment step says what it
+# would have done and stops. That asymmetry is deliberate rather than papered
+# over: a dry enrichment would mean asking three community APIs and a wiki for
+# answers nobody stores.
+#
+# What it needs, in Settings → Secrets and variables → Actions:
+#
+#   PRODUCTION_DIRECT_URL          already used by migrate.yml and repair.yml
+#   NEXT_PUBLIC_SUPABASE_URL       the project URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY  read by the configuration schema, not by the
+#                                  bucket — but the schema validates the whole
+#                                  object, so it stops the run without it
+#   SUPABASE_SERVICE_ROLE_KEY      what actually writes to the private bucket
+#
+# Nothing here is scheduled, and that is on purpose. Illustration is not
+# knowledge — no picture can be cited, none of this can change what the graph
+# says — but it downloads from three free community services and a wiki that owes
+# this application nothing, and a cron would ask them again every week for
+# answers that have not changed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      etape:
+        description: 'Quelle étape'
+        required: true
+        type: choice
+        default: reparer
+        options:
+          - reparer
+          - reillustrer
+          - reparer-puis-reillustrer
+      mode:
+        description: 'Mode (la réparation seule le lit)'
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - appliquer
+      limit:
+        description: 'reillustrer : n''examiner que N entités (vide = toutes)'
+        required: false
+        default: ''
+      confirm:
+        description: 'Pour « appliquer » : tapez PRODUCTION'
+        required: false
+        default: ''
+
+# One run at a time: two would race on the same rows and on the same bucket
+# keys, and the loser would leave a row pointing at bytes the winner deleted.
+concurrency:
+  group: illustrations-production
+  cancel-in-progress: false
+
+jobs:
+  illustrations:
+    name: ${{ inputs.etape }} (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    # The repair is a handful of wiki lookups and a delete. Enrichment is one
+    # request per entity without a picture, paced politely, plus a download and a
+    # re-encode for each answer — a first pass over a whole library is minutes,
+    # not seconds.
+    timeout-minutes: ${{ inputs.etape == 'reparer' && 20 || 90 }}
+
+    steps:
+      # Only the writing mode asks for a typed answer, and only the repair has a
+      # reading mode to protect. Checked before anything is installed, so a wrong
+      # answer costs nothing.
+      - name: Check the confirmation
+        run: |
+          if [ "${{ inputs.mode }}" = "appliquer" ] && [ "${{ inputs.confirm }}" != "PRODUCTION" ]; then
+            echo "Mode « appliquer » : relancez en tapant PRODUCTION dans le champ de confirmation."
+            exit 1
+          fi
+          if [ "${{ inputs.etape }}" = "reillustrer" ] && [ "${{ inputs.mode }}" = "dry-run" ]; then
+            echo "« reillustrer » n'a pas de mode d'essai : l'enrichissement n'écrit que ce qu'il"
+            echo "vient de télécharger, et une passe à blanc interrogerait le wiki pour rien."
+            echo "Relancez en « appliquer », ou choisissez « reparer » pour voir la liste d'abord."
+            exit 1
+          fi
+
+      # Named one by one rather than « il manque un secret ». Four values, three
+      # of them added for this workflow, and a run that stops after the install
+      # to say « SUPABASE_SERVICE_ROLE_KEY » is a run somebody can act on.
+      - name: Check the secrets are present
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          # Written as four `if`s rather than four `[ … ] && …` lines: the shell
+          # runs with `-e`, and a bare test that comes out false is a step that
+          # fails. All four secrets present would have been the failing case.
+          missing=""
+          if [ -z "$DIRECT_URL" ]; then missing="$missing PRODUCTION_DIRECT_URL"; fi
+          if [ -z "$SUPABASE_URL" ]; then missing="$missing NEXT_PUBLIC_SUPABASE_URL"; fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then missing="$missing NEXT_PUBLIC_SUPABASE_ANON_KEY"; fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then missing="$missing SUPABASE_SERVICE_ROLE_KEY"; fi
+          if [ -n "$missing" ]; then
+            echo "Secrets manquants :$missing"
+            echo "Settings → Secrets and variables → Actions → New repository secret."
+            echo "PRODUCTION_DIRECT_URL : la chaîne du pooler Supabase en mode session (port 5432)."
+            echo "Les trois autres : projet Supabase → Settings → API."
+            exit 1
+          fi
+
+      # `limit` is the only free-text input, so it is the only one that could
+      # become a command. Validated here, in its own step, rather than inside the
+      # step that would run it.
+      - name: Check the limit
+        env:
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          if [ -n "$LIMIT" ]; then
+            case "$LIMIT" in
+              ''|*[!0-9]*)
+                echo "« limit » attend un entier positif, reçu : $LIMIT"
+                exit 1
+                ;;
+            esac
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The script prints every picture it forgets, with the label that found it.
+      # That output is the record of the run — there is no other one.
+      - name: pnpm repair:illustrations
+        if: inputs.etape != 'reillustrer'
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          args=""
+          if [ "${{ inputs.mode }}" = "dry-run" ]; then
+            args="--dry-run"
+          fi
+          pnpm repair:illustrations -- $args
+
+      # Reached only in « appliquer » — the confirmation step above refuses the
+      # other combination — so there is no dry branch to write here.
+      - name: pnpm images:enrich
+        if: inputs.etape != 'reparer' && inputs.mode == 'appliquer'
+        env:
+          DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Validated two steps up, and passed through the environment rather
+          # than expanded into the command line by `${{ }}`.
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          args=""
+          if [ -n "$LIMIT" ]; then
+            # A space, not « = » : the script reads this flag as two arguments.
+            args="--limit $LIMIT"
+          fi
+          pnpm images:enrich -- $args
+
+      # The repair leaves entities without a picture on purpose, and the person
+      # reading the log is the one who decides whether to fill them.
+      - name: What is left to do
+        if: inputs.etape == 'reparer' && inputs.mode == 'appliquer'
+        run: |
+          echo "Les entités qui viennent de perdre leur image n'en ont plus aucune."
+          echo "Relancez ce workflow en « reillustrer » pour les remplir."

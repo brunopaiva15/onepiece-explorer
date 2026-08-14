@@ -18,6 +18,11 @@ name: Réparations (production)
 #     defect found by reading it. Nothing tracks it, so every script here is
 #     written to be re-runnable and to say « déjà fait » rather than do it twice.
 #
+# One repair is deliberately not in the list below. `repair:illustrations` has
+# its own file — illustrations.yml — because it deletes from the bucket as well
+# as from the database, which needs credentials none of these scripts take, and
+# because it is half of a pair: what it forgets, `images:enrich` refills.
+#
 # Hence the default below. `dry-run` is the mode you get unless you ask for the
 # other one, because the interesting output of a repair is usually the list of
 # what it *would* touch — that list is what tells you the script found the right
