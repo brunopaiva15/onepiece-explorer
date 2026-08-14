@@ -46,6 +46,16 @@ export interface GalleryEntry {
 
 export interface PosterFile extends GalleryEntry {
   imageUrl: string
+  /**
+   * The file at full size, for the printings that are cropped out of a panel.
+   *
+   * `imageUrl` is a five-hundred-and-twelve-pixel thumbnail, which is the right
+   * thing to fetch for a poster that fills its file and the wrong thing for one
+   * that occupies a fifth of it: Luffy's thirty million is a hundred and fifty
+   * pixels wide inside its panel, and taking that out of a thumbnail throws
+   * away the resolution that makes the figure legible.
+   */
+  originalUrl: string
   pageUrl: string
   width: number | null
   height: number | null
@@ -288,10 +298,31 @@ export function findPoster(
    * A person looking at the picture can, and that is what a pin is.
    */
   if (bounty.file) {
-    const wanted = `file:${bounty.file}`.toLowerCase().replace(/_/g, ' ')
+    const file = bounty.file.replace(/_/g, ' ')
+    const wanted = `file:${file}`.toLowerCase()
     const named = gallery.find((entry) => entry.title.toLowerCase() === wanted)
     if (named) return { entry: named, score: 1000, why: 'fichier nommé dans le manifeste' }
-    return null
+
+    /*
+     * A pin outside the gallery is still a pin.
+     *
+     * The gallery and the category are how a poster is *found*, not a list of
+     * the posters that exist. Luffy's thirty million is in neither: the only
+     * picture of it on that wiki is a panel of the Merry's deck filed under a
+     * scene name, and requiring gallery membership meant the protagonist could
+     * not be pinned at all.
+     *
+     * Nothing is loosened by this. The entry carries the name and no caption
+     * and no heading, so it can never satisfy the heuristics below — only an
+     * exact file name written by hand reaches it. A typo now fails at
+     * `resolveFiles`, which reports « fichier introuvable sur le wiki » where
+     * somebody reads it, rather than dropping the printing in silence.
+     */
+    return {
+      entry: { title: `File:${file}`, caption: '', section: PINNED },
+      score: 1000,
+      why: 'fichier nommé dans le manifeste, hors galerie',
+    }
   }
 
   const canon = gallery.filter(isCanon)
@@ -394,6 +425,9 @@ export async function fetchGallery(): Promise<GalleryEntry[]> {
 /** The heading given to a file known only from the category. */
 export const CATEGORY = 'Category:Bounty Images'
 
+/** The heading given to a file the manifest names and neither source lists. */
+export const PINNED = 'Manifeste'
+
 interface CategoryResponse {
   query?: { categorymembers?: Array<{ title?: string }> }
   continue?: { cmcontinue?: string }
@@ -479,6 +513,7 @@ export async function resolveFiles(
         caption: '',
         section: '',
         imageUrl,
+        originalUrl: info?.url ?? imageUrl,
         pageUrl: info?.descriptionurl ?? `${GALLERY_URL}#${encodeURIComponent(page.title)}`,
         width: info?.thumbwidth ?? null,
         height: info?.thumbheight ?? null,

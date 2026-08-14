@@ -339,10 +339,12 @@ export async function enrichBountyPosters(
       sourceRef: `bounty:${item.title}`,
       kind: 'character',
       names: [item.target.character.canonical],
-      imageUrl: file.imageUrl,
+      /* A box is applied to the file at full size; see PosterFile.originalUrl. */
+      imageUrl: item.bounty.crop ? file.originalUrl : file.imageUrl,
       pageUrl: item.pageUrl,
       attribution: ATTRIBUTION,
       firstAppearanceChapter: null,
+      ...(item.bounty.crop ? { crop: item.bounty.crop } : {}),
     }
 
     try {

@@ -31,6 +31,8 @@
  * a page by a person.
  */
 
+import type { ImageCrop } from './types.ts'
+
 /** One printing of one poster, and when the reader gets to see it. */
 export interface Bounty {
   /** First chapter that shows this poster. Ascending within a character. */
@@ -65,6 +67,20 @@ export interface Bounty {
    * figure printed on it is the figure on this line.
    */
   file?: string
+  /**
+   * Where the poster is, when the file is a panel rather than a poster.
+   *
+   * Same rule as `file`, one step further: somebody opened the picture, read
+   * the number, and drew the box. It exists because the wiki holds no
+   * standalone image of Luffy's thirty million — the protagonist would be
+   * absent from a wall of wanted posters from chapter 96 to chapter 601, which
+   * is the wrong answer to « et Luffy ? ».
+   *
+   * Not a general escape hatch. Cropping to a poster inside a panel shows the
+   * same document the file is being cited for; cropping to a face and calling
+   * it a poster is the mistake this wall was rebuilt to stop making.
+   */
+  crop?: ImageCrop
 }
 
 export interface BountyHistory {
@@ -103,7 +119,24 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Monkey D. Luffy',
     aliases: ['monkey d luffy', 'luffy', 'luffy au chapeau de paille', 'straw hat luffy'],
     rows: [
-      { chapter: 96, amount: 30_000_000, edition: 1 },
+      /*
+       * Le premier avis, et le seul endroit où le wiki le montre.
+       *
+       * There is no file on that wiki holding this poster on its own: six
+       * hundred and ninety-three pictures are filed under « Luffy » and
+       * « Monkey D. Luffy » and eleven of them mention a poster, all of them
+       * either a later printing, a dub, a film or an eyecatcher. This one is
+       * the anime's panel of Usopp and Luffy reading it on the Merry, and the
+       * poster inside it is legible: WANTED, DEAD OR ALIVE, MONKEY·D·LUFFY,
+       * ฿30,000,000-, MARINE. The box below is that poster and nothing else.
+       */
+      {
+        chapter: 96,
+        amount: 30_000_000,
+        edition: 1,
+        file: 'Luffy Receives His First Bounty.png',
+        crop: { box: [0.394, 0.12, 0.223, 0.415], ratio: 665 / 482 },
+      },
       { chapter: 234, amount: 100_000_000, edition: 2 },
       { chapter: 435, amount: 300_000_000, edition: 3 },
       { chapter: 601, amount: 400_000_000, edition: 4, file: 'Luffy Wanted Poster.png' },

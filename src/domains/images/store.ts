@@ -2,7 +2,7 @@ import 'server-only'
 import sharp from 'sharp'
 import { storage } from '../storage/index.ts'
 import { fetchImage } from './http.ts'
-import type { ImageCandidate } from './types.ts'
+import type { ImageCandidate, ImageCrop } from './types.ts'
 
 /**
  * Bring an external picture inside, and make it ours to serve.
@@ -54,6 +54,50 @@ export function entityImageKey(parts: {
   return `${parts.userId}/entities/${parts.entityId}/${parts.kind}/${stem}.webp`
 }
 
+/** How far the file's shape may drift from the one the box was drawn on. */
+const RATIO_TOLERANCE = 0.02
+
+/**
+ * A fractional box turned into pixels of this particular file.
+ *
+ * Exported so a test can state the refusal without going near the network.
+ */
+export function extractOf(
+  crop: ImageCrop,
+  width: number,
+  height: number,
+  what: string,
+): { left: number; top: number; width: number; height: number } {
+  const ratio = width / height
+  if (Math.abs(ratio - crop.ratio) > crop.ratio * RATIO_TOLERANCE) {
+    throw new Error(
+      `Cadrage périmé : ${what} mesure ${width}×${height} (rapport ${ratio.toFixed(3)}), ` +
+        `le cadre a été tracé sur un rapport de ${crop.ratio.toFixed(3)}`,
+    )
+  }
+
+  const [left, top, boxWidth, boxHeight] = crop.box
+  const region = {
+    left: Math.round(left * width),
+    top: Math.round(top * height),
+    width: Math.round(boxWidth * width),
+    height: Math.round(boxHeight * height),
+  }
+
+  if (
+    region.width < 1 ||
+    region.height < 1 ||
+    region.left < 0 ||
+    region.top < 0 ||
+    region.left + region.width > width ||
+    region.top + region.height > height
+  ) {
+    throw new Error(`Cadrage hors de l'image : ${what}`)
+  }
+
+  return region
+}
+
 export async function downloadAndStore(
   userId: string,
   entityId: string,
@@ -79,15 +123,30 @@ export async function downloadAndStore(
     throw new Error(`Image sans dimensions exploitables : ${candidate.imageUrl}`)
   }
 
+  /*
+   * The box, checked against the picture it was drawn on.
+   *
+   * A crop is the one operation here that can turn a correct file into a wrong
+   * picture: framed on stale coordinates it returns a patch of sky, and the
+   * poster pipeline would print a bounty under it. The shape of the file is the
+   * cheapest evidence that it is still the file somebody looked at, so a
+   * mismatch throws and lands in the run's failures where a person reads it —
+   * rather than being clamped into something plausible.
+   */
+  const region = candidate.crop ? extractOf(candidate.crop, width, height, candidate.imageUrl) : null
+
+  const framed = () => {
+    const pipe = source.clone()
+    return region ? pipe.extract(region) : pipe
+  }
+
   const [full, thumb] = await Promise.all([
-    source
-      .clone()
+    framed()
       .rotate()
       .resize({ width: FULL_WIDTH, withoutEnlargement: true })
       .webp({ quality: 82 })
       .toBuffer(),
-    source
-      .clone()
+    framed()
       .rotate()
       .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
       .webp({ quality: 78 })
