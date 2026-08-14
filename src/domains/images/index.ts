@@ -46,6 +46,7 @@ export {
   bountyCharacterCount,
   enrichBountyPosters,
   postersFor,
+  wantedEntityIds,
   type PosterOptions,
   type PosterReport,
   type PosterView,

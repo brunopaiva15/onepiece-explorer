@@ -1,5 +1,5 @@
 import 'server-only'
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
 import { identityComponents } from './projection.ts'
 
@@ -76,15 +76,58 @@ export async function castAtChapter(
   const pool = options.pool ?? DEFAULT_POOL
   if (nodeTypes.length === 0) return []
 
-  const candidates = await withBoundary({ userId, boundaryChapter }, async (db) =>
-    /*
-     * Degree by union rather than by `OR` on the join.
-     *
-     * `subject = e.id OR object = e.id` cannot use either index and degrades
-     * into a scan of the assertions table per entity. The two halves counted
-     * separately and added is the same number, and each half is an index
-     * lookup. Same shape as projectGraph(), for the same reason.
-     */
+  const candidates = await ranked(userId, boundaryChapter, sql`e.node_type IN ${nodeTypes}`, pool)
+  return assemble(userId, boundaryChapter, candidates)
+}
+
+/**
+ * The same people, chosen by name rather than by rank.
+ *
+ * `castAtChapter` answers « who matters here », and answering it by degree is
+ * right for a draw that has nothing else to go on. It is wrong the moment
+ * something else already decided who belongs on screen — and the wanted posters
+ * did. Higuma is a mountain bandit with three relations to his name and an
+ * eight-million-berry poster on the first page of chapter 1; he is nowhere near
+ * the sixty most connected characters in the library and he is exactly who a
+ * reader of chapter 100 should see. Ranking, applied to a list somebody else
+ * already picked, is a filter that throws away the picks.
+ *
+ * So the folding and the naming are shared and the choosing is not. What comes
+ * back is folded through the same identity components — two appearances the
+ * reader knows to be one person are one card — which is also why the result can
+ * carry members that were never asked for.
+ */
+export async function castOf(
+  userId: string,
+  boundaryChapter: number,
+  entityIds: string[],
+): Promise<CastMember[]> {
+  if (entityIds.length === 0) return []
+  const candidates = await ranked(userId, boundaryChapter, sql`e.id IN ${entityIds}`, null)
+  return assemble(userId, boundaryChapter, candidates)
+}
+
+/**
+ * Entities matching a scope, heaviest first.
+ *
+ * Degree by union rather than by `OR` on the join: `subject = e.id OR object =
+ * e.id` cannot use either index and degrades into a scan of the assertions
+ * table per entity. The two halves counted separately and added is the same
+ * number, and each half is an index lookup. Same shape as projectGraph(), for
+ * the same reason.
+ *
+ * The scope is a fragment rather than a parameter because the two callers differ
+ * only in it, and the boundary applies to both identically: whatever the scope
+ * says, an entity the reader has not reached is not in the result.
+ */
+async function ranked(
+  userId: string,
+  boundaryChapter: number,
+  scope: SQL,
+  limit: number | null,
+): Promise<CandidateRow[]> {
+  const cap = limit === null ? sql.empty() : sql`LIMIT ${limit}`
+  return withBoundary({ userId, boundaryChapter }, async (db) =>
     db.execute<CandidateRow>(sql`
       SELECT e.id, coalesce(sum(d.n), 0)::int AS fact_count
       FROM entities e
@@ -96,13 +139,20 @@ export async function castAtChapter(
         FROM assertions
         WHERE object_entity_id IS NOT NULL AND predicate <> 'same_as' GROUP BY 1
       ) d ON d.id = e.id
-      WHERE e.node_type IN ${nodeTypes}
+      WHERE ${scope}
       GROUP BY e.id, e.first_seen_chapter
       ORDER BY coalesce(sum(d.n), 0) DESC, e.first_seen_chapter, e.id
-      LIMIT ${pool}
+      ${cap}
     `),
   )
+}
 
+/** Fold the candidates into people, and give each one the name it has here. */
+async function assemble(
+  userId: string,
+  boundaryChapter: number,
+  candidates: CandidateRow[],
+): Promise<CastMember[]> {
   if (candidates.length === 0) return []
 
   /*

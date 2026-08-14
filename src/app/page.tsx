@@ -4,12 +4,14 @@ import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts
 import {
   displayImages,
   postersFor,
+  wantedEntityIds,
   type DisplayImage,
   type PosterView,
 } from '@/domains/images/index.ts'
 import { ARCS, arcOf, type Arc } from '@/domains/temporal/arcs.ts'
 import {
   castAtChapter,
+  castOf,
   openQuestionsAtChapter,
   type CastMember,
   type OpenQuestion,
@@ -62,9 +64,9 @@ const ESCALES = 8
  * Drawn fresh on every visit, and deliberately not seeded.
  *
  * A stable draw would make the page identical for a week, which defeats the
- * point of having one. The pool it draws from is ranked by how connected the
- * characters are, so the wall varies without ever falling through to six
- * names mentioned once each.
+ * point of having one. What it draws from is chosen before it gets here — the
+ * people with a poster, or failing that the best-connected characters — so the
+ * wall varies without ever falling through to six names mentioned once each.
  */
 function tirage<T>(items: readonly T[]): T[] {
   const drawn = [...items]
@@ -121,9 +123,10 @@ export default async function HomePage({
       .filter((chapter) => chapter.status === 'published' && chapter.number <= boundary)
       .sort((a, b) => b.number - a.number)
 
-    const [cast, open] = await Promise.all([
+    const [cast, open, wantedIds] = await Promise.all([
       castAtChapter(session.userId, boundary, { nodeTypes: ['character'] }),
       openQuestionsAtChapter(session.userId, boundary),
+      wantedEntityIds(session.userId, boundary),
     ])
 
     /*
@@ -133,19 +136,22 @@ export default async function HomePage({
      * portraits it replaced: Laboon is a whale and Kaloo is a duck, and neither
      * has ever been wanted for anything. A frame reading « avis de recherche »
      * around a duck is the interface inventing the one thing this site does not
-     * invent.
+     * invent. So the wall shows real posters, or it is not a wall of posters.
      *
-     * So the wall shows real posters, or it is not a wall of posters. Asked
-     * over the whole draw rather than over six of it, because only the
-     * characters the manifest knows have a poster row at all: the query returns
-     * what exists, which is a handful, and asking about sixty costs no more.
+     * Who those are is asked of the pictures, not of the cast. The first
+     * version drew from `cast` — the sixty best-connected characters — and kept
+     * whichever of them happened to have a poster, which quietly cost the wall
+     * everybody wanted early and mentioned rarely. Higuma has the first bounty
+     * in the story and three relations to his name; a reader of chapter 100 saw
+     * Buggy, Krieg and Arlong and no sign that the bandit of chapter 1 was ever
+     * worth eight million.
      */
-    const drawn = tirage(cast)
+    const affiches = await castOf(session.userId, boundary, wantedIds)
     const posters = await postersFor(
       session.userId,
       boundary,
-      drawn.flatMap((member) => member.memberIds),
-      new Map(drawn.flatMap((member) => member.memberIds.map((id) => [id, member.label]))),
+      affiches.flatMap((member) => member.memberIds),
+      new Map(affiches.flatMap((member) => member.memberIds.map((id) => [id, member.label]))),
     )
 
     const posterOf = (member: CastMember): PosterView | null => {
@@ -156,50 +162,64 @@ export default async function HomePage({
       return null
     }
 
-    const wanted = drawn.filter((member) => posterOf(member) !== null).slice(0, MUR)
+    /*
+     * One card per person, and « per person » is by name here.
+     *
+     * `castOf` folds what the reader knows to be one character, which is the
+     * right rule and only covers merges the library has actually made. Six
+     * unmerged entities called Sanji are six components and one cook, and a
+     * wall showing him six times is wrong whatever the graph believes. The name
+     * is the thing the visitor compares, so it is the thing deduplicated.
+     */
+    const seen = new Set<string>()
+    const wanted = tirage(affiches)
+      .filter((member) => posterOf(member) !== null)
+      .filter((member) => {
+        const key = member.label.trim().toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .slice(0, MUR)
+
     mur = wanted.length > 0 ? 'affiches' : 'visages'
 
     /*
-     * Portraits, for whichever cards are actually going to be drawn.
-     *
-     * Signed after the choice rather than before it: each one is a round trip,
-     * and a wall of four posters has no use for fifty-six faces.
-     */
-    const shown = wanted.length > 0 ? wanted : drawn
-    const images = await displayImages(
-      session.userId,
-      boundary,
-      shown.flatMap((member) => member.memberIds),
-      PORTRAITS,
-    )
-
-    const faceOf = (member: CastMember): DisplayImage | null => {
-      for (const id of member.memberIds) {
-        const found = images.get(id)
-        if (found) return found
-      }
-      return null
-    }
-
-    /*
      * Nobody wanted yet, which is most of the story: the earliest poster the
-     * wiki can be pinned to is Arlong's at chapter 69, and a reader before that
-     * has none at all. They get faces instead, under a heading that says faces.
-     * Same draw, same cards, no poster chrome and no pretending.
+     * wiki can be pinned to is Higuma's in chapter 1, but a library that has
+     * not been enriched, or a reader before the first bounty they hold, has
+     * none at all. They get faces instead, under a heading that says faces.
+     * Same cards, no poster chrome and no pretending.
+     *
+     * Portraits are signed only on that path. Each one is a round trip and a
+     * wall of real posters has no use for a single face.
      */
-    const chosen =
-      wanted.length > 0
-        ? wanted
-        : [
-            ...drawn.filter((member) => faceOf(member) !== null),
-            ...drawn.filter((member) => faceOf(member) === null),
-          ].slice(0, MUR)
+    if (wanted.length > 0) {
+      wall = wanted.map((member) => ({ member, portrait: null, poster: posterOf(member) }))
+    } else {
+      const drawn = tirage(cast)
+      const images = await displayImages(
+        session.userId,
+        boundary,
+        drawn.flatMap((member) => member.memberIds),
+        PORTRAITS,
+      )
 
-    wall = chosen.map((member) => ({
-      member,
-      portrait: faceOf(member),
-      poster: posterOf(member),
-    }))
+      const faceOf = (member: CastMember): DisplayImage | null => {
+        for (const id of member.memberIds) {
+          const found = images.get(id)
+          if (found) return found
+        }
+        return null
+      }
+
+      wall = [
+        ...drawn.filter((member) => faceOf(member) !== null),
+        ...drawn.filter((member) => faceOf(member) === null),
+      ]
+        .slice(0, MUR)
+        .map((member) => ({ member, portrait: faceOf(member), poster: null }))
+    }
 
     questions = tirage(open).slice(0, 3)
   } catch {

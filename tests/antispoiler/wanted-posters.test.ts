@@ -1,7 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { postersFor } from '@/domains/images/posters.ts'
+import { postersFor, wantedEntityIds } from '@/domains/images/posters.ts'
 import { displayImages } from '@/domains/images/index.ts'
+import { castAtChapter, castOf } from '@/domains/temporal/spotlight.ts'
 import {
+  addAssertion,
   addLabel,
   closeDb,
   createEntity,
@@ -156,5 +158,119 @@ describe('un avis de recherche est daté comme tout le reste', () => {
     const luffy = await seedLuffy()
     const portraits = await displayImages(world.userId, 1100, [luffy])
     expect(portraits.size).toBe(0)
+  })
+})
+
+/**
+ * Qui est recherché, et par quel bout on le demande.
+ *
+ * The home page asked the wrong question for a release: it took the sixty
+ * best-connected characters and kept whichever of them had a poster. That reads
+ * as a reasonable ordering and it is a filter, and what it filtered out was
+ * everybody wanted early and mentioned rarely — Higuma above all, who carries
+ * the first bounty in One Piece and three lines of dialogue. These tests pin the
+ * inversion: the pictures decide who is on the wall, and the boundary decides
+ * which of them the reader has reached.
+ */
+describe('le mur part des affiches, pas du classement', () => {
+  /** A bandit with a poster, a name and no relations whatsoever. */
+  async function seedHiguma(): Promise<string> {
+    const higuma = await createEntity(world, 'character', 1)
+    await addLabel(world, higuma, 'Higuma', 'true_name', 1, 100)
+    await addPoster(higuma, 'Higuma', 1, 'Higuma Bounty Poster.png')
+    return higuma
+  }
+
+  it('trouve un personnage qu’aucun classement par degré ne remonterait', async () => {
+    const higuma = await seedHiguma()
+    // Somebody with relations, so the ranking has something to prefer.
+    await seedLuffy()
+
+    const wanted = await wantedEntityIds(world.userId, 1100)
+    expect(wanted).toContain(higuma)
+
+    // And the cast built from that list holds him with his name, which the
+    // degree-ranked pool is free never to have heard of.
+    const cast = await castOf(world.userId, 1100, wanted)
+    expect(cast.find((member) => member.memberIds.includes(higuma))?.label).toBe('Higuma')
+  })
+
+  it('s’arrête au chapitre du lecteur, comme la lecture des affiches', async () => {
+    await seedHiguma()
+    const luffy = await seedLuffy()
+
+    // Chapter 1 shows Higuma's eight million and nothing of Luffy's printings,
+    // the earliest of which is six hundred chapters away.
+    expect(await wantedEntityIds(world.userId, 1)).not.toContain(luffy)
+    expect(await wantedEntityIds(world.userId, 700)).toContain(luffy)
+  })
+
+  /*
+   * Le chapitre 124, tel qu'il a été signalé.
+   *
+   * The whole bug in one library. A reader at 124 has read six wanted posters,
+   * and the wall showed three of them: Krieg, Buggy and Arlong, all of whom
+   * carry an arc's worth of relations. Higuma has one. The assertions below are
+   * what the old ranking read, and they are stacked deliberately so that a pool
+   * of two would have had no room for him.
+   */
+  it('garde le bandit du chapitre 1 devant les capitaines du chapitre 96', async () => {
+    const higuma = await createEntity(world, 'character', 1)
+    await addLabel(world, higuma, 'Higuma', 'true_name', 1, 100)
+    await addPoster(higuma, 'Higuma', 1, 'Higuma Bounty Poster.png')
+
+    const connected: string[] = []
+    for (const [name, chapter] of [
+      ['Arlong', 69],
+      ['Don Krieg', 96],
+      ['Buggy', 96],
+    ] as const) {
+      const id = await createEntity(world, 'character', 1)
+      await addLabel(world, id, name, 'true_name', 1, 100)
+      await addPoster(id, name, chapter, `${name} Wanted Poster.png`)
+      connected.push(id)
+    }
+
+    // Everything the ranking counts, given to everyone except the bandit.
+    for (const subject of connected) {
+      for (const object of connected) {
+        if (subject === object) continue
+        await addAssertion(world, {
+          subject,
+          predicate: 'enemy_of',
+          object,
+          knowledgeFrom: 1,
+        })
+      }
+    }
+
+    const wanted = await wantedEntityIds(world.userId, 124)
+    expect(wanted).toContain(higuma)
+
+    // And the ranking really would have buried him: asked for the two best
+    // connected characters, the old pool holds none of the reader's bandits.
+    const podium = await castAtChapter(world.userId, 124, { pool: 2 })
+    expect(podium.some((member) => member.memberIds.includes(higuma))).toBe(false)
+
+    // The wall keeps him because it is built from the posters, in any order.
+    const cast = await castOf(world.userId, 124, wanted)
+    const posters = await postersFor(
+      world.userId,
+      124,
+      cast.flatMap((member) => member.memberIds),
+      new Map(cast.map((member) => [member.entityId, member.label])),
+    )
+    expect(posters.get(higuma)?.amount).toBe(8_000_000)
+    expect(posters.size).toBe(4)
+  })
+
+  it('ne rend rien quand la bibliothèque n’a aucune affiche', async () => {
+    const nobody = await createEntity(world, 'character', 1)
+    await addLabel(world, nobody, 'Makino', 'true_name', 1, 100)
+
+    expect(await wantedEntityIds(world.userId, 1100)).toEqual([])
+    // The page falls through to faces, and the pool for those is unchanged.
+    expect(await castOf(world.userId, 1100, [])).toEqual([])
+    expect((await castAtChapter(world.userId, 1100)).length).toBeGreaterThan(0)
   })
 })

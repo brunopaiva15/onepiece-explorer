@@ -157,8 +157,54 @@ export async function postersFor(
   return out
 }
 
+/**
+ * Cap on the wanted list. Generous: the manifest knows nineteen characters, and
+ * a library that has merged nothing may hold several entities per name.
+ */
+const WANTED = 60
+
+/**
+ * Everyone the reader has seen a wanted poster of.
+ *
+ * The home page used to build its wall out of the sixty most connected
+ * characters and then ask which of them had a poster, which is backwards, and
+ * the bug it produced is worth keeping written down: Higuma is a mountain
+ * bandit who appears in chapter 1, holds three relations, and carries the
+ * earliest bounty in the story. He never entered a pool ranked by degree, so
+ * the wall of a reader at chapter 100 showed Buggy, Krieg and Arlong and swore
+ * that was all there was.
+ *
+ * Asking the pictures first inverts it. What comes back is small by nature —
+ * posters exist for a handful of people and the boundary cuts even those — so
+ * there is no ranking here and none is wanted: every row is somebody the reader
+ * has genuinely seen a poster of, and choosing between them is the page's job.
+ */
+export async function wantedEntityIds(
+  userId: string,
+  boundaryChapter: number,
+  limit = WANTED,
+): Promise<string[]> {
+  const rows = await withBoundary({ userId, boundaryChapter }, async (db) =>
+    db.execute<{ entity_id: string }>(sql`
+      SELECT DISTINCT entity_id
+      FROM entity_images
+      WHERE kind = 'poster'
+      ORDER BY entity_id
+      LIMIT ${limit}
+    `),
+  )
+  return rows.map((row) => row.entity_id)
+}
+
 export interface PosterReport {
-  /** Entities in the library that the manifest knows a bounty for. */
+  /**
+   * Characters of the manifest found in the library.
+   *
+   * People, not rows. A library that has not merged « Sanji » and « Vinsmoke
+   * Sanji » holds several entities for one cook, and counting those said
+   * « seize personnages » about eleven. The entity count is what the download
+   * loop runs over and it is not what this panel is reporting.
+   */
   considered: number
   /** Printings the gallery could be pinned to a file for. */
   resolved: number
@@ -216,25 +262,37 @@ export async function enrichBountyPosters(
   }
 
   const targets = await findTargets(userId)
-  report.considered = targets.length
+  report.considered = new Set(targets.map((target) => target.character.canonical)).size
   if (targets.length === 0) return report
 
   /*
    * One pass to decide what is wanted, one request to resolve the files, then
    * the downloads. Resolving in a batch rather than per poster is the
    * difference between fourteen requests to the wiki and two.
+   *
+   * Counted per printing, run per entity, and the two are not the same number.
+   * Whether the gallery has a picture of Sanji's first poster is a fact about
+   * the gallery: it is one line in the report however many entities in this
+   * library happen to be called Sanji. The loop still visits all of them,
+   * because each one needs its own row to have a poster on its own page — but
+   * the report is about the manifest, and a list that named the same missing
+   * printing six times was unreadable for it.
    */
   const wanted: Array<{ target: Target; bounty: Bounty; title: string; pageUrl: string }> = []
+  const judged = new Set<string>()
+  const missing: string[] = []
   for (const target of targets) {
     for (const bounty of target.character.rows) {
+      const printing = `${target.character.canonical} · ${formatBerries(bounty.amount)} (ch. ${bounty.chapter})`
+      const first = !judged.has(printing)
+      judged.add(printing)
+
       const match = findPoster(gallery, target.character, bounty)
       if (!match) {
-        report.unresolved.push(
-          `${target.character.canonical} · ${formatBerries(bounty.amount)} (ch. ${bounty.chapter})`,
-        )
+        if (first) missing.push(printing)
         continue
       }
-      report.resolved += 1
+      if (first) report.resolved += 1
       wanted.push({
         target,
         bounty,
@@ -243,6 +301,7 @@ export async function enrichBountyPosters(
       })
     }
   }
+  report.unresolved = missing
 
   if (wanted.length === 0) return report
 
