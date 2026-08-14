@@ -97,6 +97,41 @@ export async function listChapters(
   })
 }
 
+/**
+ * The numbers of the published chapters, ascending.
+ *
+ * listChapters() joins documents and text blocks to count pages and passages,
+ * which is what the library table is made of and far more than a control that
+ * only needs to know which numbers exist. A thousand-chapter library asks this
+ * on every render of story mode, so it stays a single indexed read of one
+ * column.
+ *
+ * Ownership-scoped like the rest of the metadata reads: that chapter 42 exists
+ * is a fact about your library, not about the story.
+ */
+export async function listPublishedChapterNumbers(
+  userId: string,
+  workId: string,
+): Promise<number[]> {
+  if (workId.length === 0) return []
+
+  return withIngest(async (db) => {
+    const rows = await db
+      .select({ number: chapters.number })
+      .from(chapters)
+      .where(
+        and(
+          eq(chapters.workId, workId),
+          eq(chapters.userId, userId),
+          eq(chapters.status, 'published'),
+        ),
+      )
+      .orderBy(asc(chapters.number))
+
+    return rows.map((row) => row.number)
+  })
+}
+
 export interface ChapterDetail {
   id: string
   number: number

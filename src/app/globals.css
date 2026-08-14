@@ -285,6 +285,35 @@ table,
 }
 
 /* --------------------------------------------------------------------------
+   The top chrome, and getting it out of the way on a phone.
+
+   Search, the boundary slider and its banner are pinned above every page. On a
+   wide screen that is free; on a phone it is about a fifth of the glass, taken
+   permanently from pages that exist to show a long column — story mode most of
+   all, which was left with roughly four beads.
+
+   The state is set in JavaScript (see StickyChrome) and read here, so whether
+   it means anything is a media query rather than a resize listener: the folding
+   is a small-screen behaviour and the desktop bar is untouched.
+   -------------------------------------------------------------------------- */
+
+.chrome-haut {
+  transition: transform 180ms ease;
+}
+
+@media (width < 64rem) {
+  .chrome-haut[data-replie='oui'] {
+    transform: translateY(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-haut {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Panels — a drawn box, not a card.
    -------------------------------------------------------------------------- */
 
@@ -567,6 +596,118 @@ hr.regle {
   line-height: 1.55;
 }
 
+/* --- Jumping to a chapter ------------------------------------------------ */
+
+/*
+ * The same form twice: in the header, and in the corner once the header has
+ * gone. Twice rather than one form that moves, because a control that detaches
+ * from the page and flies to a corner is a trick; two copies of a small form
+ * are just a small form you can always reach.
+ */
+
+.saut {
+  margin-top: 1.6rem;
+}
+
+.saut-forme {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.saut-label {
+  color: var(--text-secondary);
+}
+
+.saut-ligne {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.saut-nombre {
+  width: 6.5rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  text-align: center;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.saut-bouton {
+  padding-inline: 0.9rem;
+  font-size: 0.9rem;
+}
+
+.saut-aide {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.saut-lien {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--accent-strong);
+  padding-bottom: 0.05rem;
+  cursor: pointer;
+}
+
+.saut-lien:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.saut-lien:disabled {
+  opacity: 0.4;
+  border-bottom-color: transparent;
+  cursor: default;
+}
+
+/* The corner copy. Fixed, low, and out of the thumb's way on the side the
+   scrollbar is not — plus the phone's own bottom inset, so it never sits under
+   a home indicator. */
+.saut-flottant {
+  position: fixed;
+  right: clamp(0.75rem, 3vw, 1.5rem);
+  bottom: calc(clamp(0.75rem, 3vw, 1.5rem) + env(safe-area-inset-bottom, 0px));
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  opacity: 0;
+  transform: translateY(0.5rem);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.saut-flottant[data-visible='oui'] {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.saut-pastille {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8rem;
+  box-shadow: var(--shadow-hard);
+}
+
+.saut-panneau {
+  width: min(17rem, calc(100vw - 2.5rem));
+  padding: 0.8rem 0.9rem;
+  border: 3px solid var(--ink);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-hard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saut-flottant {
+    transition: none;
+  }
+}
+
 /* --- The line ------------------------------------------------------------ */
 
 .fil {
@@ -761,6 +902,10 @@ hr.regle {
   align-items: baseline;
   gap: 0.8rem;
   margin: 2.6rem 0 0.6rem;
+  /* Jumped to, the notch stops below the pinned chrome rather than under it —
+     landing on a chapter whose number is hidden by the search bar reads as
+     having landed on the wrong one. */
+  scroll-margin-top: 7rem;
 }
 
 .encoche::before {
