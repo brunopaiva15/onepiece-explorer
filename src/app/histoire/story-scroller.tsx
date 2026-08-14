@@ -41,6 +41,22 @@ const ROOT_MARGIN = '800px'
 /** A store with nothing to subscribe to — see `hydrated` below. */
 const NEVER_CHANGES = () => () => {}
 
+/**
+ * How long a stretch's signed addresses are trusted, in milliseconds.
+ *
+ * The pictures in a page of beads are reached by URLs that expire —
+ * `SIGNED_URL_TTL_SECONDS`, a minute by default — and animation mode plays for
+ * a great deal longer than that from one fetch. So beads have a shelf life
+ * here, and past it the film asks for the stretch again rather than showing a
+ * frame that will not load.
+ *
+ * Deliberately well under the default: the number is not the expiry, it is when
+ * we stop betting on it, and a request that turns out not to have been needed
+ * costs one read of six chapters. Scrolling is unaffected — a reader who
+ * scrolls past a bead sees it within seconds of its arriving.
+ */
+const STALE_AFTER = 40_000
+
 interface Props {
   initialBeats: StoryBeat[]
   initialCursor: number | null
@@ -63,6 +79,23 @@ export function StoryScroller({
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
   const [playing, setPlaying] = useState(false)
+
+  /**
+   * When each chapter's beads were last fetched.
+   *
+   * A ref rather than state: nothing on the page changes when a stretch ages,
+   * and the only reader is the film, which asks at the moment it needs to know.
+   */
+  const stamps = useRef(new Map<number, number>())
+  const stamp = useCallback((fetched: StoryBeat[]): void => {
+    const now = Date.now()
+    for (const beat of fetched) stamps.current.set(beat.chapter, now)
+  }, [])
+
+  const isStale = useCallback((chapter: number): boolean => {
+    const at = stamps.current.get(chapter)
+    return at === undefined || Date.now() - at > STALE_AFTER
+  }, [])
 
   /*
    * Which thread is on screen — and the reset when the server sends another.
@@ -96,6 +129,21 @@ export function StoryScroller({
     // belong to the page under it.
     setPlaying(false)
   }
+
+  /*
+   * The first stretch of a thread, stamped as it arrives.
+   *
+   * It was signed when the server rendered the page, so it ages from the moment
+   * the reader received it. Keyed on the thread rather than on mount, because a
+   * navigation to another stretch hands over a new `initialBeats` without
+   * remounting anything — see above; and the old thread's stamps go with it,
+   * since they describe addresses nothing will ask for again.
+   */
+  useEffect(() => {
+    stamps.current = new Map()
+    stamp(initialBeats)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, stamp])
 
   /** The arc the thread stops in — which is the arc the reader is in. */
   const end = arcOf(lastChapter)
@@ -134,6 +182,7 @@ export function StoryScroller({
 
       if (asked.current !== forThread) return
 
+      stamp(page.beats)
       setBeats((previous) => {
         // Two sentinels firing on a slow connection must not double the thread.
         const seen = new Set(previous.map((beat) => beat.id))
@@ -146,7 +195,7 @@ export function StoryScroller({
       inFlight.current = false
       if (asked.current === forThread) setLoading(false)
     }
-  }, [boundary, cursor])
+  }, [boundary, cursor, stamp])
 
   useEffect(() => {
     const node = sentinel.current
@@ -161,6 +210,51 @@ export function StoryScroller({
     observer.observe(node)
     return () => observer.disconnect()
   }, [cursor, loadMore])
+
+  /**
+   * The same stretch again, for the signatures on it.
+   *
+   * Not more thread: the beads that come back are the ones already on the page,
+   * with fresh addresses for their faces, and they are merged **by id** so the
+   * array keeps its shape — the film is in the middle of playing it, and
+   * replacing the array would be replacing the reel. A bead the refresh does
+   * not mention keeps what it had.
+   *
+   * One request per chapter at a time, and one request covers a whole window,
+   * so a film crossing six chapters asks once rather than six times.
+   */
+  const refreshing = useRef(new Set<number>())
+  const refresh = useCallback(
+    async (chapter: number): Promise<void> => {
+      if (refreshing.current.has(chapter)) return
+      refreshing.current.add(chapter)
+
+      try {
+        const response = await fetch(
+          `/api/histoire?depuis=${chapter}&ch=${boundary}`,
+        )
+        if (!response.ok) throw new Error(String(response.status))
+
+        const page = (await response.json()) as { beats: StoryBeat[] }
+        stamp(page.beats)
+
+        const fresh = new Map(page.beats.map((beat) => [beat.id, beat]))
+        setBeats((previous) =>
+          previous.map((beat) => fresh.get(beat.id) ?? beat),
+        )
+      } catch {
+        /*
+         * Silent, and it is the one place in this file where that is right.
+         * Nothing was lost — the beads on the page are the beads that were
+         * there — and the reader did not ask for this request. A face that
+         * still will not load falls off its shot; the shot plays without it.
+         */
+      } finally {
+        refreshing.current.delete(chapter)
+      }
+    },
+    [boundary, stamp],
+  )
 
   const play = useRef<HTMLButtonElement>(null)
 
@@ -225,6 +319,8 @@ export function StoryScroller({
           loading={loading}
           failed={failed}
           onNeedMore={needMore}
+          onRefresh={refresh}
+          isStale={isStale}
           onClose={closeCinema}
           start={start}
           lastChapter={lastChapter}

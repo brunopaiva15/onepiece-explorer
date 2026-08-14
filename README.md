@@ -526,9 +526,41 @@ au lieu d'un mur de texte entre deux noms.
 Il n'y a **pas de second chemin vers les données** : le film rejoue le tableau
 de perles que le défilement a chargé, et redemande la fenêtre suivante par le
 même chargeur. Il ne peut donc pas atteindre une perle que le défilement
-n'atteindrait pas, et la frontière n'a rien de neuf à garder. Ce qu'il coupe
-est écrit : la queue repliée d'un chapitre — cinq événements sont ce dont le
-chapitre parle, la suite est un relevé — et une perle dont la ligne est vide.
+n'atteindrait pas, et la frontière n'a rien de neuf à garder.
+
+Ce qu'il coupe est écrit, et c'est toute la différence entre le film et la
+page. **L'appel des noms** : « entre en scène » présente une distribution, ce
+qu'un fil doit faire et qu'une bobine ne peut pas — un chapitre qui introduit
+vingt personnes ouvrait sur une minute de générique, un nom toutes les trois
+secondes avant que rien n'arrive à personne. Ce qui est perdu là, c'est la
+présentation et non le visage : les personnages entrent en scène dans les
+événements qui les nomment, avec les mêmes portraits. **Les questions
+ouvertes** : « Qui a laissé la marque sur la coque ? » est une bonne ligne sur
+une page qu'on lit à son rythme ; à l'écran elle arrête la bobine pour demander
+ce que les plans suivants ne répondront pas, et les mystères ont déjà leur page.
+Une **réponse**, elle, reste : une question qui se referme est quelque chose
+qui arrive. Et enfin **la queue repliée d'un chapitre** — cinq événements sont
+ce dont le chapitre parle, la suite est un relevé — et une perle dont la ligne
+est vide.
+
+Le plan porte la phrase et rien d'autre. « Il arrive » séparait, sur le fil, une
+chose qui se passe des perles autour d'elle ; celles-là étant parties, il ne
+distinguait plus rien et s'écrivait au-dessus de chaque phrase. Les étiquettes
+qui restent font toutes un travail que la phrase ne fait pas seule : « un nom »
+explique une flèche, « on ne croit plus » une rature, « souvenir » dit que la
+scène n'est pas le présent. Et **le film ne légende pas ses images** : sur le
+fil chaque visage est à côté du nom qui l'a trouvé, et un portrait en grand
+nomme son catalogue ; ici les images sont le plan, et une ligne de provenance
+sous chacune faisait trois secondes de petits caractères entre deux phrases.
+C'est le fil, dessous, qui reste l'endroit où l'on vérifie un visage.
+
+Les adresses des images sont signées et expirent — une minute par défaut — là
+où un film tourne bien plus longtemps qu'une signature ne vit. Les images d'une
+fenêtre sont donc préchargées à son arrivée, le film **redemande une tranche
+dont les perles ont vieilli** avant de la jouer, et un visage qui échoue quand
+même redemande une adresse fraîche et revient. Celui qu'on ne récupère pas perd
+son cadre et non son plan : la phrase reste seule à l'écran, ce qui vaut mieux
+qu'un rectangle noir à sa place.
 
 Le mouvement n'est jamais porteur. Le panoramique est une décoration sur une
 image déjà affichée, il dure exactement le temps du plan, et

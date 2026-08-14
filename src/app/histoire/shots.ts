@@ -18,15 +18,19 @@ import type { BeatKind, StoryBeat } from '@/domains/temporal/story.ts'
  * all of it is testable without a browser, and the player is left with the job
  * of showing one shot and counting down.
  *
- * Two editorial decisions live in here, and they are the whole of the
+ * Three editorial decisions live in here, and they are the whole of the
  * difference between the film and the page:
  *
- *  1. **The folded tail is cut.** A chapter of fifteen events shows five on the
+ *  1. **The roll call and the open questions are cut.** « Entre en scène »
+ *     introduces a cast and « question » keeps score — both are the thread
+ *     telling the reader how it is doing, which a page can afford and a film
+ *     cannot. See NOT_PLAYED.
+ *  2. **The folded tail is cut.** A chapter of fifteen events shows five on the
  *     page and offers the rest behind a summary. The film takes the five. A
  *     reel that plays a chapter's every last beat is not a recap, it is the
  *     transcript again — and the beats it would add are precisely the ones the
  *     thread already judged to be the tail.
- *  2. **A sentence keeps its cast.** An event's line is marked up with the
+ *  3. **A sentence keeps its cast.** An event's line is marked up with the
  *     faces of everyone it names, which the page draws small and inline. Here
  *     they are the shot: « Shanks sauve Luffy et perd son bras gauche » plays
  *     as two portraits and that sentence, which is the closest this library can
@@ -119,17 +123,43 @@ export interface Shot {
 }
 
 /**
+ * Beads the film does not play. Both are beats about the telling rather than
+ * about the story, and a film is only the story.
+ *
+ * **« Entre en scène »** is a roll call. On the page it is the right beat — the
+ * thread has to introduce a cast before the sentences start naming it, and a
+ * line of it costs one bead. Played, it is a chapter's worth of shots that each
+ * say one name and nothing else: « Zeff », « Patty », « Carne », three seconds
+ * apart, before anything happens to any of them. A chapter that introduces
+ * twenty people opened with a minute of index. What is lost is the
+ * introduction, not the face: they still walk on in the events that name them,
+ * carrying the same portraits — a sentence keeps its cast, which is the rule
+ * below.
+ *
+ * **« Question »** is the thread keeping score. « Qui a laissé la marque sur la
+ * coque ? » is a good line on a page one reads at one's own pace, where it sits
+ * as an open thread to come back to; on screen it stops the reel to ask
+ * something the next shots are not going to answer. The mysteries a chapter
+ * opens are a page of their own, and `/mysteres` is it.
+ *
+ * « Réponse » stays. A question being closed is something that happens, and it
+ * lands in the chapter where the reader learnt it.
+ */
+const NOT_PLAYED = new Set<BeatKind>(['entree', 'question'])
+
+/**
  * The beads of the thread, in the order they play.
  *
- * Same array, same order, minus what a film cannot use: the folded tail of a
- * long chapter, and any bead whose line came back empty — which is rare and is
- * a hole in the library rather than a beat, and holding a blank screen for two
- * seconds would be the one way to make it look deliberate.
+ * Same array, same order, minus what a film cannot use: the roll call above,
+ * the folded tail of a long chapter, and any bead whose line came back empty —
+ * which is rare and is a hole in the library rather than a beat, and holding a
+ * blank screen for two seconds would be the one way to make it look
+ * deliberate.
  */
 export function planShots(beats: StoryBeat[]): Shot[] {
   const shots: Shot[] = []
   for (const beat of beats) {
-    if (beat.collapsed) continue
+    if (beat.collapsed || NOT_PLAYED.has(beat.kind)) continue
     const shot = shotOf(beat)
     if (shot !== null) shots.push(shot)
   }
@@ -189,6 +219,15 @@ function shotOf(beat: StoryBeat): Shot | null {
 /**
  * The label, which is the verb plus the moment when there is one.
  *
+ * « il arrive » is dropped, and it is the only wording the film removes rather
+ * than repeats. On the thread it separates a thing that happened from the
+ * beads around it, which are names and questions; in the film those are gone
+ * and an event is nearly every shot, so the label stopped distinguishing
+ * anything and became a word printed above every sentence. The ones that stay
+ * all do work the sentence cannot do alone: « un nom » explains an arrow,
+ * « on ne croit plus » explains a strikethrough, « souvenir » says the scene is
+ * not the present, and « réponse » says a question just closed.
+ *
  * « citation » is named here and nowhere else: on the page a quotation is
  * drawn as one — an oversized quotation mark on the thread, prose set larger —
  * and none of that survives being blown up to fill a screen. Unlabelled, a
@@ -196,8 +235,13 @@ function shotOf(beat: StoryBeat): Shot | null {
  * same honesty the caption under it carries, moved to where it is visible.
  */
 function labelOf(kind: BeatKind, moment: string | null): string {
-  const mot = kind === 'citation' ? 'citation' : MOT[kind]
-  return moment === null ? mot : `${mot} · ${moment}`
+  const mot =
+    kind === 'citation' ? 'citation' : kind === 'evenement' ? '' : MOT[kind]
+
+  if (moment === null) return mot
+  // An event that the chapter dates keeps its moment and has lost its verb, so
+  // the separator has nothing on its left to separate it from.
+  return mot === '' ? moment : `${mot} · ${moment}`
 }
 
 /**
@@ -229,32 +273,6 @@ function facesOf(beat: StoryBeat): DisplayImage[] {
   for (const part of beat.detailParts ?? []) add(part.portrait)
 
   return out
-}
-
-/**
- * Who to credit for the faces on a shot, and which name found each one.
- *
- * Grouped by source rather than listed one per picture: three portraits from
- * the same catalogue used to print its address three times under a sentence
- * that is already three lines long, which is how a caption stops being read.
- * The names stay one per face — they are what lets a reader tell a wrong
- * match, and that is the whole reason the line is there.
- */
-export function credit(images: readonly DisplayImage[]): string {
-  const bySource = new Map<string, string[]>()
-  for (const image of images) {
-    const names = bySource.get(image.attribution) ?? []
-    // Non-breaking, as everywhere else the guillemets are set: French puts a
-    // space inside them and a line break in that space is a typo.
-    names.push(`« ${image.matchedLabel} »`)
-    bySource.set(image.attribution, names)
-  }
-
-  // A semicolon between two catalogues, not a dash: the interface spends its
-  // dashes on prose and this line already has a separator doing a job.
-  return [...bySource]
-    .map(([source, names]) => `${source} · ${names.join(', ')}`)
-    .join(' ; ')
 }
 
 /** Reading time for one line, floored and capped. */
