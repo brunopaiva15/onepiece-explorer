@@ -62,6 +62,66 @@ function applyRenames(value: string, pairs: RenamePair[]): string {
   return out
 }
 
+/** The name a rapprochement would teach, and the one it would replace. */
+interface RevealOffer {
+  /** As it will be written — the reviewer's spelling if they retyped it. */
+  label: string
+  /** What the fiche calls him today. Null when nothing names him yet. */
+  existingLabel: string | null
+}
+
+/**
+ * Whether this rapprochement gets to ask « et c'est ici qu'on apprend son nom ».
+ *
+ * The butler is Klahadore for three chapters and Kuro from the 26th, and that
+ * shape — a character the reader already knows, named for real by a later
+ * chapter — is most of what a thousand chapters of One Piece do. The graph
+ * could not be told: accepting the rapprochement filed « Kuro » below
+ * « Klahadore » and the fiche said Klahadore for the rest of the story.
+ *
+ * Three conditions, each of them a case where the question would be wrong:
+ *
+ *   The proposal is a `true_name`. An epithet and an alias are other things he
+ *   is also called, a placeholder is a description of a silhouette; none of
+ *   them is a revelation, and `naming.ts` makes the same distinction for the
+ *   same reason. The kind is read from the entity card this rapprochement is
+ *   about — the two are linked by fingerprint, which is exactly what
+ *   `mergeSuggestion` already uses to point from one to the other.
+ *
+ *   It is a different name. Re-proposing the name he already carries is a
+ *   character named twice, which is ordinary and settles nothing.
+ *
+ *   The entity card is still in this queue. Its name — and the spelling the
+ *   reviewer may have just given it — is what would be written; without it
+ *   there is nothing to promote and nothing honest to print on the card.
+ */
+function revealOffer(
+  item: ReviewItemView,
+  items: ReviewItemView[],
+  renames: Map<string, string>,
+): RevealOffer | null {
+  if (item.category !== 'resolution') return null
+
+  const record = (item.payload ?? {}) as Record<string, unknown>
+  const fingerprint = record.candidateFingerprint
+  if (typeof fingerprint !== 'string') return null
+
+  const twin = items.find(
+    (candidate) =>
+      candidate.category === 'entity' && candidate.fingerprint === fingerprint,
+  )
+  if (!twin) return null
+
+  const payload = (twin.payload ?? {}) as Record<string, unknown>
+  if (payload.label_kind !== 'true_name') return null
+
+  const label = (renames.get(twin.id) ?? String(payload.label ?? '')).trim()
+  if (label.length === 0) return null
+  if (label.toLowerCase() === (item.relatedLabel ?? '').toLowerCase()) return null
+
+  return { label, existingLabel: item.relatedLabel }
+}
+
 export function ReviewBoard({ queue }: Props) {
   const [decisions, setDecisions] = useState<Map<string, DecisionKind>>(new Map())
   /*
@@ -83,6 +143,16 @@ export function ReviewBoard({ queue }: Props) {
    * time, and only on an item that was accepted.
    */
   const [predicates, setPredicates] = useState<Map<string, string>>(new Map())
+  /*
+   * Rapprochements answered « et c'est ici qu'on apprend son nom », by item id.
+   *
+   * Beside the decisions like the renames and the predicates, and for the same
+   * reason: « c'est bien lui » and « ce chapitre lui donne son nom » are two
+   * answers to one card, and the second is not a decision about whether to
+   * accept. It becomes a 'correct' decision at publish time, and only on a
+   * rapprochement that was accepted.
+   */
+  const [reveals, setReveals] = useState<Set<string>>(new Set())
   const [cursor, setCursor] = useState(0)
   /**
    * Whether this card was chosen on purpose.
@@ -441,6 +511,24 @@ export function ReviewBoard({ queue }: Props) {
           }
         }
 
+        /*
+         * « Oui, et c'est ici qu'on apprend son nom. »
+         *
+         * The only answer in this queue that changes what an existing character
+         * is called, so it travels as a correction rather than a bare accept —
+         * the flag is the reviewer's, and publication writes the name above the
+         * one he had only because somebody said this. Left out, the answer is
+         * the old one: another name for him, filed below the displayed one.
+         */
+        if (item.category === 'resolution') {
+          if (!reveals.has(reviewItemId)) return { reviewItemId, decision }
+          return {
+            reviewItemId,
+            decision: 'correct',
+            correctedPayload: { ...payload, revealsName: true },
+          }
+        }
+
         if (item.category === 'entity') {
           const renamed = renames.get(reviewItemId)?.trim()
           if (!renamed || renamed === payload.label) return { reviewItemId, decision }
@@ -486,6 +574,7 @@ export function ReviewBoard({ queue }: Props) {
         setDecisions(new Map())
         setRenames(new Map())
         setPredicates(new Map())
+        setReveals(new Set())
       } else {
         setError(response.error ?? 'Publication impossible.')
       }
@@ -760,6 +849,17 @@ export function ReviewBoard({ queue }: Props) {
               return next
             })
           }
+          revealOffer={revealOffer(current, items, renames)}
+          reveal={reveals.has(current.id)}
+          onReveal={(value) =>
+            setReveals((previous) => {
+              const next = new Set(previous)
+              if (value) next.add(current.id)
+              else next.delete(current.id)
+              return next
+            })
+          }
+          chapterNumber={queue.chapterNumber}
           twins={twinsOfCurrent}
           onJump={jumpTo}
           onJumpToItem={(itemId) => {
@@ -801,6 +901,18 @@ function PublishSummary({
           <li>
             {result.entitiesMerged} rapprochée(s) avec une entité déjà connue :
             rien de créé, les faits du chapitre sont allés sur elle
+          </li>
+        )}
+        {/*
+          Said on its own line, because it is the only publication that changes
+          what someone already in the graph is called. Folded into the label
+          total it would be invisible — and « la fiche ne dit plus la même
+          chose » is the one outcome a reviewer would want to catch here.
+        */}
+        {result.namesRevealed > 0 && (
+          <li>
+            {result.namesRevealed} nom(s) révélé(s) : à partir de ce chapitre, la
+            fiche les appelle autrement — et pas avant
           </li>
         )}
         {result.assertionsCreated > 0 && <li>{result.assertionsCreated} relation(s)</li>}
@@ -871,6 +983,10 @@ function ProposalCard({
   onRename,
   predicate,
   onPredicate,
+  revealOffer,
+  reveal,
+  onReveal,
+  chapterNumber,
   twins,
   onJump,
   onJumpToItem,
@@ -888,6 +1004,11 @@ function ProposalCard({
   /** The predicate the reviewer chose in place of the one proposed. */
   predicate: string | null
   onPredicate: (key: string) => void
+  /** Set when this rapprochement may ask whether the chapter reveals a name. */
+  revealOffer: RevealOffer | null
+  reveal: boolean
+  onReveal: (value: boolean) => void
+  chapterNumber: number
   twins: Twin[]
   onJump: (position: number) => void
   onJumpToItem: (itemId: string) => void
@@ -975,6 +1096,14 @@ function ProposalCard({
               chosenPredicate={predicate}
               renamedLabels={renamedLabels}
             />
+            {revealOffer && (
+              <NameRevealQuestion
+                offer={revealOffer}
+                chapterNumber={chapterNumber}
+                reveal={reveal}
+                onReveal={onReveal}
+              />
+            )}
           </div>
         </div>
 
@@ -1021,6 +1150,84 @@ function ProposalCard({
         </div>
       </div>
     </article>
+  )
+}
+
+/**
+ * The second question a rapprochement asks, when it is entitled to ask it.
+ *
+ * « Kuro est-il le même que Klahadore » has two right answers and they store
+ * different things. Yes, and it is another of his names — the graph learns it,
+ * the fiche keeps calling him Klahadore, and searching either finds him. Yes,
+ * and this is the chapter that tells the reader who he is — the fiche calls him
+ * Kuro from here on and Klahadore at every chapter before.
+ *
+ * Asked rather than guessed, and defaulted to the conservative half. A model
+ * cannot tell a revelation from a nickname without the reader's own sense of
+ * what the chapter did, and the failure modes are not symmetric: guessing
+ * « another name » leaves a name unpromoted, which is visible on the fiche and
+ * fixable; guessing « revelation » renames a character on the strength of
+ * nothing, at a chapter chosen by a machine, which is the shape of a spoiler.
+ *
+ * Both halves say what they will do, in the chapters they will do it in. The
+ * point of the whole boundary is that a name has a date, and a control that
+ * hides its date behind « promouvoir ce nom » would be asking about a mechanism
+ * instead of about the story.
+ */
+function NameRevealQuestion({
+  offer,
+  chapterNumber,
+  reveal,
+  onReveal,
+}: {
+  offer: RevealOffer
+  chapterNumber: number
+  reveal: boolean
+  onReveal: (value: boolean) => void
+}) {
+  const known = offer.existingLabel ?? 'le nom qu’il porte déjà'
+
+  return (
+    <fieldset className="mt-4 border-[3px] border-ink bg-surface-raised px-3 py-2">
+      <legend className="cartouche">Si c’est bien lui, « {offer.label} » est…</legend>
+
+      <label className="mt-1 flex gap-2 text-sm">
+        <input
+          type="radio"
+          name="reveal"
+          checked={!reveal}
+          onChange={() => onReveal(false)}
+          className="mt-1"
+        />
+        <span className="text-primary">
+          <span className="font-medium">un autre de ses noms.</span>{' '}
+          <span className="text-secondary">
+            Le graphe l’apprend et la recherche le trouve, mais la fiche continue
+            de l’appeler « {known} ».
+          </span>
+        </span>
+      </label>
+
+      <label className="mt-2 flex gap-2 text-sm">
+        <input
+          type="radio"
+          name="reveal"
+          checked={reveal}
+          onChange={() => onReveal(true)}
+          className="mt-1"
+        />
+        <span className="text-primary">
+          <span className="font-medium">
+            le nom qu’on lui apprend ici, au chapitre {chapterNumber}.
+          </span>{' '}
+          <span className="text-secondary">
+            À partir de ce chapitre il s’appelle « {offer.label} » ; avant, il
+            reste « {known} ». Rien n’est écrasé : le curseur redescend et
+            l’ancien nom revient.
+          </span>
+        </span>
+      </label>
+    </fieldset>
   )
 }
 

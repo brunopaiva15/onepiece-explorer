@@ -109,7 +109,11 @@ export async function getChronology(
             })
             .from(entityLabels)
             .where(inArray(entityLabels.entityId, ids))
-            .orderBy(sql`${entityLabels.precedence} DESC`)
+            // Then the most recently revealed, which is what breaks the tie
+            // between a name and the one that replaced it at the same rank.
+            .orderBy(
+              sql`${entityLabels.precedence} DESC, ${entityLabels.revealedInChapter} DESC`,
+            )
 
     return { eventRows, labels }
   })

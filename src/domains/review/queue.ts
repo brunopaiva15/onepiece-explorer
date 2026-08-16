@@ -427,7 +427,10 @@ async function resolveEvidence(
             })
             .from(entityLabels)
             .where(inArray(entityLabels.entityId, entityIds))
-            .orderBy(desc(entityLabels.precedence))
+            // Then the most recently revealed: a revealed true name sits level
+            // with the one it replaces, and the review centre must show the
+            // same name as the fiche it is about to change.
+            .orderBy(desc(entityLabels.precedence), desc(entityLabels.revealedInChapter))
 
     return {
       panelRows: panelList.map((panel) => ({
@@ -575,7 +578,15 @@ async function pendingMerges(
       .select({ entityId: entityLabels.entityId, label: entityLabels.label })
       .from(entityLabels)
       .where(inArray(entityLabels.entityId, [...targets.values()].map((t) => t.entityId)))
-      .orderBy(desc(entityLabels.precedence)),
+      /*
+       * Precedence, then the most recent revelation.
+       *
+       * This name is printed on the rapprochement card — « est-il la même
+       * entité que X » — and on the naming question under it, which offers to
+       * replace it. Showing a name the fiche stopped using would be asking
+       * about somebody else.
+       */
+      .orderBy(desc(entityLabels.precedence), desc(entityLabels.revealedInChapter)),
   )
 
   const labelById = new Map<string, string>()
@@ -645,7 +656,9 @@ async function resolveNames(
         })
         .from(entityLabels)
         .where(inArray(entityLabels.entityId, storedIds))
-        .orderBy(desc(entityLabels.precedence)),
+        // Then the most recently revealed, so a relation's ends are named the
+        // way the graph names them.
+        .orderBy(desc(entityLabels.precedence), desc(entityLabels.revealedInChapter)),
     )
     for (const row of labels) if (!names.has(row.entityId)) names.set(row.entityId, row.label)
   }

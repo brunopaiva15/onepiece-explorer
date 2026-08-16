@@ -61,6 +61,19 @@ import { resolveRef, type RefTable } from '@/domains/pipeline/refs.ts'
 
 export type DecisionKind = 'accept' | 'reject' | 'correct' | 'merge' | 'split' | 'defer'
 
+/**
+ * An accepted rapprochement, as the entity loop needs it.
+ *
+ * Two answers rather than one, because the card asks two questions. Who this
+ * is, which decides where the chapter's facts land; and whether this chapter is
+ * where the reader learns what he is called, which decides whether the name is
+ * written above the one he had. The second is false unless somebody said so.
+ */
+interface MergeTarget {
+  entityId: string
+  revealsName: boolean
+}
+
 export interface Decision {
   reviewItemId: string
   decision: DecisionKind
@@ -102,6 +115,16 @@ export interface PublishResult {
   mysteriesResolved: number
   mysteriesReopened: number
   labelsCreated: number
+  /**
+   * Names this chapter teaches for someone the reader already knows.
+   *
+   * Counted apart from `labelsCreated` because it is the only publication that
+   * changes what an existing character is *called* — every other label lands
+   * below the displayed name and moves nothing. « Klahadore » becomes « Kuro »
+   * from this chapter on, and stays « Klahadore » at every chapter before it.
+   * A change of that size does not belong inside a total.
+   */
+  namesRevealed: number
   rejected: number
   deferred: number
   /** Items whose decision could not be applied, with the reason. */
@@ -134,6 +157,7 @@ export function mergePublishResults(a: PublishResult, b: PublishResult): Publish
     mysteriesResolved: a.mysteriesResolved + b.mysteriesResolved,
     mysteriesReopened: a.mysteriesReopened + b.mysteriesReopened,
     labelsCreated: a.labelsCreated + b.labelsCreated,
+    namesRevealed: a.namesRevealed + b.namesRevealed,
     rejected: a.rejected + b.rejected,
     deferred: a.deferred + b.deferred,
     failures: [...a.failures, ...b.failures],
@@ -158,6 +182,7 @@ export async function publishDecisions(
     mysteriesResolved: 0,
     mysteriesReopened: 0,
     labelsCreated: 0,
+    namesRevealed: 0,
     rejected: 0,
     deferred: 0,
     failures: [],
@@ -263,20 +288,35 @@ export async function publishDecisions(
      * payload carries — the identity of the *proposal*, which survives the
      * review item ids being unknown to each other.
      */
-    const mergeInto = new Map<string, string>()
+    const mergeInto = new Map<string, MergeTarget>()
     /** Fingerprints a merge was really applied to, for the resolution loop. */
     const merged = new Set<string>()
+    /** Fingerprints a merge was refused for, and why — same loop, honest reason. */
+    const refusedMerges = new Map<string, string>()
     for (const item of items) {
       if (item.category !== 'resolution') continue
       if (item.status !== 'proposed') continue
       const decision = byId.get(item.id)
-      if (decision?.decision !== 'accept') continue
+      /*
+       * 'correct' as well as 'accept', because the card has a second question.
+       *
+       * « Oui, c'est lui » and « oui, et c'est ici qu'on apprend son nom » are
+       * the same answer about identity and different answers about naming, so
+       * the second arrives the way every other edited answer does: as a
+       * correction carrying the reviewer's flag. Reading only 'accept' here
+       * would drop the flag on the floor and merge in silence.
+       */
+      if (decision?.decision !== 'accept' && decision?.decision !== 'correct') continue
 
       const payload = (item.payload ?? {}) as Record<string, unknown>
+      const answer = (decision.correctedPayload ?? {}) as Record<string, unknown>
       const fingerprint = payload.candidateFingerprint
       const existingId = payload.existingEntityId
       if (typeof fingerprint !== 'string' || typeof existingId !== 'string') continue
-      mergeInto.set(fingerprint, existingId)
+      mergeInto.set(fingerprint, {
+        entityId: existingId,
+        revealsName: answer.revealsName === true,
+      })
     }
 
     // Entities first.
@@ -294,16 +334,73 @@ export async function publishDecisions(
       const mergeTarget = mergeInto.get(item.fingerprint)
       if (mergeTarget !== undefined && item.status === 'proposed') {
         const candidate = (decision?.correctedPayload ?? item.payload) as CandidateEntity
-        localToEntity.set(candidate.local_id, mergeTarget)
+
+        /*
+         * A merged name is a name on the fiche, so it is checked like one.
+         *
+         * The guard below the entity path has always covered a name the
+         * publication *creates*; a name it folds onto a character reached the
+         * graph unchecked, and « aussi appelé » on the fiche lists every label
+         * the boundary lets through. Merging a chapter-23 proposal called
+         * « Kuro » therefore printed Kuro at chapter 23 — under the right
+         * name, in smaller type, three chapters early. Same rule, same
+         * refusal, whichever door the name came in by.
+         *
+         * Refused whole rather than merged-without-the-name: the two halves of
+         * this answer are one answer, and applying the half that is safe would
+         * settle an identity question on the strength of a naming answer that
+         * was just rejected. The card stays open and can be answered again.
+         */
+        if (candidate.label_kind === 'true_name') {
+          const future = await nameRevealedLater(db, {
+            userId,
+            workId: run.workId,
+            chapterNumber: run.chapterNumber,
+            label: candidate.label,
+            sourceTerm: candidate.source_term,
+          })
+          if (future) {
+            const reason = futureNameReason(future)
+            refusedMerges.set(item.fingerprint, reason)
+            result.failures.push({ reviewItemId: item.id, reason })
+            continue
+          }
+        }
+
+        localToEntity.set(candidate.local_id, mergeTarget.entityId)
+
+        /*
+         * The one case where a merge is allowed to change what he is called.
+         *
+         * Limited to a true name, and to a reviewer who said so on the card.
+         * See `addMergedLabel` for why every other merged label enters below
+         * the displayed one.
+         */
+        const reveals = mergeTarget.revealsName && candidate.label_kind === 'true_name'
 
         const added = await addMergedLabel(db, {
           userId,
-          entityId: mergeTarget,
+          entityId: mergeTarget.entityId,
           label: candidate.label,
           kind: candidate.label_kind,
           chapterNumber: run.chapterNumber,
+          reveals,
         })
         if (added) result.labelsCreated++
+        if (added && reveals) {
+          result.namesRevealed++
+          await db.insert(auditLog).values({
+            userId,
+            action: 'name_revealed',
+            subjectKind: 'entity',
+            subjectId: mergeTarget.entityId,
+            detail: {
+              label: candidate.label,
+              revealedInChapter: run.chapterNumber,
+              reviewItemId: item.id,
+            },
+          })
+        }
 
         await db
           .update(reviewItems)
@@ -1184,6 +1281,27 @@ export async function publishDecisions(
           continue
         }
 
+        /*
+         * The name is why it did not apply, when it is.
+         *
+         * Both halves of a refused merge produce a failure, and the entity's
+         * carries the real reason — a name from a chapter the reader has not
+         * reached. Letting this one say « déjà décidée dans un lot précédent »
+         * next to it would be two contradictory explanations of one refusal,
+         * and the wrong one is the one telling the reviewer to give up.
+         */
+        const refused = refusedMerges.get(fingerprint)
+        if (refused !== undefined) {
+          result.failures.push({
+            reviewItemId: item.id,
+            reason:
+              `Le rapprochement n’a pas été appliqué, à cause du nom. ${refused} ` +
+              'Corrigez le nom sur la carte d’entité, ou répondez le rapprochement ' +
+              'sans « on apprend son nom ici ».',
+          })
+          continue
+        }
+
         result.failures.push({
           reviewItemId: item.id,
           reason:
@@ -1467,7 +1585,7 @@ async function insertEvidence(
  * an earlier boundary it is still the only thing the reader knew.
  */
 /**
- * Add the name a merged proposal came in under, without renaming anything.
+ * Add the name a merged proposal came in under.
  *
  * Chapter 3 calls him « Zoro » and you settled on « Roronoa Zoro » at chapter
  * 2. Both are names of the same person and the graph should know both — a
@@ -1476,6 +1594,22 @@ async function insertEvidence(
  * reviewer's back. So the new label enters strictly below the entity's current
  * highest precedence, whatever kind it claims to be, and the display is
  * unmoved.
+ *
+ * `reveals` is the exception, and it is the reason this parameter exists rather
+ * than a second function. The butler is Klahadore for three chapters and Kuro
+ * from the 26th, and in a work of a thousand chapters that is not an edge case
+ * — it is Bon Clay, Robin, Sabo, Hancock, every impostor and every alias in the
+ * book. Without it the graph could only be told the new name as a footnote
+ * below the old one, and « Klahadore » stayed on the fiche for the rest of the
+ * story. With it the reader who answered « oui, et c'est ici qu'on apprend son
+ * nom » gets the label at its own precedence, which for a true name is above
+ * everything: the fiche says Kuro from chapter 26 and Klahadore at 25, and the
+ * slider still moves both ways because nothing was overwritten.
+ *
+ * Only ever set for a `true_name`, decided by the caller. `naming.ts` has the
+ * argument in full: a placeholder is a description, an epithet and an alias are
+ * other things he is also called, and the true name is the only one whose
+ * arrival is a revelation.
  *
  * Its revelation chapter is the chapter that used it, like every other label:
  * a name is dated by when it was heard, and « Zoro » being known from chapter 3
@@ -1847,6 +1981,8 @@ async function addMergedLabel(
     label: string
     kind: string
     chapterNumber: number
+    /** The chapter teaches this name: let it outrank what he was called. */
+    reveals?: boolean
   },
 ): Promise<boolean> {
   const normalized = normalizeText(input.label)
@@ -1862,7 +1998,19 @@ async function addMergedLabel(
   if (existing.some((row) => row.normalizedLabel === normalized)) return false
 
   const highest = existing.reduce((top, row) => Math.max(top, row.precedence), 0)
-  const precedence = Math.max(1, Math.min(precedenceFor(input.kind), highest - 1))
+  /*
+   * A revealed name keeps its own precedence; every other one is capped below
+   * what the entity is currently called.
+   *
+   * Two true names then sit at 100 together — « Klahadore » from chapter 23 and
+   * « Kuro » from chapter 26 — and the tie is broken by revelation chapter, the
+   * `ORDER BY precedence DESC, revealed_in_chapter DESC` every display in this
+   * codebase shares. Which is the right rule and not a lucky one: of two names
+   * the reader has read, the one he was told last is the one in use.
+   */
+  const precedence = input.reveals
+    ? precedenceFor(input.kind)
+    : Math.max(1, Math.min(precedenceFor(input.kind), highest - 1))
 
   await db.insert(entityLabels).values({
     entityId: input.entityId,

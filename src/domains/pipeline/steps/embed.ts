@@ -71,7 +71,14 @@ export async function runEmbed(context: StepContext): Promise<StepResult> {
       .select({ entityId: entityLabels.entityId, label: entityLabels.label })
       .from(entityLabels)
       .where(inArray(entityLabels.entityId, involved))
-      .orderBy(sql`${entityLabels.precedence} DESC`)
+      // Precedence, then the most recently revealed. Two names can now share a
+      // precedence on one entity — a revealed true name enters level with the
+      // one it replaces — and the date is what separates them, here as on the
+      // fiche. Without it the planner picks, and the embedding of a fact about
+      // Kuro could read « Klahadore ».
+      .orderBy(
+        sql`${entityLabels.precedence} DESC, ${entityLabels.revealedInChapter} DESC`,
+      )
 
     const labelOf = new Map<string, string>()
     for (const row of labels) {

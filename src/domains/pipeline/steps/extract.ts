@@ -1210,7 +1210,7 @@ export async function knownEntitiesFor(
       ),
     )
     /*
-     * Highest-precedence label first, then the earliest revealed.
+     * Highest-precedence label first, then the most recently revealed.
      *
      * `dedupeById` keeps one row per entity, and with no ordering that row was
      * whichever the planner returned first — so a character could be offered to
@@ -1218,8 +1218,18 @@ export async function knownEntitiesFor(
      * placeholder it had before it was named, while the graph displays it under
      * its true name. The prompt has to hand over the name the chapter is going
      * to use, which is the one the fiche shows.
+     *
+     * Which is why the second term is `desc` and not `asc`. It used to be the
+     * earliest revealed, when a tie could not happen: publication capped every
+     * added name below the displayed one, so precedence alone decided. A
+     * revealed true name now enters level with the name it replaces, and the
+     * earliest of the two is precisely the one the reader has stopped using —
+     * chapter 27's extraction would be handed « Klahadore », propose facts
+     * about him under that name, and undo the revelation one chapter after it
+     * happened. The rows are already bounded at `scope.chapterNumber`, so this
+     * can only ever choose among names the reader has read.
      */
-    .orderBy(desc(entityLabels.precedence), asc(entityLabels.revealedInChapter))
+    .orderBy(desc(entityLabels.precedence), desc(entityLabels.revealedInChapter))
 
   return dedupeById(rows)
 }

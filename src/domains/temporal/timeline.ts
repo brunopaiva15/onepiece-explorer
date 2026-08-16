@@ -119,7 +119,12 @@ export async function getTimeline(
             })
             .from(entityLabels)
             .where(inArray(entityLabels.entityId, ids))
-            .orderBy(sql`${entityLabels.precedence} DESC`)
+            // Then the most recently revealed, like every other place that
+            // reduces an entity to one name: a revealed true name sits level
+            // with the one it replaces, and the date is the tie-break.
+            .orderBy(
+              sql`${entityLabels.precedence} DESC, ${entityLabels.revealedInChapter} DESC`,
+            )
 
     return { eventRows, mysteryRows, labels }
   })
@@ -369,7 +374,19 @@ export async function getNarrativeDelta(
                   current.names.map((name) => name.entityId),
                 ),
               )
-              .orderBy(sql`${entityLabels.precedence} DESC`)
+              /*
+               * The same tie-break, and here it is the whole feature.
+               *
+               * This query is read one chapter earlier on purpose: it answers
+               * « what was he called until now », which is the sentence the
+               * delta is for. A revealed name enters level with the one it
+               * replaces, so without the date this would return either of them
+               * — and « jusqu'ici Kuro, désormais Kuro » is the one thing this
+               * line must never print.
+               */
+              .orderBy(
+                sql`${entityLabels.precedence} DESC, ${entityLabels.revealedInChapter} DESC`,
+              )
 
       return { refuted, previousNames }
     },
