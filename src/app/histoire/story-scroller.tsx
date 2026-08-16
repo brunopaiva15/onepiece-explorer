@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { Beat } from './beat.tsx'
 import { Cinema } from './cinema.tsx'
+import { CopyStory } from './copy-story.tsx'
 import { arcOf } from '@/domains/temporal/arcs.ts'
 import type { StoryBeat } from '@/domains/temporal/story.ts'
 
@@ -65,6 +66,8 @@ interface Props {
   /** Where this thread starts. With the boundary, it is which thread this is. */
   start: number
   lastChapter: number
+  /** Signed in on their own library: the copy button is theirs alone. */
+  isOwner: boolean
 }
 
 export function StoryScroller({
@@ -73,6 +76,7 @@ export function StoryScroller({
   boundary,
   start,
   lastChapter,
+  isOwner,
 }: Props) {
   const [beats, setBeats] = useState(initialBeats)
   const [cursor, setCursor] = useState(initialCursor)
@@ -305,6 +309,20 @@ export function StoryScroller({
             <Triangle />
             Voir en animation
           </button>
+          {/* Beside the film rather than in the header: both are the same kind
+              of control — something that takes the whole thread at once — and
+              both need the browser, so they appear and disappear together.
+              Before the help text, which grows to fill the row: after it, the
+              two buttons would sit at opposite ends of something they both
+              act on. */}
+          {isOwner && (
+            <CopyStory
+              start={start}
+              boundary={boundary}
+              lastChapter={lastChapter}
+            />
+          )}
+
           <p className="fil-projection-aide">
             Le fil se déroule tout seul, image par image, du chapitre {start} à
             celui où vous en êtes.
