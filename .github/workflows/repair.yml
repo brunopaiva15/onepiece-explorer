@@ -41,6 +41,19 @@ name: Réparations (production)
 # does not fail: the lines that cannot find their scene say « introuvable » and
 # a second run picks them up.
 #
+# And a third, softer still. `noms` looks its couples up **by label**, so run
+# `details` before it: that one corrects spellings and joins the nodes that are
+# genuinely doubled, and a name it has not yet corrected is a couple this one
+# reports as « introuvable » rather than mis-joining. Out of order it writes
+# nothing wrong; it just finds less, and a second run finds the rest.
+#
+# `noms` is also the one repair whose interesting output is the list it *refuses*.
+# It dates every revelation from the source text rather than from a table, so a
+# couple it cannot date, or one whose name was already readable when the node was
+# created, is printed with the reason and left alone. Read that list before
+# switching to « appliquer » — it is the difference between a revelation and a
+# duplicate, and only the first belongs to this script.
+#
 # `illustrations` is the only one that can touch the **bucket**. The others move
 # knowledge between rows; this one forgets pictures, and a picture is a row plus
 # two objects in the private bucket. So it reads three more secrets when they
@@ -83,6 +96,7 @@ on:
           - chapitres-1-100
           - chapitre-1
           - details
+          - noms
           - luffy-crew
           - illustrations
           - mysteres
