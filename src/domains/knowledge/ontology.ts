@@ -826,6 +826,27 @@ export interface TypeMismatch {
   expectedObjectTypes: readonly string[]
   /** Predicates that accept this pair of types, in ontology order. */
   alternatives: Array<{ key: string; labelFr: string }>
+  /**
+   * The same fact said from the other end.
+   *
+   * « Les Toubibs 20 appartiennent à Wapol » is a group filed under a person,
+   * and no predicate joins those two in that order — `member_of` is for crews,
+   * and every predicate that does accept a group and a character says something
+   * else entirely: allied, enemy, speaks to. So the direct list is a row of
+   * wrong answers, and the reviewer's only remaining move is to reject a fact
+   * the chapter states in as many words.
+   *
+   * Read backwards it is ordinary: « Wapol dirige les Toubibs 20 ». The
+   * relation is the same relation, the two ends are the same two ends, and the
+   * predicate that holds it is one the ontology has had all along — it was
+   * simply written in the direction nothing accepts. This is every predicate
+   * that would accept the ends the other way round, and choosing one swaps
+   * them.
+   *
+   * Empty for a literal object: « se rend à "la base de la Marine" » has no
+   * node on the far end to make a subject of.
+   */
+  reversedAlternatives: Array<{ key: string; labelFr: string }>
 }
 
 /**
@@ -862,6 +883,12 @@ export function checkTypes(
     expectedSubjectTypes: def.subjectTypes,
     expectedObjectTypes: def.objectTypes,
     alternatives: alternativesFor(subjectType, objectType),
+    // The predicate stays out of it: what is offered backwards is offered on
+    // the strength of the two types, exactly as forwards. A predicate that
+    // reads the same in both directions — `meets`, `allied_with` — turning up
+    // in both lists is not a duplicate but the truth about it.
+    reversedAlternatives:
+      objectType === null ? [] : alternativesFor(objectType, subjectType),
   }
 }
 
