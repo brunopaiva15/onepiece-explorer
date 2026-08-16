@@ -158,6 +158,7 @@ export default async function StoryPage({
           boundary={session.boundaryChapter}
           start={start}
           lastChapter={first.lastChapter}
+          isOwner={session.isOwner}
         />
       )}
     </main>

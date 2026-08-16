@@ -1356,6 +1356,51 @@ hr.regle {
   color: var(--text-secondary);
 }
 
+/* --- Copying the thread, for whoever owns it ----------------------------- */
+
+/*
+ * A column, so the status line sits under its own button rather than in the
+ * row: what it says changes while the copy runs — a chapter number counting up
+ * — and a line that grows inside a flex row shoves the film button sideways
+ * every few hundred milliseconds.
+ */
+.fil-copie {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+.fil-copie-bouton {
+  padding-inline: 0.9rem;
+  font-size: 0.8rem;
+}
+
+.fil-copie-etat {
+  max-width: 20rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/* Its own line under the row: it holds the whole thread, and a textarea sharing
+   a line with two buttons is a slot nobody can read out of. */
+.fil-copie-secours {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.fil-copie-zone {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 /* Opened with showModal(), so this is the top layer: no z-index to lose a race
    with, the page behind it inert, and the document blocked from scrolling. */
 .cine[open] {

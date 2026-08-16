@@ -48,6 +48,47 @@ interface RenamePair {
 }
 
 /**
+ * The shape a reviewer chose for a relation the ontology refuses as written.
+ *
+ * Two things at once because they are one decision. « Les Toubibs 20
+ * appartiennent à Wapol » is repaired by naming a predicate *and* by saying
+ * which way round it goes — « Wapol dirige les Toubibs 20 » — and offering the
+ * two separately would let the reviewer pick `leads` in the direction where it
+ * means the doctors command the king.
+ */
+interface Rewrite {
+  predicate: string
+  /** The two ends change places: the object becomes the subject. */
+  swap: boolean
+}
+
+/**
+ * One `<select>` holds both lists, so its values have to say which they came
+ * from. A prefix rather than a second control: the reviewer is choosing between
+ * whole sentences, and « Wapol dirige les Toubibs 20 » is one choice.
+ */
+const REVERSED = '↔'
+
+function encodeRewrite(rewrite: Rewrite): string {
+  return rewrite.swap ? `${REVERSED}${rewrite.predicate}` : rewrite.predicate
+}
+
+function decodeRewrite(value: string): Rewrite | null {
+  if (value === '') return null
+  return value.startsWith(REVERSED)
+    ? { predicate: value.slice(REVERSED.length), swap: true }
+    : { predicate: value, swap: false }
+}
+
+/** Whether this rewrite would change anything about the relation as proposed. */
+function rewrites(rewrite: Rewrite | null, payload: unknown): boolean {
+  if (rewrite === null) return false
+  if (rewrite.swap) return true
+  const record = (payload ?? {}) as Record<string, unknown>
+  return rewrite.predicate !== record.predicate
+}
+
+/**
  * Carry a reviewer's renaming into the prose that used the old name.
  *
  * Exact, case-sensitive replacement: these are proper nouns, written by the
@@ -135,14 +176,15 @@ export function ReviewBoard({ queue }: Props) {
    */
   const [renames, setRenames] = useState<Map<string, string>>(new Map())
   /*
-   * Predicates the reviewer replaced, by item id.
+   * Shapes the reviewer gave back to relations the ontology refuses, by item id.
    *
    * Beside the decisions for the same reason a rename is: choosing
-   * « se trouve à » instead of « appartient à » is not yet an answer about
-   * whether the relation is true. It becomes a 'correct' decision at publish
-   * time, and only on an item that was accepted.
+   * « se trouve à » instead of « appartient à », or reading the relation from
+   * the other end, is not yet an answer about whether the relation is true. It
+   * becomes a 'correct' decision at publish time, and only on an item that was
+   * accepted.
    */
-  const [predicates, setPredicates] = useState<Map<string, string>>(new Map())
+  const [predicates, setPredicates] = useState<Map<string, Rewrite>>(new Map())
   /*
    * Rapprochements answered « et c'est ici qu'on apprend son nom », by item id.
    *
@@ -494,20 +536,35 @@ export function ReviewBoard({ queue }: Props) {
         }
 
         /*
-         * The predicate you picked instead of the one that could not be written.
+         * The shape you gave the relation in place of the one that could not be
+         * written.
          *
          * 'correct' rather than 'accept', same as a rename: the relation is now
          * yours — user_validated, locked, proposed by you — which is the honest
          * record of what happened. The model found the fact and got the shape
          * wrong; you chose the shape.
+         *
+         * Swapping the ends is written here as the plain swap it is: publication
+         * resolves `subject` and `object` the same way whichever local id sits
+         * in which, so « Wapol dirige les Toubibs 20 » needs nothing downstream
+         * to know it was proposed the other way round.
          */
         if (item.category === 'assertion') {
-          const chosen = predicates.get(reviewItemId)
-          if (!chosen || chosen === payload.predicate) return { reviewItemId, decision }
+          const chosen = predicates.get(reviewItemId) ?? null
+          if (chosen === null || !rewrites(chosen, payload)) {
+            return { reviewItemId, decision }
+          }
           return {
             reviewItemId,
             decision: 'correct',
-            correctedPayload: { ...payload, predicate: chosen },
+            correctedPayload: chosen.swap
+              ? {
+                  ...payload,
+                  predicate: chosen.predicate,
+                  subject: payload.object,
+                  object: payload.subject,
+                }
+              : { ...payload, predicate: chosen.predicate },
           }
         }
 
@@ -840,12 +897,12 @@ export function ReviewBoard({ queue }: Props) {
           onRename={(label) =>
             setRenames((previous) => new Map(previous).set(current.id, label))
           }
-          predicate={predicates.get(current.id) ?? null}
-          onPredicate={(key) =>
+          rewrite={predicates.get(current.id) ?? null}
+          onRewrite={(chosen) =>
             setPredicates((previous) => {
               const next = new Map(previous)
-              if (key === '') next.delete(current.id)
-              else next.set(current.id, key)
+              if (chosen === null) next.delete(current.id)
+              else next.set(current.id, chosen)
               return next
             })
           }
@@ -981,8 +1038,8 @@ function ProposalCard({
   onMove,
   rename,
   onRename,
-  predicate,
-  onPredicate,
+  rewrite,
+  onRewrite,
   revealOffer,
   reveal,
   onReveal,
@@ -1001,9 +1058,9 @@ function ProposalCard({
   onMove: (delta: number) => void
   rename: string | null
   onRename: (label: string) => void
-  /** The predicate the reviewer chose in place of the one proposed. */
-  predicate: string | null
-  onPredicate: (key: string) => void
+  /** The shape the reviewer gave the relation in place of the one proposed. */
+  rewrite: Rewrite | null
+  onRewrite: (chosen: Rewrite | null) => void
   /** Set when this rapprochement may ask whether the chapter reveals a name. */
   revealOffer: RevealOffer | null
   reveal: boolean
@@ -1081,8 +1138,8 @@ function ProposalCard({
                 mismatch={item.typeMismatch}
                 names={item.names}
                 payload={item.payload}
-                chosen={predicate}
-                onChoose={onPredicate}
+                chosen={rewrite}
+                onChoose={onRewrite}
               />
             )}
             <ProposalBody
@@ -1093,7 +1150,7 @@ function ProposalCard({
               nodeTypes={item.nodeTypes}
               rename={rename}
               onRename={onRename}
-              chosenPredicate={predicate}
+              rewrite={rewrite}
               renamedLabels={renamedLabels}
             />
             {revealOffer && (
@@ -1288,6 +1345,20 @@ function MergeNotice({
  * accepts these two types is offered, in ontology order — grouped by meaning,
  * which puts the spatial ones first for a character and a place.
  *
+ * Read backwards when forwards has no answer. « Les Toubibs 20 appartiennent à
+ * Wapol » is a group filed under a person, and nothing in the ontology joins
+ * those two in that order — the forward list offers `allied_with`, `speaks_to`,
+ * `fights`, every one of them a different fact. The reviewer was left choosing
+ * between writing something false and rejecting something the chapter states.
+ * The relation the graph wants is the same one turned round — « Wapol dirige
+ * les Toubibs 20 » — so the second half of the list is every predicate that
+ * accepts the ends the other way, and choosing one swaps them.
+ *
+ * Whole sentences rather than predicate names, because that is what the choice
+ * is between: with the ends printed, « dirige » in one direction and in the
+ * other are visibly two different claims, and the reviewer picks the true one
+ * instead of inferring it from a verb and an arrow.
+ *
  * Nothing is preselected. Choosing for the reviewer would make the correction
  * invisible, and « the model said member_of, the interface silently wrote
  * located_at » is exactly the kind of quiet rewriting this repository refuses.
@@ -1302,12 +1373,18 @@ function TypeMismatchNotice({
   mismatch: NonNullable<ReviewItemView['typeMismatch']>
   names: Record<string, string>
   payload: unknown
-  chosen: string | null
-  onChoose: (key: string) => void
+  chosen: Rewrite | null
+  onChoose: (chosen: Rewrite | null) => void
 }) {
   const record = (payload ?? {}) as Record<string, unknown>
   const nameOf = (id: unknown) =>
     typeof id === 'string' ? (names[id] ?? id) : 'cette entité'
+
+  const subjectName = nameOf(record.subject)
+  const objectName =
+    record.object === null || record.object === undefined
+      ? String(record.object_value ?? 'cette valeur')
+      : nameOf(record.object)
 
   const culprit = !mismatch.objectAccepted
     ? {
@@ -1337,33 +1414,51 @@ function TypeMismatchNotice({
         l&apos;écriture et le lien manquera dans le graphe.
       </p>
 
-      {mismatch.alternatives.length > 0 ? (
+      {mismatch.alternatives.length + mismatch.reversedAlternatives.length > 0 ? (
         <label className="mt-2 block">
           <span className="font-display text-xs uppercase">
             Écrire plutôt
           </span>
           <select
-            value={chosen ?? ''}
-            onChange={(event) => onChoose(event.target.value)}
+            value={chosen === null ? '' : encodeRewrite(chosen)}
+            onChange={(event) => onChoose(decodeRewrite(event.target.value))}
             className="mt-1 w-full border-[3px] border-ink bg-surface-raised px-2 py-1 text-base text-primary"
           >
             <option value="">garder « {predicateLabel(mismatch.predicate)} » (sera refusée)</option>
-            {mismatch.alternatives.map((alternative) => (
-              <option key={alternative.key} value={alternative.key}>
-                {alternative.labelFr} ({alternative.key})
-              </option>
-            ))}
+            {mismatch.alternatives.length > 0 && (
+              <optgroup label="Dans ce sens">
+                {mismatch.alternatives.map((alternative) => (
+                  <option key={alternative.key} value={alternative.key}>
+                    {subjectName} {alternative.labelFr} {objectName}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {mismatch.reversedAlternatives.length > 0 && (
+              <optgroup label="En inversant les deux bouts">
+                {mismatch.reversedAlternatives.map((alternative) => (
+                  <option
+                    key={`${REVERSED}${alternative.key}`}
+                    value={`${REVERSED}${alternative.key}`}
+                  >
+                    {objectName} {alternative.labelFr} {subjectName}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </label>
       ) : (
         <p className="mt-1 text-sm">
-          Aucun prédicat de l&apos;ontologie n&apos;accepte ces deux types. Il
-          n&apos;y a rien à corriger ici : rejetez.
+          Aucun prédicat de l&apos;ontologie n&apos;accepte ces deux types, dans
+          un sens comme dans l&apos;autre. Il n&apos;y a rien à corriger ici :
+          rejetez.
         </p>
       )}
 
       {chosen && (
         <p className="mt-1.5 text-sm">
+          {chosen.swap && 'Les deux bouts changent de place. '}
           Enregistrée comme votre correction : la relation sera marquée validée
           par vous plutôt que proposée par le modèle.
         </p>
@@ -1631,7 +1726,7 @@ function ProposalBody({
   nodeTypes,
   rename,
   onRename,
-  chosenPredicate,
+  rewrite,
   renamedLabels,
 }: {
   category: string
@@ -1641,7 +1736,7 @@ function ProposalBody({
   nodeTypes: Record<string, string>
   rename: string | null
   onRename: (label: string) => void
-  chosenPredicate: string | null
+  rewrite: Rewrite | null
   renamedLabels: RenamePair[]
 }) {
   const record = (payload ?? {}) as Record<string, unknown>
@@ -1729,18 +1824,30 @@ function ProposalBody({
       return applyRenames(known, renamedLabels)
     }
 
-    const subject = String(record.subject ?? '')
-    const object = record.object === null || record.object === undefined
+    const proposedSubject = String(record.subject ?? '')
+    const proposedObject = record.object === null || record.object === undefined
       ? null
       : String(record.object)
 
-    // Read under the predicate you chose, for the same reason an event is read
-    // under the names you settled: this is the version that will be stored.
+    /*
+     * Read under the shape you chose, for the same reason an event is read
+     * under the names you settled: this is the version that will be stored.
+     *
+     * Including which end is which. A repair that turns the relation round
+     * changes the claim — « Wapol dirige les Toubibs 20 » is not « les Toubibs
+     * 20 dirigent Wapol » — and a card still showing the proposed order under
+     * the chosen verb would show a sentence nobody is about to write.
+     */
     const written = String(record.predicate ?? '')
-    const shown = chosenPredicate ?? written
+    const shown = rewrite?.predicate ?? written
+    const swapped = rewrite?.swap === true && proposedObject !== null
+
+    const subject =
+      swapped && proposedObject !== null ? proposedObject : proposedSubject
+    const object = swapped ? proposedSubject : proposedObject
 
     const predicateClass = `text-sm ${
-      shown !== written ? 'text-[var(--epi-validated)]' : 'text-accent'
+      shown !== written || swapped ? 'text-[var(--epi-validated)]' : 'text-accent'
     }`
 
     /*
@@ -1766,14 +1873,14 @@ function ProposalBody({
           <div className="space-y-2 border-l-2 border-line-strong pl-3">
             <EntityEndBlock
               id={subject}
-              name={end(record.subject)}
+              name={end(subject)}
               nodeType={nodeTypes[subject]}
             />
             <p className={predicateClass}>{predicateLabel(shown)}</p>
             {object !== null ? (
               <EntityEndBlock
                 id={object}
-                name={end(record.object)}
+                name={end(object)}
                 nodeType={nodeTypes[object]}
               />
             ) : (
@@ -1784,10 +1891,10 @@ function ProposalBody({
           </div>
         ) : (
           <p className="text-primary">
-            <EntityEnd id={subject} name={end(record.subject)} />{' '}
+            <EntityEnd id={subject} name={end(subject)} />{' '}
             <span className={predicateClass}>{predicateLabel(shown)}</span>{' '}
             {object !== null ? (
-              <EntityEnd id={object} name={end(record.object)} />
+              <EntityEnd id={object} name={end(object)} />
             ) : (
               <span className="font-medium">{String(record.object_value ?? '')}</span>
             )}
