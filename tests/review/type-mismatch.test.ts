@@ -29,6 +29,15 @@ import {
  * pin: that the check agrees with the trigger, that the queue carries it, that
  * choosing an alternative really writes that predicate, and that a bulk pass
  * never queues one up.
+ *
+ * And the case where forwards has no answer at all. « Les Toubibs 20
+ * appartiennent à Wapol » is a group filed under a person: `member_of` is for
+ * crews, and every predicate that does accept a group and a character says
+ * something else — allié, ennemi, parle à. The reviewer was left choosing
+ * between writing something false and rejecting something the chapter states in
+ * as many words. Turned round it is ordinary — « Wapol dirige les Toubibs 20 »
+ * — so the same two ends are offered the other way, and choosing one swaps
+ * them.
  */
 
 const SUMMARY = [
@@ -115,6 +124,40 @@ async function proposeTheVillage(predicate = 'member_of') {
   return { character, place, relation }
 }
 
+/**
+ * The Isshi-20 and the king who kept them: a group filed under a person.
+ *
+ * Nothing in the ontology joins a group to a character in that order without
+ * changing what is being said, which is what makes this the case the forward
+ * list cannot repair.
+ */
+async function proposeTheDoctors() {
+  const doctors = await propose('entity', {
+    local_id: 'e1',
+    node_type: 'group',
+    label: 'Toubibs 20',
+    label_kind: 'true_name',
+    source_term: null,
+    naming_confident: true,
+  })
+  const king = await propose('entity', {
+    local_id: 'e2',
+    node_type: 'character',
+    label: 'Wapol',
+    label_kind: 'true_name',
+    source_term: null,
+    naming_confident: true,
+  })
+  const relation = await propose('assertion', {
+    subject: 'e1',
+    predicate: 'member_of',
+    object: 'e2',
+    object_value: null,
+    epistemic_status: 'inferred_strong',
+  })
+  return { doctors, king, relation }
+}
+
 describe('the ontology check itself', () => {
   it('refuses what the database refuses, and says which end is at fault', () => {
     const mismatch = checkTypes('member_of', 'character', 'place')
@@ -150,6 +193,28 @@ describe('the ontology check itself', () => {
     // reviewer wants is near the top rather than buried under `confirms`.
     expect(keys.indexOf('located_at')).toBeLessThan(keys.indexOf('same_as'))
   })
+
+  it('offers the relation the other way round when this way round has no honest answer', () => {
+    const mismatch = checkTypes('member_of', 'group', 'character')!
+
+    expect(mismatch).not.toBeNull()
+    // Forwards, everything on offer says something else: a group is not allied
+    // to its master, and « appartient à » has no counterpart in this direction.
+    expect(mismatch.alternatives.map((a) => a.key)).not.toContain('leads')
+    // Backwards it is a sentence the graph has always been able to hold.
+    expect(mismatch.reversedAlternatives.map((a) => a.key)).toContain('leads')
+  })
+
+  it('has nothing to reverse when the far end is a literal', () => {
+    // « le Village de Fuchsia se rend à "la base de la Marine" » — the subject
+    // is the end at fault here, and there is no node on the other side to make
+    // a subject of. A real mismatch with an empty reversal, not no mismatch.
+    const mismatch = checkTypes('travels_to', 'place', null)
+
+    expect(mismatch).not.toBeNull()
+    expect(mismatch!.subjectAccepted).toBe(false)
+    expect(mismatch!.reversedAlternatives).toEqual([])
+  })
 })
 
 describe('the review queue', () => {
@@ -165,6 +230,17 @@ describe('the review queue', () => {
     expect(relation.typeMismatch!.objectType).toBe('place')
     expect(relation.typeMismatch!.alternatives.map((a) => a.key)).toContain(
       'located_at',
+    )
+  })
+
+  it('carries the reversed reading to the card', async () => {
+    await proposeTheDoctors()
+
+    const queue = await getReviewQueue(world.userId, runId)
+    const relation = queue!.items.find((item) => item.category === 'assertion')!
+
+    expect(relation.typeMismatch!.reversedAlternatives.map((a) => a.key)).toContain(
+      'leads',
     )
   })
 
@@ -285,6 +361,46 @@ describe('publishing', () => {
     expect(stored[0]!.predicate).toBe('located_at')
     // The model found the fact; the reviewer chose the shape. The row says so.
     expect(stored[0]!.proposed_by).toBe('user')
+  })
+
+  it('writes the relation the other way round when the reviewer turned it round', async () => {
+    const items = await proposeTheDoctors()
+    const payload = await payloadOf(items.relation)
+
+    const result = await publishDecisions(world.userId, runId, [
+      { reviewItemId: items.doctors, decision: 'accept' },
+      { reviewItemId: items.king, decision: 'accept' },
+      {
+        reviewItemId: items.relation,
+        decision: 'correct',
+        // What the card sends when « Wapol dirige Toubibs 20 » is chosen: the
+        // ends change places and the predicate with them.
+        correctedPayload: {
+          ...payload,
+          predicate: 'leads',
+          subject: payload.object,
+          object: payload.subject,
+        },
+      },
+    ])
+
+    expect(result.failures).toEqual([])
+    expect(result.assertionsCreated).toBe(1)
+
+    const stored = await raw<Array<{ predicate: string; subject: string; object: string }>>`
+      SELECT a.predicate,
+             s.label AS subject,
+             o.label AS object
+        FROM assertions a
+        JOIN entity_labels s ON s.entity_id = a.subject_entity_id
+        JOIN entity_labels o ON o.entity_id = a.object_entity_id
+       WHERE a.user_id = ${world.userId}`
+
+    expect(stored).toHaveLength(1)
+    expect(stored[0]!.predicate).toBe('leads')
+    // The king commands the doctors, not the other way about.
+    expect(stored[0]!.subject).toBe('Wapol')
+    expect(stored[0]!.object).toBe('Toubibs 20')
   })
 })
 
