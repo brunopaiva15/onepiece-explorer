@@ -4,6 +4,7 @@ import {
   firstWrittenChapters,
   parseRelecture,
   relectureFinding,
+  scenesMatching,
   type AuditEntity,
   type AuditSnapshot,
 } from '@/domains/review/audit.ts'
@@ -600,6 +601,63 @@ describe('ce qu’une relecture a le droit d’écrire', () => {
 
     expect(finding).not.toBeNull()
     expect(finding?.fix).toBeNull()
+  })
+})
+
+/**
+ * L'incident du chapitre 41, en test.
+ *
+ * `repair:chronologie` a tourné une fois en production avec « usopp » et
+ * « capitaine » pour désigner *la* phrase qui fait d'Usopp le capitaine. Les
+ * quatre scènes ci-dessous sont celles que la bibliothèque portait vraiment ; la
+ * deuxième dit exactement ce que le chapitre dit, et elle a été remplacée comme
+ * les autres.
+ *
+ * Ce jeu de données est donc le témoin de l'incident : tant qu'il passe, une
+ * correction ne peut plus s'appliquer à une scène qu'elle n'avait pas visée.
+ */
+describe('les scènes qu’une correction désigne', () => {
+  const CHAPITRE_41 = [
+    {
+      summary:
+        'Piment, Oignon et Carotte regardent partir le navire emmenant leur ancien capitaine Usopp, heureux qu\'il soit désormais entouré de compagnons forts.',
+    },
+    {
+      summary:
+        'Usopp arrive en roulant vers le navire. Luffy et Zoro l’arrêtent et l’invitent à embarquer avec eux. Usopp suppose qu’il deviendra le capitaine, mais Luffy lui rappelle qu’il occupe déjà ce rôle.',
+    },
+    {
+      summary:
+        'Usopp arrive en roulant vers le navire, Luffy et Zoro l\'arrêtent avec leurs pieds et l\'invitent à devenir capitaine à bord.',
+    },
+    {
+      summary:
+        'Usopp quitte enfin sa maison en la brisant, rejoint le Vogue Merry et devient officiellement capitaine de l\'équipage de Luffy, sous le regard de ses anciens compagnons et de Kaya.',
+    },
+  ]
+
+  it('en désigne quatre sur des fragments trop larges — ce qui doit interdire d’écrire', () => {
+    expect(scenesMatching(CHAPITRE_41, ['usopp', 'capitaine'])).toHaveLength(4)
+  })
+
+  it('n’en désigne qu’une sur le fragment de la phrase fautive', () => {
+    const found = scenesMatching(CHAPITRE_41, ['devient officiellement capitaine'])
+
+    expect(found).toHaveLength(1)
+    expect(found[0]?.summary).toContain('sous le regard de ses anciens compagnons')
+  })
+
+  it('replie les accents et les apostrophes des deux côtés', () => {
+    const found = scenesMatching(
+      [{ summary: 'Bell-mère paie Arlong mais il l’exécute néanmoins devant elles.' }],
+      ['execute neanmoins'],
+    )
+
+    expect(found).toHaveLength(1)
+  })
+
+  it('ne désigne rien plutôt que tout quand la liste de fragments est vide', () => {
+    expect(scenesMatching(CHAPITRE_41, [])).toEqual([])
   })
 })
 

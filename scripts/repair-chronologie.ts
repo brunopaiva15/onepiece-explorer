@@ -3,6 +3,7 @@
  *
  *   pnpm repair:chronologie -- --dry-run    # dit tout, n'écrit rien
  *   pnpm repair:chronologie                 # applique
+ *   pnpm repair:chronologie -- --annuler    # remet les phrases comme elles étaient
  *   TEST_DB=1 pnpm repair:chronologie       # base de test
  *
  * Une relecture complète a relevé une quinzaine de défauts nommés — Usopp promu
@@ -53,8 +54,11 @@ import '../src/lib/load-env.ts'
 import postgres from 'postgres'
 import { sameBeat } from '../src/domains/knowledge/beats.ts'
 import { normalizeText } from '../src/domains/knowledge/normalize.ts'
+import { scenesMatching } from '../src/domains/review/audit.ts'
 
 const dryRun = process.argv.includes('--dry-run')
+/** Remettre les phrases comme elles étaient. Voir `undoRewrites`. */
+const undo = process.argv.includes('--annuler')
 const testDb = process.env.TEST_DB === '1'
 const url = testDb
   ? (process.env.TEST_DATABASE_URL ??
@@ -82,6 +86,21 @@ const NOTE = 'repair:chronologie — relecture des chapitres 1 à 145'
  * normalisé — accents et ponctuation repliés —, donc « Bell-mère » attrape aussi
  * « Bell-mere ».
  *
+ * **Les fragments doivent désigner une scène et une seule.** C'est la leçon de
+ * la première exécution, et elle a coûté cher : « usopp » et « capitaine »
+ * décrivaient quatre scènes du chapitre 41 — dont « Usopp suppose qu'il
+ * deviendra le capitaine, mais Luffy lui rappelle qu'il occupe déjà ce rôle »,
+ * qui est exactement ce que le chapitre dit — et les quatre ont été remplacées
+ * par la même phrase. Un chapitre y a perdu trois scènes justes et gagné trois
+ * doublons. Le script refuse maintenant d'écrire quand le compte n'est pas un,
+ * et imprime les candidates pour qu'on affine.
+ *
+ * D'où la forme des remplacements : ils corrigent **ce qui est faux et rien
+ * d'autre**. La phrase du 94 se trompe sur le propriétaire du chapeau et a
+ * raison sur Nezumi ; celle du 103 se trompe sur l'équipage de Crocus et a
+ * raison sur les cinquante ans d'attente. Réécrire toute la phrase autour du
+ * défaut, c'est effacer ce que le chapitre disait de juste.
+ *
  * `pourquoi` est ce que la relecture a constaté, et c'est ce qui rend chaque
  * ligne discutable : si la raison est fausse, la correction l'est.
  */
@@ -93,15 +112,16 @@ const PHRASES: ReadonlyArray<{
 }> = [
   {
     chapitre: 41,
-    contient: ['usopp', 'capitaine'],
+    contient: ['devient officiellement capitaine'],
     phrase:
-      'Usopp quitte enfin sa maison, rejoint le Vogue Merry et devient officiellement ' +
-      'membre de l’équipage de Luffy.',
+      'Usopp quitte enfin sa maison en la brisant, rejoint le Vogue Merry et devient ' +
+      'officiellement membre de l’équipage de Luffy, sous le regard de ses anciens ' +
+      'compagnons et de Kaya.',
     pourquoi: 'Usopp ne devient pas capitaine : Luffy l’est et le reste.',
   },
   {
     chapitre: 76,
-    contient: ['nojiko', 'equipage'],
+    contient: ['Nojiko rejoint l’équipage'],
     phrase:
       'Nojiko rejoint Luffy et ses compagnons et accepte de leur raconter le passé de ' +
       'Nami, à condition qu’ils quittent ensuite l’île.',
@@ -109,45 +129,47 @@ const PHRASES: ReadonlyArray<{
   },
   {
     chapitre: 78,
-    contient: ['bell', 'arlong'],
+    contient: ['l’exécute néanmoins'],
     phrase:
       'Bell-mère utilise ses 100 000 berrys pour payer le tribut de Nami et Nojiko, ' +
       'refusant de nier qu’elles sont ses filles. Comme elle ne peut plus payer son ' +
       'propre tribut, Arlong l’exécute devant elles afin de servir d’exemple au village.',
     pourquoi:
-      'La raison de sa mort raccourcie devient fausse : elle paie pour ses filles et ' +
-      'non pour elle.',
+      '« Elle paie et Arlong l’exécute néanmoins » laisse croire à un caprice : elle ' +
+      'meurt de n’avoir pas payé pour elle-même.',
   },
   {
     chapitre: 94,
-    contient: ['nami', 'chapeau'],
+    contient: ['récupère son chapeau'],
     phrase:
-      'Nami rend son chapeau de paille à Luffy, frappe Nezumi et exige qu’il lui rende ' +
-      'l’argent volé.',
+      'Nezumi tente de s’approprier les richesses d’Arlong Park mais est battu par ' +
+      'l’équipage du Chapeau de paille ; Nami rend son chapeau de paille à Luffy et ' +
+      'exige que Nezumi rende l’argent volé au village.',
     pourquoi: 'Le chapeau est celui de Luffy : « récupère son chapeau » inverse à qui il est.',
   },
   {
     chapitre: 103,
-    contient: ['crocus', 'equipage'],
+    contient: ['appartenait à un équipage'],
     phrase:
       'Crocus raconte que Laboon accompagnait autrefois un équipage de pirates. Avant ' +
-      'd’entrer sur Grand Line, les pirates ont confié la jeune baleine à Crocus en lui ' +
-      'promettant de revenir la chercher après leur voyage.',
+      'd’entrer sur Grand Line, ils lui ont confié la jeune baleine en promettant de ' +
+      'revenir la chercher — un retour qui n’est jamais venu depuis cinquante ans.',
     pourquoi: 'Crocus n’était pas de cet équipage : c’est Laboon qui l’accompagnait.',
   },
   {
     chapitre: 110,
-    contient: ['mr 5', 'traitre'],
+    contient: ['révèlent leurs véritables identités'],
     phrase:
-      'Mr 5 et Miss Valentine révèlent que Mr 8 et Miss Wednesday sont les deux ' +
-      'infiltrés recherchés par Baroque Works, puis tentent de les éliminer.',
+      'Les agents de Baroque Works Mr 9, Mr 13 et Miss Friday interceptent Mr 8 et Miss ' +
+      'Wednesday en fuite, puis Mr 5 et Miss Valentine révèlent que ces deux-là sont les ' +
+      'infiltrés recherchés par Baroque Works et tentent de les éliminer.',
     pourquoi:
       'Les traîtres sont Mr 8 et Miss Wednesday ; Mr 5 et Miss Valentine sont envoyés ' +
       'contre eux.',
   },
   {
     chapitre: 118,
-    contient: ['dorry', 'fruit'],
+    contient: ['sans se faire connaître'],
     phrase:
       'Croyant à une trahison, Dorry attaque Luffy. Luffy utilise ses pouvoirs pour le ' +
       'mettre hors de combat, et Dorry comprend trop tard que le jeune pirate est un ' +
@@ -340,37 +362,135 @@ async function main(): Promise<void> {
 
   if (dryRun) console.log('— dry-run : rien ne sera écrit —\n')
 
-  console.log('PHRASES QUI DISENT AUTRE CHOSE QUE LE CHAPITRE')
-  for (const entry of PHRASES) await rewriteSummary(work, entry, bump)
+  if (undo) {
+    console.log('ANNULER LES PHRASES RÉÉCRITES PAR CE SCRIPT')
+    await undoRewrites(work, bump)
+    console.log(
+      '\n' +
+        (dryRun ? '[dry-run] Rien écrit. ' : '') +
+        summarise(done) +
+        '\nLes autres corrections — mot, identités, doublons — n’ont pas été touchées.',
+    )
+    return
+  }
 
-  console.log('\nUN MOT POUR UN AUTRE')
-  for (const entry of MOTS) await renameEverywhere(work, entry, bump)
+  if (await clobbered(work)) return
 
-  console.log('\nIDENTITÉS À RETIRER')
-  for (const entry of IDENTITES_FAUSSES) await retractIdentity(work, entry, bump)
+  /*
+   * Une correction qui échoue ne coûte que la sienne.
+   *
+   * La première exécution est morte à la quatrième famille sur un déclencheur de
+   * la base, en emportant les six familles suivantes — le chapitre 143 n'a
+   * jamais eu sa scène manquante, et personne ne l'a su avant de lire la trace.
+   * Un script qui applique une liste doit se perdre ligne par ligne, comme le
+   * balayage d'identités se perd figure par figure ; le code de sortie reste 1
+   * pour que le workflow le signale.
+   */
+  await run('PHRASES QUI DISENT AUTRE CHOSE QUE LE CHAPITRE', PHRASES, (entry) =>
+    rewriteSummary(work, entry, bump),
+  )
+  await run('UN MOT POUR UN AUTRE', MOTS, (entry) => renameEverywhere(work, entry, bump))
+  await run('IDENTITÉS À RETIRER', IDENTITES_FAUSSES, (entry) =>
+    retractIdentity(work, entry, bump),
+  )
+  await run('IDENTITÉS À REDATER', IDENTITES_REDATEES, (entry) =>
+    redateIdentity(work, entry, bump),
+  )
+  await run('NOMS QUI DOIVENT PASSER DEVANT', NOMS_PREFERES, (entry) =>
+    preferName(work, entry, bump),
+  )
+  await run('NOMS DATÉS TROP TÔT', NOMS_REDATES, (entry) => redateName(work, entry, bump))
+  await run('ENTRÉES EN SCÈNE TROP TARDIVES', ENTREES_TARDIVES, (entry) =>
+    moveEntrance(work, entry, bump),
+  )
+  await run('CE QUI MANQUE', SCENES_MANQUANTES, (entry) => addScene(work, entry, bump))
+  // Un seul « élément », parce que le repli est une passe et non une liste : ce
+  // qu'il traite, ce sont les chapitres qu'il lit lui-même.
+  await run('SCÈNES RACONTÉES DEUX FOIS', [null], () => foldDuplicates(work, bump))
+  await run('DEUX GRAPHIES POUR UNE CHOSE (constat, jamais corrigé ici)', GRAPHIES, (pair) =>
+    reportVariants(work, pair),
+  )
 
-  console.log('\nIDENTITÉS À REDATER')
-  for (const entry of IDENTITES_REDATEES) await redateIdentity(work, entry, bump)
+  console.log(
+    '\n' +
+      (dryRun ? '[dry-run] Rien écrit. ' : '') +
+      summarise(done) +
+      (failures === 0 ? '' : ` · ${failures} correction(s) en échec`),
+  )
+  if (failures > 0) process.exitCode = 1
+}
 
-  console.log('\nNOMS QUI DOIVENT PASSER DEVANT')
-  for (const entry of NOMS_PREFERES) await preferName(work, entry, bump)
+/**
+ * Refuser de repasser sur des scènes que ce script a déjà écrasées.
+ *
+ * L'ordre compte plus qu'il n'en a l'air. Tant que quatre scènes du chapitre 41
+ * portent la même phrase, le repli des doublons plus bas ferait exactement ce
+ * qu'on lui demande — en rejeter trois — et les trois scènes qu'il rejetterait
+ * sont des scènes *justes*, dont seul le texte a été détruit. La réparation
+ * effacerait alors définitivement ce que l'annulation savait encore rendre.
+ *
+ * La détection est exacte plutôt que prudente : deux scènes d'un même chapitre
+ * portant mot pour mot une phrase que le journal enregistre comme écrite par ce
+ * script. Rien d'autre ne produit cette empreinte, et elle disparaît d'elle-même
+ * une fois l'annulation passée — donc ce garde-fou ne devient jamais un bruit
+ * qu'on apprend à ignorer.
+ */
+async function clobbered(work: Work): Promise<boolean> {
+  const rows = await sql<Array<{ summary: string; n: number }>>`
+    SELECT e.summary, count(*)::int AS n
+      FROM events e
+      JOIN entities en ON en.id = e.entity_id
+     WHERE e.user_id = ${work.user_id} AND e.work_id = ${work.id}
+       AND en.review_status = 'accepted'
+       AND EXISTS (
+         SELECT 1 FROM audit_log a
+          WHERE a.user_id = ${work.user_id}
+            AND a.action = 'scene_rewritten'
+            AND a.detail->>'note' = ${NOTE}
+            AND a.detail->>'after' = e.summary)
+     GROUP BY e.summary, COALESCE(e.told_in_chapter, e.shown_in_chapter, 0)
+    HAVING count(*) > 1
+  `
 
-  console.log('\nNOMS DATÉS TROP TÔT')
-  for (const entry of NOMS_REDATES) await redateName(work, entry, bump)
+  if (rows.length === 0) return false
 
-  console.log('\nENTRÉES EN SCÈNE TROP TARDIVES')
-  for (const entry of ENTREES_TARDIVES) await moveEntrance(work, entry, bump)
+  console.log(
+    'ARRÊT : une exécution précédente a écrasé des scènes qui n’étaient pas visées.\n',
+  )
+  for (const row of rows) {
+    console.log(`  ${row.n} scènes portent « ${row.summary} »`)
+  }
+  console.log(
+    '\nCes phrases identiques sont le reste d’un bug de sélection : des fragments trop\n' +
+      'larges ont désigné plusieurs scènes d’un même chapitre. Continuer maintenant\n' +
+      'ferait rejeter ces scènes comme des doublons, ce qui rendrait la perte définitive.\n\n' +
+      '  pnpm repair:chronologie -- --annuler     puis      pnpm repair:chronologie -- --dry-run\n',
+  )
+  process.exitCode = 1
+  return true
+}
 
-  console.log('\nCE QUI MANQUE')
-  for (const entry of SCENES_MANQUANTES) await addScene(work, entry, bump)
+/** Combien de corrections se sont plantées sans arrêter les suivantes. */
+let failures = 0
+let firstFamily = true
 
-  console.log('\nSCÈNES RACONTÉES DEUX FOIS')
-  await foldDuplicates(work, bump)
-
-  console.log('\nDEUX GRAPHIES POUR UNE CHOSE (constat, jamais corrigé ici)')
-  for (const pair of GRAPHIES) await reportVariants(work, pair)
-
-  console.log('\n' + (dryRun ? '[dry-run] Rien écrit. ' : '') + summarise(done))
+/** Une famille, dont chaque ligne a le droit d'échouer toute seule. */
+async function run<T>(
+  title: string,
+  entries: readonly T[],
+  apply: (entry: T) => Promise<void>,
+): Promise<void> {
+  console.log(firstFamily ? title : `\n${title}`)
+  firstFamily = false
+  for (const entry of entries) {
+    try {
+      await apply(entry)
+    } catch (error) {
+      failures += 1
+      const reason = error instanceof Error ? error.message.split('\n')[0] : String(error)
+      console.log(`  ✗ ${reason}`)
+    }
+  }
 }
 
 /** Le premier nœud accepté portant l'une de ces graphies. */
@@ -463,47 +583,155 @@ async function scenesOf(work: Work, chapter: number): Promise<SceneRow[]> {
   `
 }
 
+/**
+ * Une phrase corrigée, et une seule à la fois.
+ *
+ * Le refus au pluriel est la garde principale de ce fichier. Une correction
+ * écrite d'avance sait ce qu'elle veut dire et ne sait pas contre quelles
+ * phrases elle va tomber : si ses fragments en désignent deux, elle n'a aucun
+ * moyen de savoir laquelle est la fautive, et écrire les deux fabrique un
+ * doublon en effaçant une scène juste. C'est arrivé — quatre scènes du chapitre
+ * 41 remplacées par la même ligne — et le compte rendu ci-dessous est ce qui
+ * permet d'affiner les fragments plutôt que de recommencer.
+ */
 async function rewriteSummary(
   work: Work,
   entry: (typeof PHRASES)[number],
   bump: (key: string, by?: number) => number,
 ): Promise<void> {
   const scenes = await scenesOf(work, entry.chapitre)
-  const matched = scenes.filter((scene) => {
-    const summary = normalizeText(scene.summary)
-    return entry.contient.every((fragment) => summary.includes(normalizeText(fragment)))
-  })
+  const matched = scenesMatching(scenes, entry.contient)
+
+  const already = scenes.some(
+    (scene) => normalizeText(scene.summary) === normalizeText(entry.phrase),
+  )
 
   if (matched.length === 0) {
     console.log(
-      `  ! ch.${entry.chapitre} — aucune scène contenant ${entry.contient
-        .map((fragment) => `« ${fragment} »`)
-        .join(' et ')}`,
+      already
+        ? `  = ch.${entry.chapitre} — déjà corrigée`
+        : `  ! ch.${entry.chapitre} — aucune scène contenant ${entry.contient
+            .map((fragment) => `« ${fragment} »`)
+            .join(' et ')}`,
     )
     return
   }
 
-  for (const scene of matched) {
-    if (normalizeText(scene.summary) === normalizeText(entry.phrase)) {
-      console.log(`  = ch.${entry.chapitre} — déjà corrigée`)
+  if (matched.length > 1) {
+    console.log(
+      `  ! ch.${entry.chapitre} — ${matched.length} scènes correspondent : rien écrit. ` +
+        `Affinez les fragments pour n’en désigner qu’une.`,
+    )
+    for (const scene of matched) console.log(`      · « ${scene.summary} »`)
+    return
+  }
+
+  const scene = matched[0]!
+  console.log(`  → ch.${entry.chapitre} — ${entry.pourquoi}`)
+  console.log(`      avant : « ${scene.summary} »`)
+  console.log(`      après : « ${entry.phrase} »`)
+  if (dryRun) return
+
+  await writeSummary(work, scene.entity_id, scene.summary, entry.phrase)
+  await log(work, 'scene_rewritten', 'entity', scene.entity_id, {
+    chapter: entry.chapitre,
+    before: scene.summary,
+    after: entry.phrase,
+  })
+  bump('phrases')
+}
+
+/**
+ * La phrase d'une scène, et le nom qui la recopie.
+ *
+ * Une scène n'a pas de titre : la publication écrit son libellé à partir de la
+ * phrase, coupé à deux cents caractères. Corriger la phrase sans lui laisse la
+ * fiche, la recherche et le graphe sous l'ancienne version — le fil, lui,
+ * afficherait la nouvelle, ce qui est la pire des deux : deux textes pour une
+ * scène, et rien pour dire lequel est à jour.
+ *
+ * Le libellé n'est réécrit que s'il recopiait vraiment l'ancienne phrase. Un nom
+ * choisi à la main est un nom choisi à la main.
+ */
+async function writeSummary(
+  work: Work,
+  entityId: string,
+  before: string,
+  after: string,
+): Promise<void> {
+  await sql`
+    UPDATE events SET summary = ${after}
+     WHERE entity_id = ${entityId} AND user_id = ${work.user_id}
+  `
+  await sql`
+    UPDATE entity_labels
+       SET label = ${after.slice(0, 200)},
+           normalized_label = ${normalizeText(after.slice(0, 200))}
+     WHERE entity_id = ${entityId} AND user_id = ${work.user_id}
+       AND normalized_label = ${normalizeText(before.slice(0, 200))}
+  `
+}
+
+/**
+ * Remettre les phrases comme elles étaient avant ce script.
+ *
+ *   pnpm repair:chronologie -- --annuler
+ *
+ * Existe parce que la première exécution a écrasé des scènes justes : des
+ * fragments trop larges ont désigné quatre phrases là où une seule était fautive.
+ * La garde est corrigée au-dessus ; ceci répare ce qu'elle n'a pas empêché.
+ *
+ * Ce qui rend l'annulation possible, c'est que chaque réécriture a écrit son
+ * « avant » dans le journal. Le plus ancien par scène est le texte d'origine —
+ * donc annuler deux fois ne fait rien de plus, et annuler après une seconde
+ * exécution revient bien au point de départ et non à l'étape intermédiaire.
+ *
+ * N'annule que les phrases. Le mot corrigé — « Hobbit » devenu « Orbit » —,
+ * l'identité retirée et le reste sont justes et restent : ce qui a mal tourné
+ * est cette famille-là, et une annulation qui défait aussi le bon travail oblige
+ * à tout refaire pour rien.
+ */
+async function undoRewrites(work: Work, bump: (key: string, by?: number) => number): Promise<void> {
+  const entries = await sql<Array<{ subject_id: string; before: string; after: string }>>`
+    SELECT DISTINCT ON (subject_id)
+           subject_id, detail->>'before' AS before, detail->>'after' AS after
+      FROM audit_log
+     WHERE user_id = ${work.user_id}
+       AND action = 'scene_rewritten'
+       AND detail->>'note' = ${NOTE}
+       AND detail->>'before' IS NOT NULL
+     ORDER BY subject_id, created_at ASC
+  `
+
+  if (entries.length === 0) {
+    console.log('  Aucune réécriture de ce script dans le journal : rien à annuler.')
+    return
+  }
+
+  for (const entry of entries) {
+    const [current] = await sql<Array<{ summary: string | null }>>`
+      SELECT summary FROM events
+       WHERE entity_id = ${entry.subject_id} AND user_id = ${work.user_id}
+    `
+    if (!current) {
+      console.log(`  ! scène ${entry.subject_id} disparue : laissée`)
+      continue
+    }
+    if (normalizeText(current.summary ?? '') === normalizeText(entry.before)) {
+      console.log(`  = déjà revenue à « ${entry.before} »`)
       continue
     }
 
-    console.log(`  → ch.${entry.chapitre} — ${entry.pourquoi}`)
-    console.log(`      avant : « ${scene.summary} »`)
-    console.log(`      après : « ${entry.phrase} »`)
+    console.log(`  ↩ « ${current.summary} »`)
+    console.log(`      redevient « ${entry.before} »`)
     if (dryRun) continue
 
-    await sql`
-      UPDATE events SET summary = ${entry.phrase}
-       WHERE entity_id = ${scene.entity_id} AND user_id = ${work.user_id}
-    `
-    await log(work, 'scene_rewritten', 'entity', scene.entity_id, {
-      chapter: entry.chapitre,
-      before: scene.summary,
-      after: entry.phrase,
+    await writeSummary(work, entry.subject_id, current.summary ?? '', entry.before)
+    await log(work, 'scene_restored', 'entity', entry.subject_id, {
+      restored: entry.before,
+      undone: current.summary,
     })
-    bump('phrases')
+    bump('phrases rendues')
   }
 }
 
@@ -648,21 +876,62 @@ async function redateIdentity(
   if (dryRun) return
 
   /*
-   * Les deux colonnes ensemble.
+   * Une ligne de plus, jamais une date corrigée.
    *
-   * `knowledge_from_chapter` est ce que la frontière lit, `observed_in_chapter`
-   * est le chapitre qui porte la preuve : les laisser diverger ferait dire à la
-   * fiche que la révélation vient d'un chapitre qui ne la contient pas.
+   * Les assertions sont en ajout seul (ADR 0002) et un déclencheur le fait
+   * respecter : seuls `review_status` et `superseded_by` changent après
+   * insertion. Ce script a d'abord tenté l'UPDATE et s'est fait refuser en
+   * production, à mi-parcours — le déclencheur a fait exactement son travail.
+   *
+   * La forme correcte est celle de `reviseAssertion` : la version corrigée est
+   * écrite, et l'ancienne ligne est marquée « superseded » en pointant vers la
+   * neuve. Le graphe cesse de lire l'ancienne sans que le dossier perde ce qui
+   * avait été affirmé.
+   *
+   * La preuve, elle, n'est **pas** recopiée, et c'est la seule différence avec
+   * `reviseAssertion`. Là-bas la phrase lue reste la bonne et seule la
+   * conclusion change ; ici c'est le contraire — la citation vient du chapitre
+   * 97, et l'attacher à une révélation datée du 98 ferait apparaître une phrase
+   * du 97 sous le chapitre 98 sur le fil. La ligne neuve est donc écrite comme
+   * la parole du lecteur, sans citation, exactement comme le fait `repair:noms`
+   * quand il rapproche deux nœuds ; l'ancienne garde sa preuve pour le dossier.
+   *
+   * Les deux colonnes de date ensemble : `knowledge_from_chapter` est ce que la
+   * frontière lit, `observed_in_chapter` est le chapitre qui porte la preuve, et
+   * les laisser diverger ferait dire à la fiche que la révélation vient d'un
+   * chapitre qui ne la contient pas.
    */
+  const [fresh] = await sql<Array<{ id: string }>>`
+    INSERT INTO assertions (
+      work_id, user_id, subject_entity_id, predicate, object_entity_id,
+      knowledge_from_chapter, knowledge_until_chapter,
+      story_valid_from, story_valid_until, observed_in_chapter,
+      confidence, epistemic_status, review_status, proposed_by, locked,
+      pipeline_version, prompt_version, run_id, proposal_fingerprint
+    )
+    SELECT work_id, user_id, subject_entity_id, predicate, object_entity_id,
+           ${entry.chapitre}, knowledge_until_chapter,
+           story_valid_from, story_valid_until, ${entry.chapitre},
+           confidence, 'user_validated', 'accepted', 'user', true,
+           pipeline_version, prompt_version, run_id, proposal_fingerprint
+      FROM assertions
+     WHERE id = ${identity.id} AND user_id = ${work.user_id}
+    RETURNING id
+  `
+  if (!fresh) {
+    console.log('      ! la version redatée n’a pas pu être écrite')
+    return
+  }
+
   await sql`
     UPDATE assertions
-       SET knowledge_from_chapter = ${entry.chapitre},
-           observed_in_chapter = ${entry.chapitre}
+       SET review_status = 'superseded', superseded_by = ${fresh.id}
      WHERE id = ${identity.id} AND user_id = ${work.user_id}
   `
   await log(work, 'identity_redated', 'assertion', identity.id, {
     chapter: entry.chapitre,
     between: [left.label, right.label],
+    replacedBy: fresh.id,
   })
   bump('identités redatées')
 }

@@ -112,6 +112,20 @@ name: Réparations (production)
 # « Analyser l'histoire » button on /admin/chapitres is for: the same rules,
 # weighed against the whole library, whenever you ask — and shown before
 # anything is written.
+#
+# It is also the only script with a third mode, « annuler », and the reason is
+# an accident worth recording. Its first production run identified the sentence
+# to correct by two words — « usopp » and « capitaine » — which described four
+# scenes of chapter 41 rather than one, and all four were overwritten with the
+# same line. Three true scenes lost, three duplicates gained. The selection now
+# refuses to write unless it designates exactly one sentence, and « annuler »
+# puts back what the run before it replaced, reading the « avant » each
+# rewrite recorded in the audit log.
+#
+# Order matters after such a run: undo first, then dry-run, then apply. Folding
+# duplicates while four scenes still carry the same sentence would reject three
+# of them — which is what folding duplicates is supposed to do — and the loss
+# would stop being recoverable. The script checks for that state and stops.
 
 on:
   workflow_dispatch:
@@ -144,6 +158,11 @@ on:
         options:
           - dry-run
           - appliquer
+          # `chronologie` uniquement : remet les phrases comme elles étaient
+          # avant lui. Les autres scripts ignorent le drapeau et refont ce
+          # qu'ils font d'habitude, donc le choisir ailleurs n'annule rien —
+          # d'où la confirmation, la même que pour « appliquer ».
+          - annuler
       confirm:
         description: 'Pour « appliquer » : tapez PRODUCTION'
         required: false
@@ -165,13 +184,20 @@ jobs:
     timeout-minutes: ${{ (inputs.script == 'mysteres' || inputs.script == 'identites') && 60 || inputs.script == 'illustrations' && 45 || 15 }}
 
     steps:
-      # Only the writing mode asks for a typed answer. A dry run reads and
+      # Only the writing modes ask for a typed answer. A dry run reads and
       # prints, so making it as expensive to start as a write would teach
-      # everyone to skip straight to the write.
+      # everyone to skip straight to the write. « annuler » writes — it puts
+      # sentences back — so it is confirmed like « appliquer », and refused
+      # outright for the scripts that have nothing to undo.
       - name: Check the confirmation
         run: |
-          if [ "${{ inputs.mode }}" = "appliquer" ] && [ "${{ inputs.confirm }}" != "PRODUCTION" ]; then
-            echo "Mode « appliquer » : relancez en tapant PRODUCTION dans le champ de confirmation."
+          if [ "${{ inputs.mode }}" != "dry-run" ] && [ "${{ inputs.confirm }}" != "PRODUCTION" ]; then
+            echo "Mode « ${{ inputs.mode }} » : relancez en tapant PRODUCTION dans le champ de confirmation."
+            exit 1
+          fi
+          if [ "${{ inputs.mode }}" = "annuler" ] && [ "${{ inputs.script }}" != "chronologie" ]; then
+            echo "« annuler » n'existe que pour « chronologie » ; les autres scripts ignoreraient"
+            echo "le drapeau et referaient ce qu'ils font d'habitude. Arrêt avant d'écrire."
             exit 1
           fi
 
@@ -259,6 +285,9 @@ jobs:
           args=""
           if [ "${{ inputs.mode }}" = "dry-run" ]; then
             args="--dry-run"
+          fi
+          if [ "${{ inputs.mode }}" = "annuler" ]; then
+            args="--annuler"
           fi
           limit="$LIMIT"
           if [ -n "$limit" ]; then

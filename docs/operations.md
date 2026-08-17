@@ -466,6 +466,20 @@ sur les chapitres 1 à 145, appliquée d'un coup. Lancez-le d'abord si votre
 bibliothèque est celle-là — il règle les quinze connus pour rien, et le balayage
 n'a plus qu'à chercher le reste.
 
+Il a un troisième mode, `--annuler` (ou `annuler` dans le workflow), et il vient
+d'un accident qui mérite d'être connu. Sa première exécution désignait la phrase
+à corriger par deux mots — « usopp » et « capitaine » — qui décrivaient quatre
+scènes du chapitre 41 au lieu d'une : les quatre ont reçu la même ligne, et le
+chapitre a perdu trois scènes justes en gagnant trois doublons. La sélection
+refuse maintenant d'écrire tant qu'elle ne désigne pas exactement une phrase, et
+`--annuler` remet les phrases telles qu'elles étaient, en lisant le « avant » que
+chaque réécriture a laissé dans le journal.
+
+L'ordre compte après une exécution de ce genre : **annuler, puis `--dry-run`,
+puis appliquer**. Replier les doublons pendant que quatre scènes portent la même
+phrase les rejetterait — c'est précisément ce que replier veut dire — et la perte
+cesserait d'être récupérable. Le script détecte cet état et s'arrête avant.
+
 ---
 
 ## Sécurité
