@@ -2,6 +2,7 @@ import 'server-only'
 import { after } from 'next/server'
 import { consume } from '@/domains/observability/rate-limit.ts'
 import type { ProviderChoice } from '@/domains/ai/index.ts'
+import { openChainWindow } from './chain.ts'
 import { executeRun } from './execute.ts'
 import { createRun, discardRun } from './runs.ts'
 
@@ -55,6 +56,16 @@ export async function startChapterRun(input: {
         `Réessayez dans ${allowance.retryInMinutes} minute(s). ${allowance.explain}`,
     }
   }
+
+  /*
+   * The clock a self-chaining lot runs against.
+   *
+   * Opened here rather than at each call site because here is the one place a
+   * run is started, from a request or from the chapter before it. A request
+   * opens its own window; a chapter chained from inside a live one joins it.
+   * See `chain.ts` for why the budget exists at all.
+   */
+  openChainWindow()
 
   const runId = await createRun(input.userId, input.chapterId, input.provider)
 

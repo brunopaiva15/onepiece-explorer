@@ -806,7 +806,7 @@ export interface QueueTickResult extends BatchStatus {
  *   ticking together still take one chapter each at most, never the same one
  *   twice.
  */
-export async function queueTickAction(): Promise<QueueTickResult> {
+export async function queueTickAction(sawWork = false): Promise<QueueTickResult> {
   try {
     const session = await requireOwner()
     const status = await batchStatus(session.userId)
@@ -823,10 +823,14 @@ export async function queueTickAction(): Promise<QueueTickResult> {
        * same result — and because it must not sit inside the invocation the
        * next chapter's run is trying to fit into.
        *
-       * On the tick that finds the queue empty and nothing waiting, which is
-       * the tick the watcher stops on: once per lot, not once per poll.
+       * On the tick that finds the queue empty and nothing waiting, and only
+       * when the caller has actually watched a lot run: the watcher lives on
+       * every page of the workshop now, so without `sawWork` this would sweep
+       * the whole library on every page load rather than once at the end of a
+       * lot. The client is the only thing that knows it saw the queue drain,
+       * and being wrong about it costs a sweep, not a mistake in the graph.
        */
-      if (status.running === null && status.blocked === null) {
+      if (sawWork && status.running === null && status.blocked === null) {
         after(() => illustrateQuietly(session.userId))
         after(() => postersQuietly(session.userId))
       }
