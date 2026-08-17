@@ -372,15 +372,33 @@ describe('a host where Claude Code is not installed', () => {
   })
 
   it('tells a laptop to reinstall and a deployment to ship the binary', () => {
-    setEnv({ VERCEL: undefined, NODE_ENV: 'test' })
+    setEnv({ CLAUDE_AGENT_RUNTIME: undefined, VERCEL: undefined, NODE_ENV: 'test' })
     expect(agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message).toContain(
       '--omit=optional',
     )
 
-    setEnv({ VERCEL: '1', NODE_ENV: 'production' })
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline', VERCEL: '1', NODE_ENV: 'production' })
     const deployed = agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message
     expect(deployed).toContain('VERCEL_SUPPORT_LARGE_FUNCTIONS')
     expect(deployed).toContain('outputFileTracingIncludes')
+  })
+
+  /*
+   * Le même manque, deux installations opposées.
+   *
+   * En bac à sable le binaire vient du `npm install` de la microVM, qui ne lit
+   * rien de ce que le build a tracé. Trier sur l'hôte seul répondait « tracez-le
+   * dans le bundle » à une installation npm ratée à l'intérieur d'une machine
+   * virtuelle : un conseil juste, appliqué à la mauvaise moitié du système.
+   */
+  it('does not send a sandbox to fix the build', () => {
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'sandbox', VERCEL: '1', NODE_ENV: 'production' })
+
+    const message = agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message
+
+    expect(message).toContain('registre npm')
+    expect(message).not.toContain('outputFileTracingIncludes')
+    expect(message).not.toContain('VERCEL_SUPPORT_LARGE_FUNCTIONS')
   })
 
   it('recognises the older shape of the same absence', () => {

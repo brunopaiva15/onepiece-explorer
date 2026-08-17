@@ -370,8 +370,26 @@ function looksLikeMissingCli(text: string): boolean {
  * choses, et il faut les deux : le binaire doit être tracé dans le bundle, et
  * la fonction doit avoir le droit de peser ce qu'il pèse — trois cents
  * mégaoctets contre une limite de deux cent cinquante.
+ *
+ * La dorsale d'abord, et l'hôte seulement ensuite. Le même binaire manquant
+ * désigne deux installations opposées : en `inline` c'est le paquet optionnel
+ * absent du bundle qu'a produit le build, en `sandbox` c'est le `npm install`
+ * de la microVM — laquelle ne lit rien de ce que le build a tracé. Trier sur
+ * `isVercelRuntime()` seul répondait « tracez-le dans le bundle » à une
+ * installation npm qui avait échoué à l'intérieur d'une machine virtuelle, ce
+ * qui est un conseil juste appliqué à la mauvaise moitié du système.
  */
 function whereClaudeCodeLives(): string {
+  if (agentRuntime() === 'sandbox') {
+    return (
+      'En bac à sable, le binaire ne vient pas du déploiement mais du `npm install` que la ' +
+      'microVM exécute au démarrage : c’est cette installation qui n’a pas posé le paquet de ' +
+      'la plateforme. Rien à embarquer dans le build — vérifiez l’accès de la machine au ' +
+      'registre npm, et CLAUDE_AGENT_SDK_VERSION si elle est figée sur une version qui ne ' +
+      'publie pas ce paquet.'
+    )
+  }
+
   if (isVercelRuntime()) {
     return (
       'En déploiement, il faut deux choses et les deux ensemble : que le binaire soit tracé ' +
