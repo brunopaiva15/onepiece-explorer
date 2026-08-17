@@ -55,6 +55,20 @@
  *
  * Rien n'est supprimé, et une fusion se défait : la relation d'identité est un
  * fait comme un autre sur la fiche, que « ce fait est faux » retire.
+ *
+ * --------------------------------------------------------------------------
+ * Ce script est le raccourci, et `repair:identites` est la réponse.
+ *
+ * Celui-ci porte sept couples relevés à la main dans le fil : gratuit, instantané,
+ * et exactement aussi complet que cette liste — c'est-à-dire qu'il ne trouvera
+ * jamais le huitième. Le balayage, lui, les *trouve* : il lit les chapitres qui
+ * suivent chaque figure sans nom, demande à un modèle laquelle est nommée et où,
+ * et propose une carte de revue portant la citation. C'est ce qu'il faut à mille
+ * chapitres, et ça coûte un appel par figure.
+ *
+ * Les deux se complètent plutôt que de se remplacer : lancer celui-ci d'abord
+ * règle les sept connus pour rien, et le balayage n'a plus qu'à chercher le
+ * reste — une figure déjà rejointe n'est pas redemandée.
  */
 import '../src/lib/load-env.ts'
 import postgres from 'postgres'

@@ -72,16 +72,30 @@ name: Réparations (production)
 # « Chercher une image pour N entité(s) » button in /admin/reglages, which is the
 # ordinary enrichment and needs no workflow. Run the repair here, then press it.
 #
-# One of them is not like the others, and it is worth knowing before pressing
-# the button. `mysteres` reads: it asks a model, once per open question, whether
-# the scenes published after it carry the answer. So it also needs
-# ANTHROPIC_API_KEY, it costs real money — a few dollars for a backlog of
-# seventy, in either mode, because a dry run makes the same calls and only skips
-# the writing — and it takes minutes rather than seconds, which is why the
-# timeout below is not a single number. Without the key the script stops before
-# the first question: the fallback providers answer by counting shared words,
-# and « Où se trouve le trésor de Gold Roger ? » would close on the first scene
-# containing « trésor ».
+# Two of them are not like the others, and it is worth knowing before pressing
+# the button. `mysteres` and `identites` both read: they ask a model, once per
+# item, about the chapters that follow. So they also need ANTHROPIC_API_KEY, they
+# cost real money — a few dollars for a backlog of seventy, in either mode,
+# because a dry run makes the same calls and only skips the writing — and they
+# take minutes rather than seconds, which is why the timeout below is not a
+# single number. Without the key they stop before the first item: the fallback
+# providers answer by counting shared words, and « Où se trouve le trésor de Gold
+# Roger ? » would close on the first scene containing « trésor ».
+#
+# And they differ from each other on the one point that matters. `mysteres`
+# writes into the graph, and says so: a machine judgement recorded as one.
+# `identites` does not. An identity is the one judgement the ontology puts in
+# mandatory human review, because a wrong merge destroys the chronology of
+# revelations this whole product exists to hold — so the sweep writes **review
+# cards**, with their citation, and you accept them in the review centre. Which
+# also means « appliquer » is milder here than anywhere else on this form: it
+# queues questions, it does not answer them.
+#
+# `identites` supersedes `noms` and does not replace it. `noms` carries seven
+# couples read off the story thread by hand: free, instant, and exactly as
+# complete as that list. `identites` finds them instead of listing them, which is
+# what a thousand chapters need, and costs a model call per unnamed figure. Run
+# `noms` first if you want the known seven for nothing.
 
 on:
   workflow_dispatch:
@@ -97,6 +111,7 @@ on:
           - chapitre-1
           - details
           - noms
+          - identites
           - luffy-crew
           - illustrations
           - mysteres
@@ -130,7 +145,7 @@ jobs:
     # sweep is not stuck — it is a model call per open question, in sequence —
     # and neither is the illustration pass, which is one wiki lookup per stored
     # picture, paced on purpose.
-    timeout-minutes: ${{ inputs.script == 'mysteres' && 60 || inputs.script == 'illustrations' && 45 || 15 }}
+    timeout-minutes: ${{ (inputs.script == 'mysteres' || inputs.script == 'identites') && 60 || inputs.script == 'illustrations' && 45 || 15 }}
 
     steps:
       # Only the writing mode asks for a typed answer. A dry run reads and
