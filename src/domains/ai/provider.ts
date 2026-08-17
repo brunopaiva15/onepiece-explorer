@@ -83,8 +83,28 @@ export interface ExtractRequest {
   source: SourceKind
   /** The ontology, as the stable cacheable prefix. */
   ontology: string
-  /** Entities already validated and visible at this chapter. */
-  knownEntities: Array<{ id: string; label: string; nodeType: string }>
+  /**
+   * Entities already validated and visible at this chapter.
+   *
+   * `group` says which part of the prompt's list each belongs in — the
+   * provisional designations a revelation could name, the questions still open,
+   * and everyone else. Optional so a caller that has no ranking still renders a
+   * flat list, which is what the older recorded responses were built from.
+   */
+  knownEntities: Array<{
+    id: string
+    label: string
+    nodeType: string
+    group?: 'unnamed' | 'question' | 'other'
+  }>
+  /**
+   * How many entities are visible at this chapter, before the list was cut.
+   *
+   * Sent so the prompt can say it is showing a subset. A truncation the model
+   * cannot see is one it reads as « this thing does not exist », and the wrong
+   * conclusion from that is a relation pointed at the nearest listed line.
+   */
+  knownEntitiesTotal?: number
   /**
    * Entities this same chapter has already proposed, in earlier slices.
    *

@@ -71,8 +71,23 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     résout le mystère — Qui a fait exploser le rhum de Dorry ? », both ends
  *     the right type as the ontology was then written, in mandatory review, and
  *     closing for ever a question nothing had answered.
+ * '12' asks for the identity when the chapter is the one that reveals it. The
+ *     prompt said twice to be careful — an identity needs direct proof, two
+ *     lookalikes are two entities — and never once said to do the thing, so it
+ *     was never done: « Homme mystérieux debout sur l'eau » and Wapol entered
+ *     the same chapter as two nodes and stayed two for the rest of the work.
+ *     Nothing downstream joins them either, because resolution blocks on
+ *     trigram similarity between labels and a description resembles no name.
+ * '13' groups the validated entities and admits when the list is cut. '12' asks
+ *     the model to find a provisional designation from six chapters ago; this
+ *     makes it findable. The list had no cap and no ranking, so at a thousand
+ *     chapters it is the whole cast in one block and the candidate is one line
+ *     among thousands. Now: the still-unnamed first, the open questions next,
+ *     then the cast by recency — and a sentence saying how many of how many,
+ *     because a truncation the model cannot see is one it reads as « this thing
+ *     does not exist ».
  */
-export const PROMPT_VERSION = '12'
+export const PROMPT_VERSION = '13'
 
 /**
  * What the model is reading.
@@ -245,16 +260,97 @@ export function glossaryList(
  * reader has not met is a spoiler in the prompt whatever the model does with it.
  */
 export function knownEntitiesList(
-  entities: readonly { id: string; label: string; nodeType: string }[],
+  entities: readonly {
+    id: string
+    label: string
+    nodeType: string
+    group?: 'unnamed' | 'question' | 'other'
+  }[],
+  /** Every entity visible at this chapter, so a cut list can say it was cut. */
+  total?: number,
 ): string {
   if (entities.length === 0) return 'Aucune entité déjà validée à ce stade.'
-  return [
+
+  const line = (e: { id: string; label: string; nodeType: string }): string =>
+    `  - ${e.id} · ${e.nodeType} · « ${e.label} »`
+
+  const of = (group: string) =>
+    entities.filter((entity) => (entity.group ?? 'other') === group)
+
+  const unnamed = of('unnamed')
+  const questions = of('question')
+  const others = of('other')
+
+  const head = [
     'Entités déjà validées et visibles à ce chapitre. Reprenez l’identifiant',
     'd’une ligne quand vous parlez de cette chose-là, et seulement dans ce cas :',
     'ce qui n’est pas dans cette liste se déclare dans « entities », même si une',
     'ligne s’en approche.',
-    ...entities.map((e) => `  - ${e.id} · ${e.nodeType} · « ${e.label} »`),
-  ].join('\n')
+  ]
+
+  /*
+   * A cut list says it was cut.
+   *
+   * The repository's rule for the graph projection, applied to the prompt for
+   * the same reason: a list quietly missing three quarters of the cast looks
+   * exactly like a complete one. Here the consequence is specific — an entity
+   * absent from the list gets proposed a second time — so the sentence tells
+   * the model that absence is not evidence, which is the one inference that
+   * would turn a truncation into a wrong link.
+   */
+  if (total !== undefined && total > entities.length) {
+    head.push(
+      '',
+      `Cette liste est tronquée : ${entities.length} lignes sur ${total} entités`,
+      'connues à ce chapitre, les plus pertinentes d’abord. Une chose absente',
+      'd’ici n’est donc pas une chose qui n’existe pas — déclarez-la, elle sera',
+      'rapprochée en aval si c’en est une que le graphe a déjà.',
+    )
+  }
+
+  const parts: string[] = [head.join('\n')]
+
+  /*
+   * The candidates for a revelation, first and under their own heading.
+   *
+   * This is the group the identity instruction needs and the only one nothing
+   * downstream can rescue: a model looking for « la silhouette au sommet » has
+   * no name to search by, and neither the exact-twin check at publication nor
+   * the trigram matcher recognises a description. Buried among a thousand
+   * named characters it is unreachable, which is the same as absent.
+   */
+  if (unnamed.length > 0) {
+    parts.push(
+      [
+        'ENCORE SANS NOM — désignations provisoires, les plus récentes d’abord.',
+        'Si ce chapitre apprend qui est l’une d’elles, c’est ici que se trouve',
+        'l’identifiant à reprendre dans « same_as ».',
+        ...unnamed.map(line),
+      ].join('\n'),
+    )
+  }
+
+  if (questions.length > 0) {
+    parts.push(
+      [
+        'QUESTIONS ENCORE OUVERTES — l’objet de « résout le mystère ». Une',
+        'question posée trois cents chapitres plus tôt se referme aussi bien',
+        'qu’une question d’hier.',
+        ...questions.map(line),
+      ].join('\n'),
+    )
+  }
+
+  if (others.length > 0) {
+    parts.push(
+      (unnamed.length > 0 || questions.length > 0
+        ? ['LE RESTE — vus le plus récemment d’abord.', ...others.map(line)]
+        : others.map(line)
+      ).join('\n'),
+    )
+  }
+
+  return parts.join('\n\n')
 }
 
 const EVIDENCE_RULE = `

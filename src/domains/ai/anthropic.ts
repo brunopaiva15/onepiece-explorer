@@ -227,7 +227,7 @@ export class AnthropicProvider implements ModelProvider {
     )
     await this.warm(modelFor('extract'), system)
 
-    const known = knownEntitiesList(request.knownEntities)
+    const known = knownEntitiesList(request.knownEntities, request.knownEntitiesTotal)
 
     const settled = glossaryList(request.glossary)
 

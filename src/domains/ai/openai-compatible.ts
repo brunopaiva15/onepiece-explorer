@@ -201,7 +201,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async extract(request: ExtractRequest): Promise<ProviderResult<Extraction>> {
-    const known = knownEntitiesList(request.knownEntities)
+    const known = knownEntitiesList(request.knownEntities, request.knownEntitiesTotal)
 
     const blocks = request.textBlocks
       .map((b) =>
