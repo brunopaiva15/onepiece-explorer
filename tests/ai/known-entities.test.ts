@@ -127,6 +127,35 @@ describe('the extraction prompt', () => {
   it('carries a version that moved with the wording', () => {
     // Stored on every assertion the model proposes. Without a bump, a run
     // before this change and a run after it are indistinguishable in the record.
-    expect(PROMPT_VERSION).toBe('11')
+    expect(PROMPT_VERSION).toBe('12')
+  })
+
+  /**
+   * Ask for the identity, and not only for the prudence.
+   *
+   * The prompt said twice to be careful — an identity needs direct proof, two
+   * lookalikes are two entities — and never once said to do the thing. So the
+   * model never did: « Homme mystérieux debout sur l'eau » and Wapol entered the
+   * same chapter as two nodes and stayed two for the rest of the work, and
+   * nothing downstream could join them, because the resolution step blocks on
+   * trigram similarity between labels and a description resembles no name.
+   *
+   * Pinned here because the two halves have to travel together. Keeping only the
+   * prudence is the bug this fixed; keeping only the instruction would invite
+   * the merge the whole product exists to refuse.
+   */
+  it('asks for the identity when the chapter is the one that reveals it', () => {
+    const prompt = extractionSystem('(ontologie)', 'summary')
+
+    // The instruction, and the predicate it must name.
+    expect(prompt).toMatch(/QUAND CE CHAPITRE EST CELUI QUI LA RÉVÈLE/)
+    expect(prompt).toMatch(/same_as/)
+    // What it costs to stay silent, so the rule has a reason and not just a tone.
+    // `\s+` rather than a space: the prompt is a wrapped template literal, and
+    // a sentence worth pinning is longer than one of its lines.
+    expect(prompt).toMatch(/garde deux nœuds\s+pour une personne/)
+    // And the prudence it does not replace.
+    expect(prompt).toMatch(/créez DEUX entités distinctes/)
+    expect(prompt).toMatch(/maybe_same_as/)
   })
 })

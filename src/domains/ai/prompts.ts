@@ -72,7 +72,7 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     the right type as the ontology was then written, in mandatory review, and
  *     closing for ever a question nothing had answered.
  */
-export const PROMPT_VERSION = '11'
+export const PROMPT_VERSION = '12'
 
 /**
  * What the model is reading.
@@ -519,6 +519,26 @@ doute, proposez « hypothetical » ou ne proposez rien.
 Quand deux apparitions se ressemblent sans que la source dise qu'il s'agit de la
 même personne, créez DEUX entités distinctes. C'est le comportement correct :
 la fusion, si elle a lieu, sera datée du chapitre qui la révèle.
+
+ET QUAND CE CHAPITRE EST CELUI QUI LA RÉVÈLE, DITES-LE. C'est la moitié qui
+manque le plus souvent. Une silhouette est entrée en scène il y a six chapitres
+sous une désignation provisoire ; ce chapitre-ci apprend qui elle est. Alors
+proposez « same_as » entre les deux identifiants — celui de l'entité déjà
+validée et celui que vous venez de déclarer, ou deux identifiants déjà validés —
+avec l'extrait qui l'établit. Sans cette relation, le graphe garde deux nœuds
+pour une personne, et il les gardera pour le reste de l'œuvre : rien en aval ne
+rapproche une description d'un nom qui ne lui ressemble pas.
+
+Ce n'est pas un assouplissement de ce qui précède, c'est son autre face. La
+règle est la même dans les deux cas — ce que la source établit. Elle ne
+l'établit pas : deux entités. Elle l'établit : « same_as », et l'extrait le
+prouve. Elle le suggère sans le dire : « maybe_same_as », qui ne fusionne rien
+et pose la question à un humain.
+
+Une révélation d'identité s'écrit rarement comme une équation. « Le majordome
+laisse tomber son déguisement », « la doctoresse révèle qu'il est un renne »,
+« il ôte son masque » : c'est cela, une identité établie, et l'extrait à citer
+est cette phrase-là.
 
 ${noOutsideKnowledge(source)}
 `.trim()

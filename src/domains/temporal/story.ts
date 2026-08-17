@@ -283,6 +283,61 @@ async function readBeats(userId: string, chapter: number): Promise<StoryBeat[]> 
 
       UNION ALL
 
+      -- The same reveal, when it is two nodes rather than two labels.
+      --
+      -- « Klahadore → Kuro » is one entity carrying two names, and the arm
+      -- above tells it. « Homme mystérieux debout sur l'eau → Wapol » is two
+      -- entities joined by an identity, which writes no label at all — so the
+      -- thread said nothing, and the reader saw the same revelation told in
+      -- one chapter and swallowed in the next, with no way to know why.
+      --
+      -- Both halves of the arrow come from the fold itself: what the reader
+      -- called him until now is the best name on *this* side, and what he is
+      -- called from here is the best name across the pair. Ordered the same way
+      -- everything else is, so the two agree with the fiche.
+      --
+      -- Only when the fold actually moves the name. Two nodes joined without
+      -- either outranking the other — two descriptions of one silhouette — is
+      -- a merge worth making and not a revelation to announce, and printing
+      -- « X → X » would be noise on the one line whose job is to say a name
+      -- changed.
+      -- Read from the pair and never from the subject, because same_as is
+      -- symmetric: which node was written on the left is an accident of
+      -- whoever wrote it, and « Wapol → Homme mystérieux debout sur l'eau »
+      -- is the same row seen from the other end. So the arrow is built from
+      -- the ranking instead — best of the pair on the right, worst on the
+      -- left — which is the rule the fiche and the graph already use, and
+      -- which reads the same whichever way the identity was recorded.
+      SELECT 'nom', 3, a.subject_entity_id,
+             (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id IN (a.subject_entity_id, a.object_entity_id)
+                 AND l.precedence > ${SEARCH_ONLY_PRECEDENCE}
+               ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+               LIMIT 1),
+             (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id IN (a.subject_entity_id, a.object_entity_id)
+                 AND l.precedence > ${SEARCH_ONLY_PRECEDENCE}
+               ORDER BY l.precedence ASC, l.revealed_in_chapter ASC
+               LIMIT 1),
+             NULL::jsonb, 0::numeric
+        FROM assertions a
+       WHERE a.predicate = 'same_as'
+         AND a.object_entity_id IS NOT NULL
+         AND a.knowledge_from_chapter = ${chapter}
+         AND (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id IN (a.subject_entity_id, a.object_entity_id)
+                 AND l.precedence > ${SEARCH_ONLY_PRECEDENCE}
+               ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
+               LIMIT 1)
+           IS DISTINCT FROM
+             (SELECT l.label FROM entity_labels l
+               WHERE l.entity_id IN (a.subject_entity_id, a.object_entity_id)
+                 AND l.precedence > ${SEARCH_ONLY_PRECEDENCE}
+               ORDER BY l.precedence ASC, l.revealed_in_chapter ASC
+               LIMIT 1)
+
+      UNION ALL
+
       -- Walking on is for whoever has no beat of their own. An event and a
       -- mystery are entities too, and without this they arrived twice: once
       -- as themselves, once as « entre en scène · Événement ».
