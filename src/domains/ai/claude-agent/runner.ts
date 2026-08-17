@@ -15,13 +15,30 @@
  * Output goes to a file rather than to stdout. The SDK and the CLI it spawns
  * both consider stdout theirs, and a single stray line of diagnostics would
  * turn a valid answer into a parse error at the other end.
+ *
+ * The CLI's stderr goes into that file too, and only on failure. It is the one
+ * thing a machine that dies at startup has to say: the SDK reports « Claude
+ * Code process exited with code 1 » and nothing else, and the host has no way
+ * to reach inside the microVM afterwards — the sandbox's own stderr belongs to
+ * the runner, which exits cleanly. Kept by the tail, because a CLI that fails
+ * to start says why last.
  */
+import { STDERR_KEPT } from './runtime.ts'
+
 export const RUNNER_SOURCE = `import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 
 const inPath = process.argv[2]
 const outPath = process.argv[3]
+
+const STDERR_KEPT = ${STDERR_KEPT}
+let said = ''
+
+function keep(chunk) {
+  said += String(chunk).endsWith('\\n') ? chunk : chunk + '\\n'
+  if (said.length > STDERR_KEPT) said = said.slice(said.length - STDERR_KEPT)
+}
 
 async function run() {
   const payload = JSON.parse(await readFile(inPath, 'utf8'))
@@ -47,7 +64,7 @@ async function run() {
         ...payload.options,
         cwd: process.env.HOME,
         abortController: controller,
-        stderr: () => {},
+        stderr: keep,
       },
     })) {
       // A 401 is retried ten times by the CLI like any transient error, and no
@@ -84,7 +101,7 @@ try {
 } catch (error) {
   const kind = error && error.kind === 'auth' ? 'auth' : 'sdk'
   const detail = error && error.message ? error.message : String(error)
-  await writeFile(outPath, JSON.stringify({ ok: false, kind, error: detail }))
+  await writeFile(outPath, JSON.stringify({ ok: false, kind, error: detail, stderr: said.trim() }))
   process.exitCode = 1
 }
 `

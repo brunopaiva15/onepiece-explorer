@@ -7,11 +7,13 @@ import { query, type Options, type SDKUserMessage } from '@anthropic-ai/claude-a
 import { agentPayload } from './payload.ts'
 import {
   agentEnv,
+  agentFailure,
   agentTimeoutMs,
   AUTH_MESSAGE,
   ClaudeAgentError,
   isAuthFailure,
   oauthToken,
+  stderrTail,
   type AgentRequest,
   type RawAgentResult,
 } from './runtime.ts'
@@ -72,6 +74,7 @@ export async function runInline(request: AgentRequest): Promise<RawAgentResult |
   const controller = new AbortController()
   const timeoutMs = agentTimeoutMs()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const said = stderrTail()
 
   const options: Options = {
     ...payload.options,
@@ -83,10 +86,16 @@ export async function runInline(request: AgentRequest): Promise<RawAgentResult |
     cwd,
     env: agentEnv(token, cwd),
     abortController: controller,
-    // The CLI's diagnostics, kept out of the server log. Anything that matters
-    // arrives in the result message; anything that does not is noise on every
-    // call of a hundred-call chapter.
-    stderr: () => {},
+    /*
+     * The CLI's diagnostics, kept out of the server log and kept all the same.
+     *
+     * Discarding them was right about the log and wrong about the failure: on
+     * a hundred-call chapter this is noise, and on the one call that dies at
+     * startup it is the only statement of what went wrong. « Claude Code
+     * process exited with code 1 » is everything the SDK knows about a process
+     * that refused to run; the reason was here.
+     */
+    stderr: said.collect,
   }
 
   let result: RawAgentResult | null = null
@@ -120,11 +129,7 @@ export async function runInline(request: AgentRequest): Promise<RawAgentResult |
       )
     }
     const detail = error instanceof Error ? error.message : String(error)
-    throw new ClaudeAgentError(
-      'sdk',
-      `${request.label} : le Claude Agent SDK a échoué — ${detail}. ` +
-        'Rien n’a été enregistré pour cet appel.',
-    )
+    throw agentFailure(request.label, detail, said.text())
   } finally {
     clearTimeout(timer)
   }

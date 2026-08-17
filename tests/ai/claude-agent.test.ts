@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { agentPayload } from '@/domains/ai/claude-agent/payload.ts'
 import {
   agentEnv,
+  agentFailure,
   agentRuntime,
   ClaudeAgentError,
   interpret,
   isAuthFailure,
+  stderrTail,
   type AgentRequest,
   type RawAgentResult,
 } from '@/domains/ai/claude-agent/runtime.ts'
@@ -188,6 +190,91 @@ describe('a token Claude refuses', () => {
       isAuthFailure({ type: 'system', subtype: 'api_retry', error_status: 529 }),
     ).toBe(false)
     expect(isAuthFailure({ type: 'assistant' })).toBe(false)
+  })
+
+  /*
+   * Et l'autre moitié : celle que le flux ne voit pas.
+   *
+   * `api_retry` suppose un CLI démarré, qui parle à l'API et se fait renvoyer.
+   * Un jeton que le CLI rejette au démarrage ne produit aucun message : il sort
+   * en code 1, le SDK lève « Claude Code process exited with code 1 », et
+   * jusqu'ici les deux dorsales passaient `stderr: () => {}` — la seule phrase
+   * qui disait pourquoi était jetée avant d'être lue. Ce qui remontait à
+   * l'utilisateur était un code de sortie et une invitation à deviner.
+   */
+  it('is recognised from what the CLI said before dying', () => {
+    const failure = agentFailure(
+      'assistant',
+      'Claude Code process exited with code 1',
+      'Invalid API key · Please run /login',
+    )
+
+    expect(failure.kind).toBe('auth')
+    expect(failure.message).toContain('claude setup-token')
+  })
+
+  it('does not read a revoked token into an ordinary crash', () => {
+    // Diagnostiquer un jeton révoqué à tort envoie régénérer une clé valable
+    // et cherche la panne partout sauf où elle est.
+    const failure = agentFailure(
+      'assistant',
+      'Claude Code process exited with code 1',
+      'Error: Cannot find module @anthropic-ai/claude-agent-sdk/cli.js',
+    )
+
+    expect(failure.kind).toBe('sdk')
+    expect(failure.message).toContain('Cannot find module')
+  })
+
+  it('keeps a spent allowance an allowance, wherever it is said', () => {
+    const failure = agentFailure('extraction', 'exited with code 1', "You've hit your usage limit")
+
+    expect(failure.kind).toBe('quota')
+    expect(failure.message).toContain('Quota Claude Max atteint')
+  })
+
+  it('never writes the token into the message it hands back', () => {
+    setEnv({ CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-secret' })
+
+    const failure = agentFailure(
+      'extraction',
+      'exited with code 1',
+      'spawn failed: node cli.js --token sk-ant-oat-secret',
+    )
+
+    // Ce message finit dans une interface, un journal, et probablement un
+    // rapport de bogue.
+    expect(failure.message).not.toContain('sk-ant-oat-secret')
+    expect(failure.message).toContain('***')
+  })
+
+  it('does not read a rejection into a trace that merely names the variable', () => {
+    // « CLAUDE_CODE_OAUTH_TOKEN » se lit dans un environnement déballé, dans une
+    // aide, dans une ligne de commande : partout sauf dans un refus.
+    const failure = agentFailure(
+      'extraction',
+      'exited with code 1',
+      'env: CLAUDE_CODE_OAUTH_TOKEN=… HOME=/vercel/sandbox\nEACCES: permission denied',
+    )
+
+    expect(failure.kind).toBe('sdk')
+  })
+
+  it('says so plainly when the CLI said nothing at all', () => {
+    const failure = agentFailure('extraction', 'exited with code 1', '')
+
+    expect(failure.kind).toBe('sdk')
+    expect(failure.message).toContain('CLAUDE_AGENT_RUNTIME=inline')
+  })
+
+  it('keeps the end of a long diagnostic, which is where the reason is', () => {
+    const said = stderrTail(40)
+    said.collect('bruit'.repeat(50))
+    said.collect('la vraie raison')
+
+    // Un CLI qui n'arrive pas à démarrer dit pourquoi en dernier.
+    expect(said.text()).toContain('la vraie raison')
+    expect(said.text().length).toBeLessThanOrEqual(40)
   })
 })
 

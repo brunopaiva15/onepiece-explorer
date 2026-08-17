@@ -94,6 +94,33 @@ Les pages sont un document non fiable ; un agent capable de suivre une URL
 trouvée dedans transformerait un téléversement en falsification de requête
 côté serveur.
 
+## Corrigé depuis — la sortie d'erreur du CLI n'est plus jetée
+
+Les deux dorsales passaient `stderr: () => {}` au SDK : les diagnostics du CLI
+hors du journal du serveur, ce qui est juste pour cent appels qui réussissent et
+ruineux pour celui qui échoue. Un CLI qui refuse de démarrer sort en code 1, le
+SDK lève « Claude Code process exited with code 1 », et *pourquoi* n'existait que
+sur cette sortie d'erreur — que l'on jetait avant de l'avoir lue. Ce qui
+remontait à l'utilisateur était un code de sortie et une invitation à deviner.
+
+Elle est désormais gardée par la fin, deux mille caractères, et n'est écrite
+qu'en cas d'échec. Dans le bac à sable elle traverse le fichier de réponse : la
+machine meurt avec ce qu'elle sait, et l'hôte n'a aucun moyen d'aller le chercher
+après coup.
+
+Le verdict se rend sur l'hôte, pas dans la machine, parce que ce qui distingue un
+jeton refusé au démarrage d'une panne du CLI est dans cette sortie et non dans
+l'exception. `api_retry` ne voyait qu'une moitié du problème — un 401 pendant une
+session, quand le CLI a démarré et parle à l'API. L'autre moitié, un jeton rejeté
+avant qu'il n'y ait de session, est probablement la plus fréquente et était la
+moins bien dite. Elle rend maintenant une erreur d'authentification, avec la
+phrase actionnable, et n'est pas retentée sur une machine neuve où le jeton
+serait tout aussi refusé.
+
+Le jeton est masqué avant écriture. Rien ne garantit qu'un CLI n'imprime jamais
+son environnement dans une trace, et ce message finit dans une interface, un
+journal, et probablement un rapport de bogue.
+
 ## Alternatives écartées
 
 **Tout faire tourner dans une fonction Vercel.** Le SDK a besoin de forker et
