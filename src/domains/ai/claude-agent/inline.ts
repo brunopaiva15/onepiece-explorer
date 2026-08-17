@@ -49,6 +49,29 @@ function home(): Promise<string> {
 }
 
 /**
+ * Oublier le répertoire partagé, pour que le suivant en ait un neuf.
+ *
+ * Il est mémoïsé pour la durée du processus, ce qui est le bon défaut : le CLI
+ * y garde de quoi démarrer plus vite, et un balayage l'appelle des dizaines de
+ * fois. Mais c'est aussi la seule chose que ces dizaines d'appels partagent, et
+ * le journal d'un runner désigne précisément ce genre de chose : les premières
+ * questions passent, les suivantes meurent en code 1 sans un mot, et la
+ * proportion d'échecs monte à mesure que le balayage avance. Quinze lancements
+ * réussis puis trois échecs de suite ne décrivent pas une requête fautive — ils
+ * décrivent un état qui se dégrade.
+ *
+ * Ce n'est donc pas un diagnostic mais une élimination : c'est la seule
+ * variable que le rejeu ne changeait pas, et un rejeu qui rejoue tout à
+ * l'identique ne rejoue rien.
+ */
+function discardHome(): void {
+  scratchHome = undefined
+}
+
+/** Le temps de laisser retomber ce qui a débordé, avant de recommencer. */
+const BREATH_MS = 2000
+
+/**
  * Une seconde tentative, pour la panne qui n'a rien dit d'elle-même.
  *
  * `agentFailure` posait déjà `retryable` sur un CLI mort sans un mot, et le
@@ -61,15 +84,24 @@ function home(): Promise<string> {
  *
  * Un seul rejeu, et seulement pour ce cas. Un jeton refusé, une allocation
  * épuisée, un binaire absent, un schéma raté sont des réponses : les rejouer
- * rendrait la même, plus lentement. Le processus fils est neuf à chaque appel,
- * donc rien à démonter avant de recommencer — contrairement au bac à sable, qui
- * doit d'abord lâcher sa machine.
+ * rendrait la même, plus lentement.
+ *
+ * Et un rejeu qui rejoue tout à l'identique ne rejoue rien. La première version
+ * relançait aussitôt, dans le même répertoire partagé, et échouait aussi
+ * souvent que l'appel qu'elle reprenait — trois questions sur huit sur un
+ * runner, rejeu compris. Le processus fils, lui, est déjà neuf à chaque appel ;
+ * ce qui ne l'était pas, c'est le `HOME` que tous se passent et le moment, pris
+ * dans la même seconde que la panne. Les deux changent maintenant. Le bac à
+ * sable fait le même geste d'une autre main, en lâchant sa machine.
  */
 export async function runInline(request: AgentRequest): Promise<RawAgentResult | null> {
   try {
     return await attempt(request)
   } catch (error: unknown) {
     if (!(error instanceof ClaudeAgentError) || !error.retryable) throw error
+
+    discardHome()
+    await new Promise((resolve) => setTimeout(resolve, BREATH_MS))
     return attempt(request)
   }
 }

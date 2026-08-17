@@ -18,11 +18,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 let attempts = 0
 /** Ce que la n-ième tentative fait : lever, ou rendre un résultat. */
 let script: Array<() => void> = []
+/** Le `HOME` de chaque lancement, pour vérifier que le rejeu en change. */
+const homes: string[] = []
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: () => {
+  query: ({ options }: { options: { env?: Record<string, string> } }) => {
     const step = script[attempts]
     attempts++
+    if (options.env?.HOME) homes.push(options.env.HOME)
     step?.()
 
     return (async function* () {
@@ -54,6 +57,7 @@ const original = { ...process.env }
 beforeEach(() => {
   attempts = 0
   script = []
+  homes.length = 0
   process.env.CLAUDE_CODE_OAUTH_TOKEN = 'oat-test'
 })
 
@@ -80,6 +84,37 @@ describe('the inline backend’s one retry', () => {
 
     expect(attempts).toBe(2)
     expect(result).toMatchObject({ subtype: 'success' })
+  })
+
+  /*
+   * Un rejeu qui rejoue tout à l'identique ne rejoue rien.
+   *
+   * La première version relançait aussitôt, dans le même répertoire partagé, et
+   * échouait aussi souvent que l'appel qu'elle reprenait — trois questions sur
+   * huit sur un runner. Le `HOME` est la seule chose que des dizaines de
+   * lancements se passent, donc la seule variable que le rejeu peut changer.
+   */
+  it('gives the second try a scratch directory of its own', async () => {
+    script = [
+      () => {
+        throw new Error('Claude Code process exited with code 1')
+      },
+    ]
+
+    await runInline(REQUEST)
+
+    expect(homes).toHaveLength(2)
+    expect(homes[1]).not.toBe(homes[0])
+  })
+
+  it('keeps one directory across calls that are going well', async () => {
+    // Le partage reste le bon défaut : le CLI y garde de quoi démarrer plus
+    // vite, et un balayage l'appelle des dizaines de fois.
+    await runInline(REQUEST)
+    await runInline(REQUEST)
+
+    expect(homes).toHaveLength(2)
+    expect(homes[1]).toBe(homes[0])
   })
 
   it('does not relaunch an answer, and gives up after one retry', async () => {
