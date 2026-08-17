@@ -4,7 +4,7 @@ import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { assertions, auditLog, events, mysteries } from '@/db/schema/knowledge.ts'
 import { modelProvider } from '@/domains/ai/index.ts'
-import { resolvingScene, scenesFor, type Scene } from './mystery-sweep.ts'
+import { scanForResolution, scenePasses, type Scene } from './mystery-sweep.ts'
 
 /**
  * Le balayage des mystères, une question à la fois.
@@ -223,9 +223,9 @@ export async function closeIfAnswered(
   if (!prepared.ready) return prepared.verdict
 
   const { question, boundary, scenes } = prepared
-  const { offered, dropped } = scenesFor(scenes)
+  const { passes, dropped } = scenePasses(scenes)
 
-  if (offered.length === 0) {
+  if (passes.length === 0) {
     return {
       kind: 'open',
       because: 'no-scenes',
@@ -235,63 +235,61 @@ export async function closeIfAnswered(
     }
   }
 
-  const result = await modelProvider().answer({
-    question: question.question,
-    /*
-     * Des scènes, là où l'assistant passe des assertions. Le champ porte le nom
-     * de ce que l'assistant y met ; ce que la fonction en attend est plus
-     * général — un identifiant, un chapitre, une phrase datée, et l'obligation
-     * de citer l'identifiant. C'est aussi ce qui répond à une question
-     * d'histoire : « Zoro achève Cabaji » est un événement, pas une relation.
-     */
-    context: offered.map((scene) => ({
-      assertionId: scene.entityId,
-      chapter: scene.chapter,
-      statement: scene.summary,
-      excerpt: null,
-    })),
-    boundaryChapter: boundary,
+  const scan = await scanForResolution(passes, question.openedInChapter, async (window) => {
+    const result = await modelProvider().answer({
+      question: question.question,
+      /*
+       * Des scènes, là où l'assistant passe des assertions. Le champ porte le nom
+       * de ce que l'assistant y met ; ce que la fonction en attend est plus
+       * général — un identifiant, un chapitre, une phrase datée, et l'obligation
+       * de citer l'identifiant. C'est aussi ce qui répond à une question
+       * d'histoire : « Zoro achève Cabaji » est un événement, pas une relation.
+       */
+      context: window.map((scene) => ({
+        assertionId: scene.entityId,
+        chapter: scene.chapter,
+        statement: scene.summary,
+        excerpt: null,
+      })),
+      boundaryChapter: boundary,
+    })
+
+    return {
+      refusal: Boolean(result.refusal),
+      answer: result.refusal
+        ? { insufficientData: true, citations: [] }
+        : {
+            insufficientData: result.value.insufficient_data,
+            citations: result.value.citations.map((citation) => ({
+              assertionId: citation.assertion_id,
+              chapter: citation.chapter,
+            })),
+          },
+      costCents: result.usage.costCents,
+    }
   })
 
-  const costCents = result.usage.costCents
-
-  const verdict = result.refusal
-    ? null
-    : resolvingScene(
-        {
-          insufficientData: result.value.insufficient_data,
-          citations: result.value.citations.map((citation) => ({
-            assertionId: citation.assertion_id,
-            chapter: citation.chapter,
-          })),
-        },
-        offered,
-        question.openedInChapter,
-      )
-
-  if (verdict === null) {
+  if (scan.resolution === null) {
     return {
       kind: 'open',
-      because: result.refusal ? 'refused' : 'unanswered',
-      scenesRead: offered.length,
+      because: scan.refused ? 'refused' : 'unanswered',
+      scenesRead: scan.scenesRead,
       scenesDropped: dropped,
-      costCents,
+      costCents: scan.costCents,
     }
   }
 
-  const written = await record(userId, question, verdict)
-  if (!written) return { kind: 'already', chapter: verdict.chapter }
-
-  const scene = offered.find((candidate) => candidate.entityId === verdict.sceneId)!
+  const written = await record(userId, question, scan.resolution)
+  if (!written) return { kind: 'already', chapter: scan.resolution.chapter }
 
   return {
     kind: 'closed',
-    chapter: verdict.chapter,
-    sceneId: verdict.sceneId,
-    summary: scene.summary,
-    scenesRead: offered.length,
+    chapter: scan.resolution.chapter,
+    sceneId: scan.resolution.sceneId,
+    summary: scan.scene!.summary,
+    scenesRead: scan.scenesRead,
     scenesDropped: dropped,
-    costCents,
+    costCents: scan.costCents,
   }
 }
 

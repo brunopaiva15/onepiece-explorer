@@ -61,7 +61,7 @@ import { randomUUID } from 'node:crypto'
 import postgres from 'postgres'
 import { modelProvider } from '../src/domains/ai/index.ts'
 import { ClaudeAgentError } from '../src/domains/ai/claude-agent/runtime.ts'
-import { resolvingScene, scenesFor, type Scene } from '../src/domains/review/mystery-sweep.ts'
+import { scanForResolution, scenePasses, type Scene } from '../src/domains/review/mystery-sweep.ts'
 
 /**
  * Combien d'échecs d'affilée avant d'admettre que ce n'est pas la question.
@@ -240,7 +240,7 @@ async function main(): Promise<void> {
     }
     const boundary = boundaries.get(question.work_id)!
 
-    const { offered, dropped } = scenesFor(
+    const { passes, dropped } = scenePasses(
       await scenesAfter(
         question.work_id,
         question.user_id,
@@ -249,32 +249,48 @@ async function main(): Promise<void> {
       ),
     )
 
-    if (offered.length === 0) {
+    if (passes.length === 0) {
       left++
       console.log(`  · ch.${question.opened_in_chapter} — ${question.question}`)
       console.log('      aucune scène publiée après elle : laissée ouverte.')
       continue
     }
 
-    let result: Awaited<ReturnType<typeof provider.answer>>
+    let scan: Awaited<ReturnType<typeof scanForResolution>>
     try {
-      result = await provider.answer({
-        question: question.question,
-        /*
-         * Des scènes, là où l'assistant passe des assertions. Le champ porte son
-         * nom parce que c'est ce que l'assistant y met ; ce que la fonction en
-         * fait est plus général — un identifiant, un chapitre, une phrase datée,
-         * et l'obligation de citer l'identifiant. Une scène est exactement cela,
-         * et c'est aussi ce qui répond à une question d'histoire : « Zoro achève
-         * Cabaji » est un événement, pas une relation.
-         */
-        context: offered.map((scene) => ({
-          assertionId: scene.entityId,
-          chapter: scene.chapter,
-          statement: scene.summary,
-          excerpt: null,
-        })),
-        boundaryChapter: boundary,
+      scan = await scanForResolution(passes, question.opened_in_chapter, async (window) => {
+        const result = await provider.answer({
+          question: question.question,
+          /*
+           * Des scènes, là où l'assistant passe des assertions. Le champ porte son
+           * nom parce que c'est ce que l'assistant y met ; ce que la fonction en
+           * fait est plus général — un identifiant, un chapitre, une phrase datée,
+           * et l'obligation de citer l'identifiant. Une scène est exactement cela,
+           * et c'est aussi ce qui répond à une question d'histoire : « Zoro achève
+           * Cabaji » est un événement, pas une relation.
+           */
+          context: window.map((scene) => ({
+            assertionId: scene.entityId,
+            chapter: scene.chapter,
+            statement: scene.summary,
+            excerpt: null,
+          })),
+          boundaryChapter: boundary,
+        })
+
+        return {
+          refusal: Boolean(result.refusal),
+          answer: result.refusal
+            ? { insufficientData: true, citations: [] }
+            : {
+                insufficientData: result.value.insufficient_data,
+                citations: result.value.citations.map((citation) => ({
+                  assertionId: citation.assertion_id,
+                  chapter: citation.chapter,
+                })),
+              },
+          costCents: result.usage.costCents,
+        }
       })
       consecutive = 0
     } catch (error: unknown) {
@@ -289,13 +305,13 @@ async function main(): Promise<void> {
        * *avant* l'échec qui l'avait déclenché. Un journal dont l'ordre ment sur
        * la causalité est pire qu'un journal avare.
        *
-       * Et le nombre de scènes, parce que c'est la seule variable qui distingue
+       * Et la taille de l'envoi, parce que c'est la seule variable qui distingue
        * ces appels les uns des autres : un CLI qui meurt sans un mot ne dit rien,
        * mais si ce sont toujours les plus gros envois qui meurent, la ligne le
        * dira au run suivant sans qu'il faille instrumenter quoi que ce soit.
        */
       console.log(`  · ch.${question.opened_in_chapter} — ${question.question}`)
-      console.log(`      ${offered.length} scènes envoyées.`)
+      console.log(`      ${passes[0]!.length} scènes par fenêtre, ${passes.length} fenêtre(s).`)
       console.log(`      échec : ${error instanceof Error ? error.message : String(error)}`)
 
       if (condemnsTheRest(error)) {
@@ -321,36 +337,24 @@ async function main(): Promise<void> {
       continue
     }
 
-    costCents += result.usage.costCents
-
-    const verdict = result.refusal
-      ? null
-      : resolvingScene(
-          {
-            insufficientData: result.value.insufficient_data,
-            citations: result.value.citations.map((citation) => ({
-              assertionId: citation.assertion_id,
-              chapter: citation.chapter,
-            })),
-          },
-          offered,
-          question.opened_in_chapter,
-        )
+    costCents += scan.costCents
 
     console.log(`  · ch.${question.opened_in_chapter} — ${question.question}`)
-    if (dropped > 0) {
-      console.log(`      ${offered.length} scènes lues, ${dropped} non lues (plafond).`)
-    }
+    console.log(
+      `      ${scan.scenesRead} scènes lues en ${scan.passes} passe(s)` +
+        (dropped > 0 ? `, ${dropped} non lues (plafond).` : '.'),
+    )
 
-    if (verdict === null) {
+    if (scan.resolution === null) {
       left++
       console.log('      laissée ouverte.')
       continue
     }
 
-    const scene = offered.find((candidate) => candidate.entityId === verdict.sceneId)!
-    console.log(`      refermée au chapitre ${verdict.chapter} : ${scene.summary}`)
-    if (!dryRun) await close(question, verdict)
+    console.log(
+      `      refermée au chapitre ${scan.resolution.chapter} : ${scan.scene!.summary}`,
+    )
+    if (!dryRun) await close(question, scan.resolution)
     closed++
   }
 

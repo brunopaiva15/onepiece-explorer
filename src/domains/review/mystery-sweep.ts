@@ -80,28 +80,132 @@ export function resolvingScene(
 }
 
 /**
- * How many scenes one question is weighed against.
+ * How many scenes one question is weighed against in a single call.
  *
  * A question opened in chapter 1 of a library read to chapter 59 has some six
  * hundred scenes after it, and handing all of them over costs more per question
- * than the whole sweep is worth. Capped from the *earliest* rather than the
- * latest: the answer to a question usually arrives soon after it is asked, and
- * a sweep that read the end of the story first would date resolutions late.
- *
- * The cap is reported rather than applied silently — a question weighed against
- * a truncated corpus and found unanswered is not the same statement as one
- * weighed against everything.
+ * than the whole sweep is worth.
  */
 export const MAX_SCENES_PER_QUESTION = 400
 
-export function scenesFor(
+/**
+ * Combien de fenêtres au plus, donc combien d'appels au plus.
+ *
+ * Quatre passes couvrent seize cents scènes, ce qui tient la bibliothèque
+ * actuelle en entier et laisse de la marge. La borne existe pour la
+ * bibliothèque d'après : une question jamais refermée paierait sinon un appel
+ * par tranche de quatre cents scènes, indéfiniment, et c'est exactement la
+ * question qui ne rapporte rien.
+ */
+export const MAX_PASSES = 4
+
+/**
+ * Les scènes découpées en fenêtres chronologiques, au lieu d'être tronquées.
+ *
+ * Ce que faisait la troncature, et ce qu'elle coûtait. Elle gardait les quatre
+ * cents scènes les plus **anciennes** — un choix juste, parce que la réponse
+ * arrive d'ordinaire peu après la question et qu'un balayage lisant la fin en
+ * premier daterait les résolutions trop tard. Mais sur une question du chapitre
+ * 1 dans une bibliothèque de neuf cents scènes, elle laissait cinq cents scènes
+ * non lues, dont toutes celles où la réponse se trouvait : « Où est le trésor
+ * de Gold Roger ? » était pesée contre les tout premiers chapitres, déclarée
+ * sans réponse, et le rapport annonçait « laissée ouverte » avec l'aplomb d'une
+ * lecture complète. Quatre questions sur les quatre premières du balayage
+ * étaient dans ce cas.
+ *
+ * Les fenêtres gardent la propriété qui comptait et perdent celle qui coûtait.
+ * Elles sont parcourues dans l'ordre et l'on s'arrête à la première qui répond,
+ * donc la résolution reste datée du plus tôt qu'elle pouvait l'être — c'est la
+ * même garantie que « les quatre cents plus anciennes », appliquée jusqu'au
+ * bout de l'histoire au lieu de s'arrêter à la quatre-centième scène.
+ *
+ * Ce qu'il en coûte est proportionné à ce qu'il rapporte : une question
+ * refermée tôt tient toujours en un appel, et seules celles que la troncature
+ * abandonnait en silence en paient plusieurs. `dropped` reste rapporté pour ce
+ * qui dépasse même les quatre passes.
+ */
+export function scenePasses(
   scenes: readonly Scene[],
-): { offered: Scene[]; dropped: number } {
+): { passes: Scene[][]; dropped: number } {
   const ordered = [...scenes].sort((a, b) => a.chapter - b.chapter)
-  return {
-    offered: ordered.slice(0, MAX_SCENES_PER_QUESTION),
-    dropped: Math.max(0, ordered.length - MAX_SCENES_PER_QUESTION),
+  const reach = MAX_SCENES_PER_QUESTION * MAX_PASSES
+
+  const passes: Scene[][] = []
+  for (let start = 0; start < Math.min(ordered.length, reach); start += MAX_SCENES_PER_QUESTION) {
+    passes.push(ordered.slice(start, start + MAX_SCENES_PER_QUESTION))
   }
+
+  return { passes, dropped: Math.max(0, ordered.length - reach) }
+}
+
+/** Ce qu'une fenêtre a rendu : une réponse, ou un refus. */
+export interface PassResult {
+  refusal: boolean
+  answer: SweepAnswer
+  costCents: number
+}
+
+export interface Scan {
+  resolution: Resolution | null
+  /** La scène qui referme, pour que l'appelant puisse la citer. */
+  scene: Scene | null
+  /** Combien de scènes ont réellement été envoyées, toutes fenêtres confondues. */
+  scenesRead: number
+  costCents: number
+  /** Vrai si au moins une fenêtre a été refusée par le modèle. */
+  refused: boolean
+  /** Combien de fenêtres ont été posées, ce que le journal a intérêt à dire. */
+  passes: number
+}
+
+/**
+ * Parcourir les fenêtres jusqu'à la première qui referme la question.
+ *
+ * `ask` est injecté plutôt qu'importé, et ce fichier reste ce qu'il annonce en
+ * tête : une règle sur des dates et des citations, sans base de données ni
+ * modèle. C'est ce qui permet d'éprouver la boucle — s'arrête-t-elle bien à la
+ * première fenêtre qui répond ? paie-t-elle bien les suivantes quand la
+ * première ne répond pas ? — sans un appel facturé.
+ *
+ * Un refus n'arrête pas le parcours. Ce n'est pas une réponse, c'est un modèle
+ * qui décline une fenêtre ; les suivantes méritent d'être posées, et le refus
+ * n'est rapporté que s'il ne reste rien d'autre à dire.
+ */
+export async function scanForResolution(
+  passes: readonly Scene[][],
+  openedInChapter: number,
+  ask: (window: Scene[]) => Promise<PassResult>,
+): Promise<Scan> {
+  let scenesRead = 0
+  let costCents = 0
+  let refused = false
+  let asked = 0
+
+  for (const window of passes) {
+    const result = await ask(window)
+    asked++
+    scenesRead += window.length
+    costCents += result.costCents
+
+    if (result.refusal) {
+      refused = true
+      continue
+    }
+
+    const resolution = resolvingScene(result.answer, window, openedInChapter)
+    if (resolution === null) continue
+
+    return {
+      resolution,
+      scene: window.find((scene) => scene.entityId === resolution.sceneId) ?? null,
+      scenesRead,
+      costCents,
+      refused,
+      passes: asked,
+    }
+  }
+
+  return { resolution: null, scene: null, scenesRead, costCents, refused, passes: asked }
 }
 
 /**
