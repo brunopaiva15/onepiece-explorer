@@ -5,6 +5,7 @@ import { chapters, documents, pages } from '@/db/schema/documents.ts'
 import { ingestionRuns } from '@/db/schema/ingestion.ts'
 import { isProviderChoice, modelProvider, type ProviderChoice } from '@/domains/ai/index.ts'
 import { autoReview, autoReviewNote, autoReviewsChapter } from '@/domains/review/auto.ts'
+import { chainHasTime } from './chain.ts'
 import { runnableSteps, stepsFor, type StepKey } from './registry.ts'
 import {
   inputHash,
@@ -193,15 +194,52 @@ async function runAutoPublish(context: StepContext): Promise<StepResult> {
   }
 
   const result = await autoReview(context.userId, context.runId)
+  const opened = result.published?.chapterPublished ?? result.chapterOpened ?? null
+
   if (
     result.accepted === 0 &&
     result.heldForNaming === 0 &&
     result.deferred === 0 &&
-    result.chapterOpened === null
+    opened === null
   ) {
     return { note: 'Aucune proposition en attente.', status: 'skipped' }
   }
-  return { note: autoReviewNote(result) }
+
+  const note = autoReviewNote(result)
+  if (opened === null) return { note }
+
+  return { note: `${note} · ${await continueChain(context.userId)}` }
+}
+
+/**
+ * Start the next chapter of the lot, here, now.
+ *
+ * A chapter opening is the event the queue waits for, and this is a chapter
+ * opening — so the queue advances from the run itself rather than from a page
+ * somebody has to leave open. That was the hole: chapter 151 published itself
+ * exactly as designed, and 152 waited for a tick from `/admin/import` that
+ * nobody was there to send.
+ *
+ * Bounded by the invocation's window (`chain.ts`). When it is spent the chain
+ * stops at a chapter boundary and says so, and the next tick — from any page of
+ * the workshop — picks the queue up where this left it. Stopping between two
+ * chapters costs nothing; being killed inside one costs a relaunch.
+ *
+ * The import is dynamic to break a cycle that is real rather than accidental:
+ * starting a run needs the runner, and the runner is this module. Nothing else
+ * in the loop is a hoisted-function coincidence to rely on.
+ */
+async function continueChain(userId: string): Promise<string> {
+  if (!chainHasTime()) {
+    return 'suite du lot laissée à la prochaine relance — le temps de cette invocation est épuisé'
+  }
+
+  const { advanceQueue } = await import('./queue.ts')
+  const advanced = await advanceQueue(userId)
+
+  if (advanced.error) return `chapitre suivant non démarré : ${advanced.error}`
+  if (!advanced.started) return 'rien d’autre en attente'
+  return `chapitre ${advanced.started.number} enchaîné`
 }
 
 async function runStep(key: StepKey, context: StepContext): Promise<StepResult> {

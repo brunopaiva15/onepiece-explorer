@@ -210,11 +210,11 @@ chaque chapitre accepte ce qui ne demande personne, garde ce qui demande
 quelqu'un — un nom dont le modèle n'est pas sûr, une identité, une contradiction,
 une relation que l'ontologie refuse — et **s'ouvre quand il ne reste rien**, ce
 qui libère le suivant. Un chapitre qui pose une vraie question arrête la chaîne à
-cet endroit, et la page nomme lequel et pourquoi : y répondre relance tout.
-Gardez `/admin/import` ouvert pendant un lot — c'est de là que part le tic qui
-donne à chaque chapitre son propre traitement, et fermer la page met le lot en
-pause entre deux chapitres, jamais au milieu d'un. Décochée, chaque chapitre
-attend votre relecture complète, comme avant
+cet endroit, et l'atelier nomme lequel et pourquoi : y répondre relance tout.
+Le chapitre qui s'ouvre lance le suivant sans qu'aucune page soit ouverte, aussi
+longtemps que le permet l'invocation en cours — au-delà, la chaîne s'arrête
+proprement **entre deux chapitres** et n'importe quelle page de l'atelier la
+reprend. Décochée, chaque chapitre attend votre relecture complète, comme avant
 ([ADR 0013](docs/adr/0013-a-lot-that-walks-itself.md)).
 
 Si vous avez le chapitre dans les deux langues, collez la seconde version au

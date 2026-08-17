@@ -32,16 +32,29 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { createRun } = await import('@/domains/pipeline/runs.ts')
 const { executeRun } = await import('@/domains/pipeline/execute.ts')
+const { openChainWindow, resetChainWindow } = await import('@/domains/pipeline/chain.ts')
 
+/*
+ * The real `startChapterRun`, minus the one thing a test cannot have.
+ *
+ * It opens the invocation's chain window and schedules the pipeline with
+ * `after()`. The window is kept — it is what decides whether a chapter chains
+ * the next one, and dropping it would test a chain that cannot happen. The
+ * scheduling becomes a direct call: `after()` needs a request context, and what
+ * is under test is what the chain does, so the run has to actually run.
+ */
 vi.mock('@/domains/pipeline/start.ts', () => ({
   startChapterRun: async (input: { userId: string; chapterId: string }) => {
+    openChainWindow()
     const runId = await createRun(input.userId, input.chapterId)
     await executeRun(input.userId, input.chapterId, runId)
     return { ok: true, runId }
   },
 }))
 
-const { advanceQueue, queueForRun } = await import('@/domains/pipeline/queue.ts')
+const { advanceQueue, queueForRun, queuedChapters } = await import(
+  '@/domains/pipeline/queue.ts'
+)
 const { batchStatus } = await import('@/domains/pipeline/batch.ts')
 const { autoReviewsChapter, autoReviewsRun, enableAutoReview } = await import(
   '@/domains/review/auto.ts'
@@ -104,6 +117,22 @@ async function chapterStatus(chapterId: string): Promise<string> {
   return row!.status
 }
 
+/**
+ * Run one chapter with no room left to chain the next.
+ *
+ * Straight to `executeRun`, because going through `startChapterRun` is what
+ * opens a fresh window — an expired one means "this invocation is over" and the
+ * request that finds it gets a new one. A test that wants the chain to decline
+ * has to be inside the spent window, not at the door of a new invocation.
+ */
+async function runChapterInSpentWindow(chapterId: string): Promise<string> {
+  const runId = await createRun(world.userId, chapterId)
+  resetChainWindow()
+  openChainWindow(Date.now() - 10 * 60 * 1_000)
+  await executeRun(world.userId, chapterId, runId)
+  return runId
+}
+
 async function stillProposed(chapterId: string): Promise<number> {
   const [row] = await raw<Array<{ count: number }>>`
     SELECT count(*)::int AS count FROM review_items
@@ -113,6 +142,7 @@ async function stillProposed(chapterId: string): Promise<number> {
 
 beforeEach(async () => {
   await resetDatabase()
+  resetChainWindow()
   // The instance-wide flag stays off throughout: what is under test is the
   // per-import answer, and a test that leant on the environment would pass
   // whether or not the column was ever read.
@@ -162,27 +192,18 @@ describe('a lot that publishes itself', () => {
     expect(await autoReviewsRun(world.userId, otherRun)).toBe(false)
   })
 
-  it('walks the whole queue without anyone publishing anything', async () => {
+  it('walks the whole queue from a single start, with nobody publishing', async () => {
     const ids = [await importChapter(1), await importChapter(2), await importChapter(3)]
     await enableAutoReview(world.userId, ids)
     await queueForRun(world.userId, ids)
 
     /*
-     * One advance per chapter, which is what the open page does on its timer.
-     * Each is a separate step on purpose: in production each one is a separate
-     * invocation, because the pipeline runs inside the invocation that started
-     * it and chaining them all into one would put the platform's ceiling in the
-     * middle of whichever chapter was running when it arrived.
+     * One start, three chapters. This is the property the whole feature is
+     * for, and the one that was missing: chapter 1 published itself exactly as
+     * designed and chapter 2 waited for a tick from a page nobody was on.
      */
-    for (let step = 0; step < ids.length; step++) {
-      const status = await batchStatus(world.userId)
-      expect(status.blocked).toBeNull()
-      expect(status.queued).toBe(ids.length - step)
-      expect(status.automatic).toBe(true)
-
-      const advanced = await advanceQueue(world.userId)
-      expect(advanced.started?.number).toBe(step + 1)
-    }
+    const advanced = await advanceQueue(world.userId)
+    expect(advanced.started?.number).toBe(1)
 
     const finished = await batchStatus(world.userId)
     expect(finished.queued).toBe(0)
@@ -194,12 +215,44 @@ describe('a lot that publishes itself', () => {
     }
   })
 
+  it('stops at a chapter boundary when the invocation’s window is spent', async () => {
+    const ids = [await importChapter(1), await importChapter(2), await importChapter(3)]
+    await enableAutoReview(world.userId, ids)
+    await queueForRun(world.userId, [ids[1]!, ids[2]!])
+
+    /*
+     * The state a long lot reaches after a few chapters: the window opened by
+     * the request that started it is spent. What has to hold is *where* the
+     * chain stops — between two chapters, with the rest still queued and
+     * nothing half-run. A chapter killed inside its own run costs a relaunch,
+     * and that is the failure this budget exists to avoid.
+     *
+     * The first chapter is run directly rather than through the queue, because
+     * starting a run through the ordinary door is what opens a fresh window:
+     * an expired one means "this invocation is over", and the next request gets
+     * its own. Here the run has to happen *inside* the spent window.
+     */
+    await runChapterInSpentWindow(ids[0]!)
+
+    expect(await chapterStatus(ids[0]!)).toBe('published')
+    expect((await queuedChapters(world.userId)).map((row) => row.number)).toEqual([2, 3])
+
+    const status = await batchStatus(world.userId)
+    expect(status.queued).toBe(2)
+    expect(status.running).toBeNull()
+    // Nothing is blocked: the lot is merely waiting for the next start, which
+    // is what the watcher in the workshop's layout provides.
+    expect(status.blocked).toBeNull()
+  })
+
   it('stops at the chapter that kept a question, and names it', async () => {
     const ids = [await importChapter(1), await importChapter(2)]
     await enableAutoReview(world.userId, ids)
-    await queueForRun(world.userId, ids)
+    await queueForRun(world.userId, [ids[1]!])
 
-    await advanceQueue(world.userId)
+    // In the spent window, so the second chapter is still waiting when the
+    // question is put back on the first — which is the situation being read.
+    await runChapterInSpentWindow(ids[0]!)
 
     /*
      * The state the pipeline produces when the model raises its hand about a
@@ -298,8 +351,10 @@ describe('a lot that publishes itself', () => {
     await enableAutoReview(world.userId, [first, second])
     await queueForRun(world.userId, [first, second])
 
+    // One start: the first chapter chains the second, which is where the
+    // stopper used to bite — a chapter that proposes nothing opened nothing,
+    // so nothing released whatever came after it.
     expect((await advanceQueue(world.userId)).started?.number).toBe(1)
-    expect((await advanceQueue(world.userId)).started?.number).toBe(2)
 
     expect(await stillProposed(second)).toBe(0)
     expect(await chapterStatus(second)).toBe('published')
