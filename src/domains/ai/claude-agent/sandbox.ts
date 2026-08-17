@@ -72,9 +72,31 @@ let warm: Promise<Warm> | undefined
  * Memoised as the *promise*, not the result: a chapter fans several calls out
  * at once, and holding a flag instead would let each of them start its own
  * virtual machine while the first was still booting.
+ *
+ * Ce que la mémoïsation ne doit pas retenir, c'est un échec. Une promesse
+ * rejetée n'est ni `undefined` ni `null` : `warm ??=` la gardait, et toute
+ * création ultérieure rejouait la même erreur périmée sans jamais retenter une
+ * machine. Un réseau qui hoquette une fois condamnait alors l'instance entière —
+ * chaque question suivante du balayage échouait instantanément, en citant une
+ * panne vieille de dix minutes. Le rejet se désinscrit donc lui-même, et
+ * seulement s'il est encore celui qui est affiché : un appel concurrent a pu
+ * poser une machine neuve entre-temps, et l'effacer serait en fabriquer une
+ * troisième.
  */
 function provision(): Promise<Warm> {
-  warm ??= (async () => {
+  if (warm) return warm
+
+  const pending: Promise<Warm> = build().catch((error: unknown) => {
+    if (warm === pending) warm = undefined
+    throw error
+  })
+
+  warm = pending
+  return pending
+}
+
+function build(): Promise<Warm> {
+  return (async () => {
     const version = agentSdkVersion()
 
     let sandbox: Sandbox
@@ -128,8 +150,6 @@ function provision(): Promise<Warm> {
 
     return { sandbox, idle: undefined }
   })()
-
-  return warm
 }
 
 /** Keep the machine for a while longer, or stop it if nobody comes back. */
@@ -152,7 +172,7 @@ export async function runInSandbox(request: AgentRequest): Promise<RawAgentResul
     return await attempt(request, token)
   } catch (error: unknown) {
     /*
-     * One retry, on a fresh machine, and only for a sandbox failure.
+     * One retry, and only for a failure that said nothing about itself.
      *
      * A sandbox has a finite lifetime and can be reclaimed between two calls of
      * a long run — from the caller's side that is indistinguishable from the
@@ -160,10 +180,23 @@ export async function runInSandbox(request: AgentRequest): Promise<RawAgentResul
      * panel 60 because a VM expired" into a minute of setup. A model error, a
      * refusal or a spent quota is not retried here: those are answers, and the
      * step above is what decides what to do with them.
+     *
+     * Le CLI qui sort en code 1 sans une ligne de sortie d'erreur rejoint cette
+     * catégorie, et c'est ce qui manquait. Ce n'était pas un verdict du modèle,
+     * mais il était remonté comme tel : le balayage des mystères s'arrêtait à la
+     * question qui l'avait rencontré, et les soixante-neuf suivantes — qui
+     * n'avaient rien fait de mal — n'étaient jamais posées. Voir `agentFailure`.
+     *
+     * Deux façons de retenter, parce que ce sont deux soupçons différents. Une
+     * panne du bac à sable désigne la machine : on la lâche et on en bâtit une
+     * neuve. Un CLI disparu ne désigne qu'un processus : la machine est réputée
+     * saine et gardée, ce qui rend la seconde tentative immédiate au lieu de
+     * coûter la minute d'installation d'un microVM.
      */
-    if (!(error instanceof ClaudeAgentError) || error.kind !== 'sandbox') throw error
+    if (!(error instanceof ClaudeAgentError)) throw error
+    if (error.kind !== 'sandbox' && !error.retryable) throw error
 
-    warm = undefined
+    if (error.kind === 'sandbox') warm = undefined
     return attempt(request, token)
   }
 }
@@ -268,6 +301,27 @@ async function attempt(request: AgentRequest, token: string): Promise<RawAgentRe
     }
 
     return parsed.result ?? null
+  } catch (error: unknown) {
+    if (error instanceof ClaudeAgentError) throw error
+    /*
+     * Ce que le client du bac à sable lève, dit dans la langue d'ici.
+     *
+     * `writeFiles`, `runCommand` et `readFileToBuffer` parlent à une machine
+     * distante, et une machine reprise par la plateforme entre deux questions du
+     * balayage les fait échouer avec une erreur ordinaire. Elle passait telle
+     * quelle : ni `ClaudeAgentError`, ni de genre — donc pas de reconstruction,
+     * et `warm` continuait de désigner une machine morte pour toute la durée de
+     * l'instance. La première panne réseau condamnait ainsi tous les appels
+     * suivants, chacun rapportant la même erreur d'un bac à sable qui n'existait
+     * plus depuis longtemps.
+     */
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new ClaudeAgentError(
+      'sandbox',
+      `${request.label} : le bac à sable n’a pas répondu — ${detail}. ` +
+        'La machine est abandonnée et l’appel retenté sur une neuve.',
+      true,
+    )
   } finally {
     // Requests carry a chapter's images; leaving them behind would fill the
     // machine's disk over a long run. Failure to clean up is not worth an error.

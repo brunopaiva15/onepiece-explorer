@@ -267,6 +267,40 @@ describe('a token Claude refuses', () => {
     expect(failure.message).toContain('CLAUDE_AGENT_RUNTIME=inline')
   })
 
+  /*
+   * Le silence n'est pas un verdict.
+   *
+   * Le SDK colle lui-même la fin de la sortie d'erreur au message « exited with
+   * code N » : un message qui s'arrête au code dit donc que le processus n'a
+   * rien écrit du tout, et un CLI qui refuse de démarrer, lui, explique
+   * pourquoi. Ce qui reste — une machine reprise sous le processus, une durée de
+   * vie atteinte — ne se reproduit pas sur un processus neuf. Ça se retente ;
+   * ça ne se remonte pas à quelqu'un qui n'en peut rien faire.
+   */
+  it('marks a CLI that vanished without a word as worth one more try', () => {
+    expect(agentFailure('extraction', 'exited with code 1', '').retryable).toBe(true)
+  })
+
+  it('does not retry a CLI that said why it failed', () => {
+    // Un module manquant manquera tout autant la seconde fois.
+    const failure = agentFailure(
+      'extraction',
+      'exited with code 1',
+      'Error: Cannot find module @anthropic-ai/claude-agent-sdk/cli.js',
+    )
+
+    expect(failure.retryable).toBe(false)
+  })
+
+  it('does not retry an answer, however it was worded', () => {
+    // Un jeton révoqué et une allocation épuisée sont des réponses : les
+    // rejouer rendrait la même, et le pas au-dessus décide quoi en faire.
+    expect(agentFailure('extraction', 'code 1', 'Invalid API key').retryable).toBe(false)
+    expect(agentFailure('extraction', 'code 1', "You've hit your usage limit").retryable).toBe(
+      false,
+    )
+  })
+
   it('keeps the end of a long diagnostic, which is where the reason is', () => {
     const said = stderrTail(40)
     said.collect('bruit'.repeat(50))
