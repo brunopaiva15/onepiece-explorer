@@ -26,6 +26,7 @@ import {
 } from '@/domains/ai/anchoring.ts'
 import type { Extraction, PanelDescription } from '@/domains/ai/schemas.ts'
 import { splitPassages } from '@/domains/ingestion/passages.ts'
+import { labelNeedsReading } from '@/domains/knowledge/label-shape.ts'
 import { OCCURRENCE_TYPES, PREDICATES } from '@/domains/knowledge/ontology.ts'
 import { quarantineItems } from '../quarantine.ts'
 import { completedUnits, recordUnit } from '../runs.ts'
@@ -927,6 +928,26 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
        */
       const naming = entity.naming_confident === false
 
+      /*
+       * A label that describes the scene is a naming question the model did not
+       * know it was asking.
+       *
+       * « Escargophone utilisé par Crocodile pour contacter les Billions » can
+       * arrive with `naming_confident: true` and every check downstream passes
+       * it: the evidence anchors, the type exists, the label is free text. In
+       * an instance reviewing only the names it is then published unread, and
+       * the graph gains an object whose name is a sentence true of one panel —
+       * so the same object, seen again three chapters later, arrives as a
+       * second entity nothing will ever join to the first.
+       *
+       * Held here rather than rewritten, and held on grammar rather than on
+       * meaning (see `readsAsDescription`). Shortening it is a reader's call:
+       * « Tempêtes de sable de Yuba » keeps what matters and « Escargophone »
+       * drops whose it is, and only someone who read the chapter can say which
+       * of those two just happened.
+       */
+      const descriptive = labelNeedsReading(entity.label)
+
       rows.push({
         runId,
         chapterId,
@@ -934,10 +955,10 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         category: 'entity',
         // Identity-adjacent proposals go to the top of the queue: they are the
         // ones whose mistakes are hardest to undo later.
-        priority: naming ? 95 : entity.label_kind === 'true_name' ? 90 : 50,
+        priority: naming || descriptive ? 95 : entity.label_kind === 'true_name' ? 90 : 50,
         payload: entity,
         proposalFingerprint: fingerprint,
-        requiresExplicitReview: naming || entity.label_kind === 'true_name',
+        requiresExplicitReview: naming || descriptive || entity.label_kind === 'true_name',
         confidence: entity.confidence,
       })
     }

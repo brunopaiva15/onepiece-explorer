@@ -11,6 +11,9 @@ import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-lab
 // Values, not types: `predicate-label.ts` already carries the ontology into
 // this bundle, so the occurrence list costs nothing extra here.
 import { OCCURRENCE_TYPES } from '@/domains/knowledge/ontology.ts'
+// The rule the pipeline held this card back on, read again here so the card
+// explains the decision the pipeline actually took rather than a copy of it.
+import { readsAsDescription } from '@/domains/knowledge/label-shape.ts'
 
 /**
  * The review centre.
@@ -1673,6 +1676,36 @@ function EntityEnd({ id, name }: { id: string; name: string | null }) {
   )
 }
 
+/**
+ * The name inside the sentence, offered as a button rather than applied.
+ *
+ * One press instead of retyping a name the reviewer can already see, and no
+ * press at all when the cut leaves nothing usable: a suggestion that is not a
+ * name would be pressed once and distrusted afterwards. Gone as soon as the
+ * field already says it, so the card stops offering what has been accepted.
+ */
+function ShortenOffer({
+  suggestion,
+  current,
+  onRename,
+}: {
+  suggestion: string | null
+  current: string
+  onRename: (label: string) => void
+}) {
+  if (suggestion === null || suggestion === current) return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => onRename(suggestion)}
+      className="bouton mt-1.5 !py-0.5 !text-xs"
+    >
+      Raccourcir en « {suggestion} »
+    </button>
+  )
+}
+
 /** The node types whose name is a sentence rather than a name. */
 const NAMED_BY_PROSE = new Set<string>([...OCCURRENCE_TYPES, 'mystery'])
 
@@ -1749,6 +1782,18 @@ function ProposalBody({
     const unsure = record.naming_confident === false
 
     /*
+     * A label that tells the scene instead of naming the thing, said on the
+     * card that can still fix it.
+     *
+     * Read here rather than sent from the queue, from the same function the
+     * pipeline used to decide this card had to be seen at all: the reviewer is
+     * looking at a proposal held back for its wording, and the card has to say
+     * which wording and what a shorter one would be.
+     */
+    const proposed = String(record.label ?? '')
+    const shape = readsAsDescription(proposed)
+
+    /*
      * When the model does not know what to call something, ask.
      *
      * The field is editable in place rather than behind a "corriger" mode,
@@ -1757,7 +1802,7 @@ function ProposalBody({
      * decision to the glossary, and every later chapter of this work is handed
      * it instead of being asked again.
      */
-    if (unsure || sourceTerm) {
+    if (unsure || sourceTerm || shape) {
       return (
         <div className="mt-2">
           {sourceTerm && (
@@ -1773,7 +1818,7 @@ function ProposalBody({
             </span>
             <input
               type="text"
-              value={rename ?? String(record.label ?? '')}
+              value={rename ?? proposed}
               onChange={(event) => onRename(event.target.value)}
               maxLength={200}
               className="mt-1 w-full border-[3px] border-ink bg-surface-raised px-2.5 py-1.5 text-lg text-primary"
@@ -1784,6 +1829,23 @@ function ProposalBody({
             {String(record.node_type ?? '')} ·{' '}
             {labelKindLabel(String(record.label_kind ?? ''))}
           </p>
+
+          {shape && (
+            <div className="mt-2 border-[3px] border-ink bg-surface-raised px-2.5 py-2">
+              <p className="text-sm text-primary">
+                Ce libellé raconte la scène au lieu de nommer la chose. C’est le
+                nom qu’elle portera dans tous les chapitres suivants : ce qu’il
+                décrit — qui s’en sert, ce qu’il provoque — s’écrit en relations,
+                et un nom qui n’est vrai que dans cette case donne deux entités
+                la prochaine fois qu’on la revoit ailleurs.
+              </p>
+              <ShortenOffer
+                suggestion={shape.suggestion}
+                current={rename ?? proposed}
+                onRename={onRename}
+              />
+            </div>
+          )}
 
           {unsure && (
             <p className="mt-2 text-sm text-muted">

@@ -525,6 +525,34 @@ bien ancré, et la fiche affirmera une appartenance que le chapitre ne dit pas.
 Une entité en trop se fusionne en une décision ; un lien vers le mauvais groupe
 se lit comme un fait.
 
+UN LIBELLÉ NOMME, IL NE RACONTE PAS. Le champ « label » est le nom sous lequel
+la chose apparaîtra partout : sur sa fiche, dans la recherche, dans le graphe,
+et dans tous les chapitres à venir. C'est un groupe nominal court — six mots au
+plus — jamais la phrase qui décrit la scène où vous l'avez trouvée.
+
+  • « Escargophone utilisé par Crocodile pour contacter les Billions »
+    → « Escargophone de Crocodile »
+  • « Tempêtes de sable de Yuba provoquées par Crocodile »
+    → « Tempêtes de sable de Yuba »
+  • « L'homme au foulard rayé qui menace le village de Fuchsia »
+    → « L'homme au foulard rayé »
+
+Ce que le libellé perd n'est pas perdu : c'est exactement ce que les relations
+et les événements écrivent, et là ce sont des faits qu'on peut retrouver depuis
+les deux bouts. Qui s'en sert, ce que cela provoque, contre qui : une relation.
+Ce qui se passe dans la case : un événement.
+
+La raison est la suite de l'histoire. Un libellé qui contient les circonstances
+n'est vrai que dans cette case. Le même escargophone, revu six chapitres plus
+loin dans une autre main, recevra une autre description, et le graphe gardera
+deux objets là où l'œuvre en a un — sans que rien ne puisse les rapprocher,
+puisque les deux libellés sont honnêtes et qu'aucun ne ressemble à l'autre.
+C'est la panne que « naming_confident » existe pour éviter, par une autre porte.
+
+Un libellé qui raconte repart en revue humaine quelle que soit votre confiance :
+c'est du temps de lecture pris à quelqu'un, pour une phrase qu'un nom aurait
+dite.
+
 CHAQUE CHOSE DANS SON TABLEAU. Un fait qui se produit va dans « events », une
 question laissée ouverte va dans « mysteries » — jamais dans « entities ».
 
