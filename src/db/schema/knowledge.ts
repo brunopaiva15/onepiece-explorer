@@ -281,11 +281,29 @@ export const mysteries = pgTable(
     openedInChapter: integer('opened_in_chapter').notNull(),
     state: mysteryStateEnum('state').notNull().default('open'),
     resolvedInChapter: integer('resolved_in_chapter'),
+    /**
+     * Le dernier chapitre publié contre lequel cette question a été examinée et
+     * laissée ouverte. Null = jamais examinée.
+     *
+     * Ce qui rend un balayage reprenable plutôt que repayable : sans elle, une
+     * question laissée ouverte revient à chaque passe et l'on repaye ses neuf
+     * cents scènes pour obtenir le même verdict. Ce qu'elle retient n'est ni une
+     * date ni un drapeau mais un état de la bibliothèque, ce qui rend l'oubli
+     * automatique : publier un chapitre de plus la remet à poser, puisqu'il
+     * existe alors des scènes qu'aucune passe n'a lues.
+     *
+     * Jamais écrite sur un refus du modèle ni sur une panne du CLI : ce ne sont
+     * pas des verdicts, et les marquer enterrerait une question sur un accident.
+     */
+    sweptToChapter: integer('swept_to_chapter'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (t) => [index('mysteries_work_state_idx').on(t.workId, t.state)],
+  (t) => [
+    index('mysteries_work_state_idx').on(t.workId, t.state),
+    index('mysteries_sweep_idx').on(t.workId, t.resolvedInChapter, t.sweptToChapter),
+  ],
 )
 
 /** A separate layer from validated canon. Never promoted to fact automatically. */

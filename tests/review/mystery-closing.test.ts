@@ -5,6 +5,7 @@ import {
   addMystery,
   closeDb,
   createEntity,
+  publishChapter,
   resetDatabase,
   seedWorld,
   type SeededWorld,
@@ -81,5 +82,92 @@ describe('les questions que le balayage propose', () => {
 
     expect((await openQuestions(world.userId)).map((q) => q.entityId)).toEqual([treasure])
     expect((await openQuestions(other.userId)).map((q) => q.entityId)).toEqual([theirs])
+  })
+})
+
+/**
+ * Ce qu'une relance repose, et ce qu'elle ne repose pas.
+ *
+ * Le défaut, mesuré sur un runner : `resolved_in_chapter IS NULL` étant le seul
+ * filtre, une question examinée contre neuf cents scènes et laissée ouverte
+ * revenait à la passe suivante, qui relisait les neuf cents pour rendre le même
+ * verdict. Comme le balayage s'arrête de lui-même après trois échecs d'affilée et
+ * que le CLI meurt sans un mot sur quatre appels sur dix, il mourait vers la
+ * vingtième question et la relance recommençait par celles qu'il venait de lire.
+ * Cent trente et une questions dont la plupart sont de vraies énigmes que
+ * l'histoire n'a pas refermées : le lot ne convergeait jamais.
+ *
+ * `swept_to_chapter` est la mémoire qui manquait, et ce qu'elle retient est un
+ * état de la bibliothèque plutôt qu'une date — ce qui rend l'oubli automatique et
+ * juste : publier un chapitre de plus, c'est créer des scènes qu'aucune passe n'a
+ * lues, donc une raison de reposer la question.
+ */
+describe('une question déjà posée à toute l’histoire', () => {
+  /** 60 est le dernier chapitre publié de cette bibliothèque. */
+  const SWEPT_TO_THE_END = 60
+
+  it('n’est pas reposée tant que rien de neuf n’est publié', async () => {
+    const shanks = await createEntity(world, 'mystery', 1)
+    await addMystery(world, shanks, {
+      question: 'Comment Shanks a-t-il fait fuir le Monstre de la Baie ?',
+      openedIn: 1,
+      sweptTo: SWEPT_TO_THE_END,
+    })
+
+    expect((await openQuestions(world.userId)).map((q) => q.entityId)).toEqual([treasure])
+  })
+
+  it('redevient à poser dès que la bibliothèque grandit', async () => {
+    const shanks = await createEntity(world, 'mystery', 1)
+    await addMystery(world, shanks, {
+      question: 'Comment Shanks a-t-il fait fuir le Monstre de la Baie ?',
+      openedIn: 1,
+      sweptTo: SWEPT_TO_THE_END,
+    })
+
+    // Le 61 entre dans la bibliothèque : il porte des scènes qu'aucune passe n'a
+    // lues, et c'est la seule chose qui peut changer la réponse.
+    await publishChapter(world, 61)
+
+    expect((await openQuestions(world.userId)).map((q) => q.entityId).sort()).toEqual(
+      [shanks, treasure].sort(),
+    )
+  })
+
+  it('est proposée quand elle n’a jamais été examinée', async () => {
+    // Le null est le cas ordinaire, et celui des cent trente et une questions
+    // existantes le jour où la colonne est ajoutée : la première passe après la
+    // migration travaille comme avant, c'est la seconde qui devient une reprise.
+    const shanks = await createEntity(world, 'mystery', 1)
+    await addMystery(world, shanks, {
+      question: 'Comment Shanks a-t-il fait fuir le Monstre de la Baie ?',
+      openedIn: 1,
+    })
+
+    expect((await openQuestions(world.userId)).map((q) => q.entityId).sort()).toEqual(
+      [shanks, treasure].sort(),
+    )
+  })
+
+  /*
+   * La marque d'une œuvre ne parle pas d'une autre.
+   *
+   * La frontière est par œuvre, donc la comparaison doit l'être. Une marque lue
+   * contre la frontière du voisin retiendrait une question qu'il faut poser, ou
+   * reposerait indéfiniment une question déjà lue jusqu'au bout.
+   */
+  it('se compare à la frontière de sa propre œuvre', async () => {
+    const other = await seedWorld([1, 2])
+    const theirs = await createEntity(other, 'mystery', 1)
+    await addMystery(other, theirs, {
+      question: 'Qui est Imu ?',
+      openedIn: 1,
+      // Déjà examinée jusqu'au 2, qui est tout ce que cette œuvre-là publie.
+      sweptTo: 2,
+    })
+
+    expect((await openQuestions(other.userId)).map((q) => q.entityId)).toEqual([])
+    // Et la voisine, dont la frontière est au 60, n'en est pas affectée.
+    expect((await openQuestions(world.userId)).map((q) => q.entityId)).toEqual([treasure])
   })
 })

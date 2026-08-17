@@ -116,10 +116,42 @@ export async function openQuestions(userId: string): Promise<OpenQuestion[]> {
         openedInChapter: mysteries.openedInChapter,
       })
       .from(mysteries)
-      .where(and(eq(mysteries.userId, userId), isNull(mysteries.resolvedInChapter)))
+      .where(
+        and(
+          eq(mysteries.userId, userId),
+          isNull(mysteries.resolvedInChapter),
+          UNSEEN_BY_THE_LIBRARY,
+        ),
+      )
       .orderBy(asc(mysteries.openedInChapter), asc(mysteries.question)),
   )
 }
+
+/**
+ * Les questions que la bibliothèque actuelle n'a pas encore vues.
+ *
+ * Le filtre qui transforme une relance en reprise. `swept_to_chapter` retient le
+ * dernier chapitre publié au moment où la question a été posée et laissée
+ * ouverte ; tant que ce nombre n'a pas bougé, reposer la question ferait relire
+ * les mêmes neuf cents scènes pour obtenir le même verdict — et le lot n'avance
+ * jamais, parce qu'il meurt avant la fin et recommence par le début.
+ *
+ * Écrit en SQL corrélé plutôt qu'en deux requêtes, parce que la frontière est par
+ * œuvre et qu'une liste de questions peut en traverser plusieurs. `coalesce` à
+ * zéro pour l'œuvre dont rien n'est publié : rien à lire, donc rien à reposer
+ * tant que rien ne l'est.
+ *
+ * Le null passe, et c'est le cas ordinaire aujourd'hui : jamais examinée.
+ */
+const UNSEEN_BY_THE_LIBRARY = sql`(
+  ${mysteries.sweptToChapter} IS NULL
+  OR ${mysteries.sweptToChapter} < coalesce((
+    SELECT max(${chapters.number}) FROM ${chapters}
+     WHERE ${chapters.workId} = ${mysteries.workId}
+       AND ${chapters.userId} = ${mysteries.userId}
+       AND ${chapters.status} = 'published'
+  ), 0)
+)`
 
 /** Le chapitre de la scène : montré s'il l'a été, raconté sinon. */
 const sceneChapter = sql<number>`coalesce(${events.shownInChapter}, ${events.toldInChapter})`
@@ -226,6 +258,9 @@ export async function closeIfAnswered(
   const { passes, dropped } = scenePasses(scenes)
 
   if (passes.length === 0) {
+    // Rien à lire jusqu'à ce que quelque chose soit publié : c'est un verdict,
+    // et il se retient pour que la passe suivante n'y revienne pas.
+    await rememberSwept(userId, question.entityId, boundary)
     return {
       kind: 'open',
       because: 'no-scenes',
@@ -270,6 +305,16 @@ export async function closeIfAnswered(
   })
 
   if (scan.resolution === null) {
+    /*
+     * Un verdict se retient, un refus ne se retient pas.
+     *
+     * « Aucune de ces neuf cents scènes n'y répond » est une lecture complète,
+     * et la refaire tant que rien n'est publié rendrait la même chose. Un modèle
+     * qui décline n'a rien lu : le marquer enterrerait la question sur un
+     * incident, et elle ne reviendrait qu'au prochain chapitre publié — c'est-à-
+     * dire, pour une bibliothèque qu'on a fini d'importer, jamais.
+     */
+    if (!scan.refused) await rememberSwept(userId, question.entityId, boundary)
     return {
       kind: 'open',
       because: scan.refused ? 'refused' : 'unanswered',
@@ -291,6 +336,45 @@ export async function closeIfAnswered(
     scenesDropped: dropped,
     costCents: scan.costCents,
   }
+}
+
+/**
+ * Retenir qu'on a posé la question à toute la bibliothèque publiée.
+ *
+ * Une écriture d'une ligne, sans journal : ce n'est pas une décision sur
+ * l'histoire, c'est une note de ce qui a déjà été payé. Rien du graphe n'en
+ * dépend, et l'effacer ne perdrait qu'un appel de modèle.
+ *
+ * `isNull(resolvedInChapter)` dans le WHERE pour la même raison qu'en dessous :
+ * entre la lecture et ici il y a eu un appel de modèle, et une publication a pu
+ * refermer la question entre-temps. Marquer alors une question refermée serait
+ * inoffensif — `resolved_in_chapter` la sort du balayage de toute façon — mais
+ * écrire sur une ligne qu'un autre chemin vient de trancher est le genre de
+ * chose qu'on préfère ne pas faire du tout.
+ *
+ * `greatest` plutôt qu'une affectation sèche : deux passes concurrentes, ou une
+ * passe lancée pendant qu'un chapitre se publie, ne doivent pas pouvoir faire
+ * *reculer* la marque. Une marque qui recule ne casse rien — elle ne fait
+ * repayer une lecture — mais autant que la seule direction possible soit celle
+ * du progrès.
+ */
+async function rememberSwept(
+  userId: string,
+  entityId: string,
+  boundary: number,
+): Promise<void> {
+  await withIngest(async (db) => {
+    await db
+      .update(mysteries)
+      .set({ sweptToChapter: sql`greatest(coalesce(${mysteries.sweptToChapter}, 0), ${boundary})` })
+      .where(
+        and(
+          eq(mysteries.entityId, entityId),
+          eq(mysteries.userId, userId),
+          isNull(mysteries.resolvedInChapter),
+        ),
+      )
+  })
 }
 
 /**

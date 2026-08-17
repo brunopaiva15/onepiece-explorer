@@ -81,6 +81,24 @@ export async function seedWorld(chapterNumbers: number[]): Promise<SeededWorld> 
   return { userId, workId, chapterIds }
 }
 
+/**
+ * Un chapitre de plus dans une bibliothèque déjà semée, publié.
+ *
+ * Ce que `seedWorld` fait d'un coup, fait après coup — parce que « la
+ * bibliothèque a grandi » est un événement que certains comportements
+ * attendent, et non un état de départ. Le balayage des mystères en dépend :
+ * c'est la seule chose qui remet à poser une question déjà examinée.
+ */
+export async function publishChapter(world: SeededWorld, number: number): Promise<string> {
+  const id = randomUUID()
+  await raw`
+    INSERT INTO chapters (id, work_id, user_id, number, status, published_at)
+    VALUES (${id}, ${world.workId}, ${world.userId}, ${number}, 'published', now())
+  `
+  world.chapterIds.set(number, id)
+  return id
+}
+
 export async function createEntity(
   world: SeededWorld,
   nodeType: string,
@@ -206,14 +224,22 @@ export async function addMystery(
     openedIn: number
     state?: 'open' | 'partially_resolved' | 'resolved' | 'abandoned'
     resolvedIn?: number | null
+    /**
+     * Le dernier chapitre publié contre lequel le balayage l'a déjà examinée.
+     *
+     * Absent = jamais examinée, ce qui est l'état de toute question fraîchement
+     * proposée par le pipeline et donc le défaut ici.
+     */
+    sweptTo?: number | null
   },
 ): Promise<void> {
   await raw`
     INSERT INTO mysteries (entity_id, user_id, work_id, question,
-                           opened_in_chapter, state, resolved_in_chapter)
+                           opened_in_chapter, state, resolved_in_chapter,
+                           swept_to_chapter)
     VALUES (${entityId}, ${world.userId}, ${world.workId}, ${input.question},
             ${input.openedIn}, ${(input.state ?? 'open')}::mystery_state,
-            ${input.resolvedIn ?? null})
+            ${input.resolvedIn ?? null}, ${input.sweptTo ?? null})
   `
 }
 

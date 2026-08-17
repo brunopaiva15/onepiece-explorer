@@ -71,11 +71,18 @@ export default async function MysteriesPage({
    * qui dit à l'avance pourquoi il ne peut rien faire vaut mieux qu'un bouton
    * qui échoue.
    *
-   * Le décompte est celui de la table et non celui de la liste ci-dessus. Les
-   * deux diffèrent d'exactement les questions que l'histoire referme plus loin
-   * que le curseur : elles sont « Sans réponse » à l'écran, à raison, et il n'y
-   * a rien à leur demander. « Vérifier les 41 questions » quand le balayage en
-   * examinerait 12 serait une promesse fausse et douze fois trop chère.
+   * Le décompte est celui de la table et non celui de la liste ci-dessus, et il
+   * en diffère pour deux raisons, toutes deux voulues.
+   *
+   * Les questions que l'histoire referme plus loin que le curseur : elles sont
+   * « Sans réponse » à l'écran, à raison, et il n'y a rien à leur demander.
+   * « Vérifier les 41 questions » quand le balayage en examinerait 12 serait une
+   * promesse fausse et douze fois trop chère.
+   *
+   * Et celles qui ont déjà été posées à toute la bibliothèque publiée sans
+   * qu'elle y réponde. Les reposer relirait les mêmes neuf cents scènes pour le
+   * même verdict ; elles reviendront d'elles-mêmes au prochain chapitre publié,
+   * qui est la seule chose pouvant changer la réponse. Voir `swept_to_chapter`.
    */
   const sweep = session.isOwner
     ? { provider: providerReads(), questions: (await openQuestions(session.userId)).length }

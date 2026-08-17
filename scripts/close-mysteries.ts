@@ -175,11 +175,52 @@ async function close(
   })
 }
 
+/**
+ * Retenir qu'on a posé la question à toute la bibliothèque publiée.
+ *
+ * Le pendant de `close`, pour le verdict qui n'écrit rien dans le graphe. Sans
+ * lui, une question laissée ouverte revient à la passe suivante et l'on repaye
+ * ses neuf cents scènes pour obtenir le même « laissée ouverte » — ce qui, sur un
+ * lot de cent trente et une questions dont la plupart sont de vraies énigmes, ne
+ * converge jamais. Voir la migration 0030.
+ *
+ * `greatest` pour que la marque ne puisse que progresser, et
+ * `resolved_in_chapter IS NULL` pour ne pas écrire sur une question qu'une
+ * publication vient de refermer pendant l'appel de modèle.
+ */
+async function remember(question: OpenQuestion, boundary: number): Promise<void> {
+  await sql`
+    UPDATE mysteries
+       SET swept_to_chapter = greatest(coalesce(swept_to_chapter, 0), ${boundary})
+     WHERE entity_id = ${question.entity_id}
+       AND resolved_in_chapter IS NULL
+  `
+}
+
 async function main(): Promise<void> {
+  /*
+   * Les questions ouvertes que la bibliothèque actuelle n'a pas encore vues.
+   *
+   * `swept_to_chapter` retient le dernier chapitre publié au moment où la
+   * question a été posée et laissée ouverte. Tant qu'il n'a pas bougé, la
+   * reposer ferait relire les mêmes scènes pour le même verdict ; un chapitre de
+   * plus dans la bibliothèque, et il existe des scènes qu'aucune passe n'a lues.
+   * C'est ce qui fait d'une relance une reprise, et l'oubli est automatique :
+   * publier suffit, il n'y a aucune invalidation à écrire.
+   */
   const questions = await sql<OpenQuestion[]>`
     SELECT entity_id, user_id, work_id, question, opened_in_chapter
-      FROM mysteries
+      FROM mysteries m
      WHERE resolved_in_chapter IS NULL
+       AND (
+         swept_to_chapter IS NULL
+         OR swept_to_chapter < coalesce((
+           SELECT max(number) FROM chapters
+            WHERE work_id = m.work_id
+              AND user_id = m.user_id
+              AND status = 'published'
+         ), 0)
+       )
      ORDER BY opened_in_chapter, question
   `
 
@@ -253,6 +294,8 @@ async function main(): Promise<void> {
       left++
       console.log(`  · ch.${question.opened_in_chapter} — ${question.question}`)
       console.log('      aucune scène publiée après elle : laissée ouverte.')
+      // Rien à lire jusqu'à la prochaine publication : un verdict, donc retenu.
+      if (!dryRun) await remember(question, boundary)
       continue
     }
 
@@ -347,7 +390,21 @@ async function main(): Promise<void> {
 
     if (scan.resolution === null) {
       left++
-      console.log('      laissée ouverte.')
+      /*
+       * Un verdict se retient, un refus ne se retient pas.
+       *
+       * « Aucune de ces neuf cents scènes n'y répond » est une lecture complète :
+       * la refaire tant que rien n'est publié rendrait la même chose. Un modèle
+       * qui décline n'a rien lu — le marquer enterrerait la question sur un
+       * incident, et pour une bibliothèque qu'on a fini d'importer, « au prochain
+       * chapitre publié » veut dire jamais.
+       */
+      if (scan.refused) {
+        console.log('      le modèle a décliné : laissée ouverte, et elle sera reposée.')
+      } else {
+        console.log('      laissée ouverte.')
+        if (!dryRun) await remember(question, boundary)
+      }
       continue
     }
 
@@ -368,6 +425,14 @@ async function main(): Promise<void> {
     console.log(
       'Les questions en échec n’ont rien changé : elles restent ouvertes et une ' +
         'relance les reposera.',
+    )
+  }
+  if (left > 0 && !dryRun) {
+    console.log(
+      `${left} question(s) laissée(s) ouverte(s) ne seront pas reposées : elles ont été ` +
+        'examinées contre toute la bibliothèque publiée, et une relance rendrait le même ' +
+        'verdict. Elles redeviendront à poser au prochain chapitre publié. C’est ce qui ' +
+        'rend une relance reprenable plutôt que repayable.',
     )
   }
   console.log(`Coût des appels : ${(costCents / 100).toFixed(2)} $.`)

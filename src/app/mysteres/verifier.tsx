@@ -173,11 +173,24 @@ export function VerifierLesMysteres({
           {blocked}
         </p>
       ) : questions === 0 && phase === 'idle' ? (
+        /*
+         * Zéro veut dire deux choses, et l'une est nouvelle.
+         *
+         * « Tout a déjà sa réponse » était vrai quand la seule façon de sortir du
+         * balayage était d'être refermée. Une question examinée contre toute la
+         * bibliothèque et laissée ouverte en sort aussi maintenant — sans quoi
+         * chaque relance repayait ses neuf cents scènes pour le même verdict. Le
+         * décompte tombe donc à zéro sur une bibliothèque pleine de questions
+         * ouvertes, et le dire autrement serait mentir sur l'état du graphe.
+         */
         <p className="mt-3 text-sm text-muted">
-          Aucune question à examiner : tout ce que le graphe porte a déjà sa
-          réponse. Celles qui restent «&nbsp;Sans réponse&nbsp;» ci-dessus le
-          sont pour vous, parce que leur réponse est plus loin que le chapitre{' '}
-          {boundaryChapter}.
+          Aucune question à examiner pour l&apos;instant : chacune a déjà sa
+          réponse, ou a déjà été posée à toute la bibliothèque publiée sans que
+          l&apos;histoire n&apos;y réponde. Celles qui restent «&nbsp;Sans
+          réponse&nbsp;» ci-dessus le sont donc soit parce que la réponse
+          n&apos;existe pas encore, soit parce qu&apos;elle est plus loin que le
+          chapitre {boundaryChapter}. Publiez un chapitre de plus et celles
+          qu&apos;il pourrait éclaircir redeviennent à examiner.
         </p>
       ) : (
         <div className="mt-4 flex flex-wrap items-center gap-3">
