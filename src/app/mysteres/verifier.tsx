@@ -1,0 +1,297 @@
+'use client'
+
+import { useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import {
+  planSweepAction,
+  sweepQuestionAction,
+  type SweepStep,
+} from './actions.ts'
+
+/**
+ * « Vérifier si l'histoire y a répondu ».
+ *
+ * Le bouton fait ce que `pnpm repair:mysteres` fait, depuis la page qui montre
+ * les questions : pour chacune, il donne au modèle les scènes publiées des
+ * chapitres suivants et lui demande d'y répondre en citant ses sources. Une
+ * réponse sourcée par une scène postérieure referme la question, à la date de
+ * cette scène.
+ *
+ * Une question à la fois, en série, et c'est visible à l'écran. Trois raisons,
+ * dans cet ordre :
+ *
+ *   Chaque appel serveur est borné par un seul appel de modèle, donc rien ne se
+ *   fait couper au milieu d'une bibliothèque de soixante-dix questions.
+ *
+ *   Le compteur avance. « 12 sur 41 » pendant dix minutes est la différence
+ *   entre un bouton qui travaille et un bouton qui a planté.
+ *
+ *   On peut s'arrêter. Chaque question coûte un appel de modèle ; s'arrêter au
+ *   bout de trois, en ayant vu ce que les trois ont donné, est une décision que
+ *   seule une boucle interruptible permet de prendre.
+ *
+ * Ce qui a déjà été refermé l'est pour de bon : arrêter n'annule rien, et
+ * reprendre plus tard ne redemande pas ce qui est fait.
+ */
+
+interface Line extends SweepStep {
+  question: string
+  openedInChapter: number
+}
+
+type Phase = 'idle' | 'running' | 'stopped' | 'done'
+
+export function VerifierLesMysteres({
+  boundaryChapter,
+  questions,
+  blocked,
+}: {
+  boundaryChapter: number
+  /**
+   * Combien de questions le balayage examinerait — le décompte de la table.
+   *
+   * Il est plus petit que « Sans réponse » ci-dessus dès que l'histoire referme
+   * une question plus loin que le curseur du lecteur, et ce n'est pas une
+   * incohérence : celles-là ont leur réponse écrite, il n'y a rien à demander.
+   */
+  questions: number
+  /** Pourquoi le bouton ne peut rien faire, quand c'est le cas. */
+  blocked: string | null
+}) {
+  const router = useRouter()
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [total, setTotal] = useState(0)
+  const [lines, setLines] = useState<Line[]>([])
+  const [error, setError] = useState<string | null>(null)
+  /*
+   * Un drapeau, pas un état.
+   *
+   * La boucle tourne dans une seule fonction asynchrone ; elle lit ce drapeau
+   * entre deux questions. Un `useState` ne lui donnerait que la valeur figée à
+   * son premier rendu, et « Arrêter » ne serait qu'un bouton.
+   */
+  const stopped = useRef(false)
+
+  async function run() {
+    setPhase('running')
+    setError(null)
+    setLines([])
+    setTotal(0)
+    stopped.current = false
+
+    const plan = await planSweepAction()
+    if (!plan.ok || !plan.questions) {
+      setError(plan.error ?? 'Lecture des questions impossible.')
+      setPhase('idle')
+      return
+    }
+
+    setTotal(plan.questions.length)
+
+    let closed = 0
+    for (const question of plan.questions) {
+      if (stopped.current) break
+
+      const step = await sweepQuestionAction(question.entityId)
+
+      if (!step.ok) {
+        setError(step.error ?? 'Vérification impossible.')
+        break
+      }
+
+      if (step.kind === 'closed') closed++
+      setLines((previous) => [
+        ...previous,
+        { ...step, question: question.question, openedInChapter: question.openedInChapter },
+      ])
+    }
+
+    // Les questions refermées ne sont plus au même endroit de la page.
+    if (closed > 0) router.refresh()
+    setPhase(stopped.current ? 'stopped' : 'done')
+  }
+
+  const running = phase === 'running'
+  const closed = lines.filter((line) => line.kind === 'closed')
+  const stillOpen = lines.filter((line) => line.kind === 'open')
+  const cost = lines.reduce((sum, line) => sum + (line.costCents ?? 0), 0)
+
+  return (
+    <section className="mt-8 border-t border-line pt-6">
+      <h2 className="text-lg font-semibold text-primary">
+        Demander à l&apos;histoire
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm text-secondary">
+        Question par question, le modèle relit les scènes des chapitres qui
+        suivent et dit si l&apos;une d&apos;elles y répond. Celles qui répondent
+        referment la question à leur propre chapitre — un jugement de machine,
+        enregistré comme tel&nbsp;: la fiche de la question montrera la scène qui
+        la referme, et une erreur se défait en écartant cette relation.
+      </p>
+
+      {blocked ? (
+        <p className="mt-3 max-w-2xl border-[3px] border-ink bg-[var(--coral)] px-3 py-2 text-sm text-white">
+          {blocked}
+        </p>
+      ) : questions === 0 && phase === 'idle' ? (
+        <p className="mt-3 text-sm text-muted">
+          Aucune question à examiner : tout ce que le graphe porte a déjà sa
+          réponse. Celles qui restent «&nbsp;Sans réponse&nbsp;» ci-dessus le
+          sont pour vous, parce que leur réponse est plus loin que le chapitre{' '}
+          {boundaryChapter}.
+        </p>
+      ) : (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => void run()}
+            className="bouton bouton-mer"
+          >
+            {running
+              ? total === 0
+                ? 'Lecture…'
+                : `Lecture… ${lines.length} sur ${total}`
+              : phase === 'idle'
+                ? `Vérifier les ${questions} question(s) sans réponse`
+                : 'Recommencer'}
+          </button>
+
+          {running && (
+            <button
+              type="button"
+              onClick={() => {
+                stopped.current = true
+              }}
+              className="bouton"
+            >
+              Arrêter
+            </button>
+          )}
+        </div>
+      )}
+
+      {running && (
+        <p className="mt-3 text-sm text-muted" role="status">
+          Un appel de modèle par question, en série : comptez une dizaine de
+          secondes chacune, et quelques dollars pour un arriéré de soixante-dix.
+          Vous pouvez arrêter à tout moment — ce qui est refermé le reste.
+        </p>
+      )}
+
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-[var(--epi-contradicted)]">
+          {error}
+        </p>
+      )}
+
+      {lines.length > 0 && (
+        <div className="mt-4">
+          <p role="status" className="text-sm text-primary">
+            {lines.length} question(s) examinée(s) sur {total} — {closed.length}{' '}
+            refermée(s), {stillOpen.length} laissée(s) ouverte(s).
+            {cost > 0 ? ` Coût des appels : ${(cost / 100).toFixed(2)} $.` : ''}
+            {phase === 'stopped' ? ' Arrêté : le reste n’a pas été examiné.' : ''}
+          </p>
+
+          <ul className="mt-3 space-y-2">
+            {lines.map((line) => (
+              <li key={line.entityId}>
+                <Resultat line={line} boundaryChapter={boundaryChapter} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Ce qu'une question a donné, et ce qu'on peut en dire.
+ *
+ * Une résolution postérieure au chapitre où le lecteur se trouve est annoncée
+ * sans son chapitre et sans sa scène. Ce n'est pas de la pudeur : le balayage
+ * lit toute la bibliothèque publiée, donc il *sait* — et la page qui masque
+ * cette date partout ailleurs la donnerait ici, dans le rapport d'un bouton que
+ * le lecteur a pressé lui-même. L'action a déjà retiré ce qu'il ne faut pas
+ * dire ; ce composant ne reçoit que ce qui est montrable.
+ */
+function Resultat({
+  line,
+  boundaryChapter,
+}: {
+  line: Line
+  boundaryChapter: number
+}) {
+  const closed = line.kind === 'closed' || line.kind === 'already'
+  /* Refermée sans chapitre : la réponse est au-delà du curseur. */
+  const beyond = closed && line.chapter == null
+
+  return (
+    <article className="panneau">
+      <div className="panneau-corps">
+        <p className="text-primary">
+          {line.entityId ? (
+            <Link
+              href={`/entite/${line.entityId}?ch=${boundaryChapter}`}
+              className="hover:underline"
+            >
+              {line.question}
+            </Link>
+          ) : (
+            line.question
+          )}
+        </p>
+
+        <p className="mt-2 flex flex-wrap items-center gap-2">
+          <span className={`badge ${closed ? 'badge-vert' : 'badge-mer'}`}>
+            {closed ? 'Refermée' : 'Toujours ouverte'}
+          </span>
+          <span className="cartouche">
+            posée au chapitre {line.openedInChapter}
+          </span>
+          {closed && line.chapter != null && (
+            <span className="cartouche">résolue au chapitre {line.chapter}</span>
+          )}
+          {line.kind === 'already' && (
+            <span className="cartouche">déjà refermée avant ce passage</span>
+          )}
+        </p>
+
+        {beyond && (
+          <p className="mt-2 text-sm text-secondary">
+            La réponse est plus loin que le chapitre {boundaryChapter}, où vous
+            en êtes. Elle est écrite&nbsp;; elle apparaîtra le jour où vous
+            l&apos;aurez lue.
+          </p>
+        )}
+
+        {line.kind === 'closed' && line.summary && (
+          <p className="mt-2 text-sm text-secondary">{line.summary}</p>
+        )}
+
+        {line.kind === 'open' && (
+          <p className="mt-2 text-sm text-muted">
+            {line.because === 'no-scenes'
+              ? 'Aucune scène publiée après elle : rien à lui opposer.'
+              : line.because === 'refused'
+                ? 'Le modèle n’a pas répondu sur cette question.'
+                : `${line.scenesRead} scène(s) relue(s), aucune n’y répond.`}
+            {line.scenesDropped
+              ? ` ${line.scenesDropped} scène(s) non lues (plafond par question).`
+              : ''}
+          </p>
+        )}
+
+        {line.kind === 'gone' && (
+          <p className="mt-2 text-sm text-muted">
+            Cette question n&apos;est plus dans le graphe : son chapitre a dû
+            être supprimé entre-temps.
+          </p>
+        )}
+      </div>
+    </article>
+  )
+}

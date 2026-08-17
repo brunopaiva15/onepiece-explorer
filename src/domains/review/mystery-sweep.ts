@@ -103,3 +103,25 @@ export function scenesFor(
     dropped: Math.max(0, ordered.length - MAX_SCENES_PER_QUESTION),
   }
 }
+
+/**
+ * What the person who pressed the button may be told about a resolution.
+ *
+ * The sweep reads the whole published library, on purpose — that is what dates
+ * an answer correctly rather than late. But its *report* is read by someone
+ * sitting at a chapter, and « refermée au chapitre 412 : Zoro rend son sabre »
+ * is a spoiler however true it is. The page already refuses to show a
+ * resolution beyond the reader's position; a report that named it would walk
+ * around that refusal through the one door the reader opened themselves.
+ *
+ * So the chapter is returned only when the reader has read it. Null is not
+ * "unresolved" — the caller says « refermée plus loin que votre position », which
+ * is the whole truth minus the one detail that would spoil it, and the answer is
+ * there waiting the day they get to it.
+ */
+export function tellableResolution(
+  chapter: number,
+  boundaryChapter: number,
+): number | null {
+  return chapter <= boundaryChapter ? chapter : null
+}
