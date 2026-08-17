@@ -1655,23 +1655,37 @@ function EvidencePanel({ evidence }: { evidence: EvidenceView }) {
   )
 }
 
+/** A graph identifier, as opposed to an id scoped to the run that proposed it. */
+const STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
  * One end of a relation: its name, or an admission that it has none.
  *
- * An identifier that resolved to nothing is shown truncated and marked as an
- * identifier, rather than dressed up as a name. The reviewer then knows the
- * card is incomplete — which is a decision they can take — instead of reading a
- * hex string as a character.
+ * An identifier that resolved to nothing is shown as an identifier rather than
+ * dressed up as a name. The reviewer then knows the card is incomplete — which
+ * is a decision they can take — instead of reading a hex string as a character.
+ *
+ * Which identifier it is decides how it is shown, and truncating the wrong one
+ * was actively misleading. A run-local id is `<clé de tranche>:e5`, so cutting
+ * it to eight characters kept the slice hash — the half that says nothing —
+ * and dropped `e5`, the half that says which proposal of this batch it is.
+ * Every unresolved end of every chapter therefore read « entité 7d1b89b1… »,
+ * indistinguishable from a graph id and traceable to nothing.
  */
 function EntityEnd({ id, name }: { id: string; name: string | null }) {
   if (name !== null) return <span className="font-medium">{name}</span>
 
+  if (STORED_ID.test(id)) {
+    return (
+      <span className="font-mono text-sm text-muted" title={`Identifiant non résolu : ${id}`}>
+        entité {id.slice(0, 8)}…
+      </span>
+    )
+  }
+
   return (
-    <span
-      className="font-mono text-sm text-muted"
-      title={`Identifiant non résolu : ${id}`}
-    >
-      entité {id.slice(0, 8)}…
+    <span className="font-mono text-sm text-muted" title={`Identifiant non résolu : ${id}`}>
+      « {id.slice(id.indexOf(':') + 1)} », proposé dans ce lot et introuvable
     </span>
   )
 }

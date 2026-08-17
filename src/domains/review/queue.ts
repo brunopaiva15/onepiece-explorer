@@ -619,19 +619,79 @@ async function pendingMerges(
 const STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
+ * What a proposal calls the thing it declares, whichever list it landed in.
+ *
+ * A local id is not the property of an entity proposal. An event carries one
+ * too — that is what lets « Zoro participe à <cette scène> » be written — and a
+ * scene the model first filed as an entity of type `event` is refiled into
+ * `events` on the way in, keeping the id every relation of that slice already
+ * points at. So a card asking about a relation whose end is a scene was reading
+ * a list that skipped scenes, finding nothing, and printing « entité
+ * 7d1b89b1… »: the reviewer is shown a hash and asked whether the claim is
+ * true.
+ *
+ * A scene is named by its summary, cut where publication cuts it, so the card
+ * shows the name that will actually be stored. Its type is what the proposal
+ * says it is, and `event` when it says nothing — the same fallback publication
+ * applies, and the value that makes the card stack the relation instead of
+ * running a sentence into a predicate.
+ */
+type Declared = Record<'label' | 'nodeType', (record: Record<string, unknown>) => unknown>
+
+const DECLARED: Record<string, Declared> = {
+  entity: { label: (record) => record.label, nodeType: (record) => record.node_type },
+  event: {
+    label: (record) =>
+      typeof record.summary === 'string' ? record.summary.slice(0, 200) : record.summary,
+    nodeType: (record) => record.kind ?? 'event',
+  },
+}
+
+/**
+ * What each local id was declared as, or nothing when the run disagrees.
+ *
+ * A local id claimed twice with two different answers resolves to nothing.
+ * Slices number their proposals independently, so `e1` in one is not `e1` in
+ * the next, and putting the first slice's name on the second slice's relation
+ * is worse than showing the raw id — one is unreadable, the other is wrong.
+ */
+function declaredByLocalId(
+  proposals: Array<{ category: string; payload: unknown }>,
+  field: 'label' | 'nodeType',
+): Map<string, string> {
+  const claimed = new Map<string, string | null>()
+
+  for (const proposal of proposals) {
+    const read = DECLARED[proposal.category]
+    if (read === undefined) continue
+    if (proposal.payload === null || typeof proposal.payload !== 'object') continue
+
+    const record = proposal.payload as Record<string, unknown>
+    const localId = typeof record.local_id === 'string' ? record.local_id.trim() : ''
+    const raw = read[field](record)
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (localId.length === 0 || value.length === 0) continue
+
+    if (!claimed.has(localId)) claimed.set(localId, value)
+    else if (claimed.get(localId) !== value) claimed.set(localId, null)
+  }
+
+  const resolved = new Map<string, string>()
+  for (const [localId, value] of claimed) {
+    if (value !== null) resolved.set(localId, value)
+  }
+  return resolved
+}
+
+/**
  * Put a name on every identifier the queue is about to display.
  *
  * Two populations, because a proposal names entities from two different places.
  * A UUID is an entity already in the graph and its name is read from the
  * database. A short id like `e3` belongs to the response it came from, and is
- * answered by that run's own entity proposals — including the ones still
- * waiting on a decision, which is the point: a relation and its subject are
- * proposed together and reviewed together.
- *
- * A local id claimed by two different entities resolves to nothing. Slices
- * number their entities independently, so `e1` in one is not `e1` in the next,
- * and putting the first slice's name on the second slice's relation is worse
- * than showing the raw id — one is unreadable, the other is wrong.
+ * answered by that run's own proposals — including the ones still waiting on a
+ * decision, which is the point: a relation and its subject are proposed
+ * together and reviewed together.
  */
 async function resolveNames(
   rows: Array<{ payload: unknown }>,
@@ -642,20 +702,8 @@ async function resolveNames(
 
   const names = new Map<string, string>()
 
-  const claimed = new Map<string, string | null>()
-  for (const proposal of proposals) {
-    if (proposal.category !== 'entity') continue
-    if (proposal.payload === null || typeof proposal.payload !== 'object') continue
-    const record = proposal.payload as Record<string, unknown>
-    const localId = typeof record.local_id === 'string' ? record.local_id.trim() : ''
-    const label = typeof record.label === 'string' ? record.label.trim() : ''
-    if (localId.length === 0 || label.length === 0) continue
-
-    if (!claimed.has(localId)) claimed.set(localId, label)
-    else if (claimed.get(localId) !== label) claimed.set(localId, null)
-  }
-  for (const [localId, label] of claimed) {
-    if (label !== null && wanted.has(localId)) names.set(localId, label)
+  for (const [localId, label] of declaredByLocalId(proposals, 'label')) {
+    if (wanted.has(localId)) names.set(localId, label)
   }
 
   const storedIds = [...wanted].filter((id) => STORED_ID.test(id))
@@ -684,8 +732,8 @@ async function resolveNames(
  * The same two populations resolveNames() deals with, for the same reason: an
  * end is a UUID when its entity is already in the graph and a local id like
  * `e3` when it is proposed in this very run. Both have a node type, in
- * different places — the `entities` row for one, the sibling entity proposal's
- * payload for the other.
+ * different places — the `entities` row for one, the sibling proposal's payload
+ * for the other.
  *
  * A local id claimed by two proposals of different types resolves to nothing,
  * exactly as it does for names. Slices number their entities independently, and
@@ -702,20 +750,8 @@ export async function resolveNodeTypes(
 
   const types = new Map<string, string>()
 
-  const claimed = new Map<string, string | null>()
-  for (const proposal of proposals) {
-    if (proposal.category !== 'entity') continue
-    if (proposal.payload === null || typeof proposal.payload !== 'object') continue
-    const record = proposal.payload as Record<string, unknown>
-    const localId = typeof record.local_id === 'string' ? record.local_id.trim() : ''
-    const nodeType = typeof record.node_type === 'string' ? record.node_type.trim() : ''
-    if (localId.length === 0 || nodeType.length === 0) continue
-
-    if (!claimed.has(localId)) claimed.set(localId, nodeType)
-    else if (claimed.get(localId) !== nodeType) claimed.set(localId, null)
-  }
-  for (const [localId, nodeType] of claimed) {
-    if (nodeType !== null && wanted.has(localId)) types.set(localId, nodeType)
+  for (const [localId, nodeType] of declaredByLocalId(proposals, 'nodeType')) {
+    if (wanted.has(localId)) types.set(localId, nodeType)
   }
 
   const storedIds = [...wanted].filter((id) => STORED_ID.test(id))

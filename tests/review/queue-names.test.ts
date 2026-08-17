@@ -50,7 +50,7 @@ afterAll(async () => {
 let anchor = 0
 
 async function propose(
-  category: 'entity' | 'assertion',
+  category: 'entity' | 'assertion' | 'event',
   payload: Record<string, unknown>,
   status: 'proposed' | 'accepted' = 'proposed',
 ): Promise<string> {
@@ -192,6 +192,60 @@ describe('naming the ends of a relation', () => {
     expect(row.typeMismatch).toBeNull()
     expect(row.nodeTypes[scene]).toBe('voyage')
     expect(row.nodeTypes[base]).toBe('place')
+  })
+
+  it('names a scene proposed in the same run, which is not an entity proposal', async () => {
+    /*
+     * A local id is not the property of an entity proposal. An event carries
+     * one too, and a scene the model filed as an entity of type `event` is
+     * refiled into `events` on the way in — keeping the id every relation of
+     * that slice already points at.
+     *
+     * The resolution looked at entity proposals only, so those relations found
+     * nothing and the card read « entité 7d1b89b1… »: eight characters of the
+     * slice hash, which is neither the scene nor anything the reviewer can look
+     * up. The claim was then decided blind or deferred for ever.
+     */
+    await propose('event', {
+      local_id: '7d1b89b1:e5',
+      summary: 'Les Bananawani sortent du bassin et poursuivent Vivi.',
+      kind: 'battle',
+      participants: [],
+      is_flashback: false,
+    })
+    const item = await propose('assertion', {
+      ...relation('7d1b89b1:e5', null),
+      predicate: 'located_at',
+      object_value: 'Rainbase',
+    })
+
+    const row = (await getReviewQueue(world.userId, runId))!.items.find(
+      (queued) => queued.id === item,
+    )!
+
+    expect(row.names['7d1b89b1:e5']).toBe(
+      'Les Bananawani sortent du bassin et poursuivent Vivi.',
+    )
+    // And its type, which is what makes the card stack the relation instead of
+    // running a sentence into a predicate.
+    expect(row.nodeTypes['7d1b89b1:e5']).toBe('battle')
+  })
+
+  it('reads a scene that did not say which sort it was as the event it will become', async () => {
+    await propose('event', {
+      local_id: 'e7',
+      summary: 'Crocodile reçoit un appel.',
+      participants: [],
+      is_flashback: false,
+    })
+    const item = await propose('assertion', relation('e7', null))
+
+    const row = (await getReviewQueue(world.userId, runId))!.items.find(
+      (queued) => queued.id === item,
+    )!
+
+    expect(row.names.e7).toBe('Crocodile reçoit un appel.')
+    expect(row.nodeTypes.e7).toBe('event')
   })
 
   it('says it for an end still under review, too', async () => {
