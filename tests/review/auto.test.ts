@@ -59,6 +59,15 @@ beforeEach(async () => {
   // The mode under test. Off everywhere else, which is what keeps the blocking
   // anti-spoiler scenarios exercising the manual path they were written for.
   process.env.AUTO_REVIEW_NAMES_ONLY = '1'
+  /*
+   * The confidence floor, off, so these keep testing what they were written
+   * for. The synthetic extractor scores everything it produces at a quarter —
+   * it copies proper nouns out of the text and has no judgement to offer — so
+   * the real floor would hold every card here and these scenarios would stop
+   * exercising the category rules they exist for. The floor has its own file,
+   * tests/review/confidence.test.ts.
+   */
+  process.env.AUTO_ACCEPT_CONFIDENCE = '0'
   process.env.MODEL_PROVIDER = 'synthetic'
   const { resetModelProvider } = await import('@/domains/ai/index.ts')
   resetModelProvider()
@@ -66,6 +75,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   delete process.env.AUTO_REVIEW_NAMES_ONLY
+  delete process.env.AUTO_ACCEPT_CONFIDENCE
   await closeDb()
 })
 

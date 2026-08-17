@@ -50,7 +50,8 @@ export default async function AnalysePage() {
       <p className="mt-4 max-w-2xl text-sm text-secondary">
         Les règles relisent toute la bibliothèque d’un coup et sans rien
         facturer&nbsp;: doublons, noms affichés avant le chapitre qui les écrit,
-        révélations racontées à l’envers, entrées en scène trop tardives. Ce
+        révélations racontées à l’envers, entrées en scène trop tardives,
+        libellés qui racontent la scène au lieu de nommer la chose. Ce
         qu’elles ne peuvent pas voir — une phrase simplement fausse — demande de
         relire les chapitres, et c’est le second panneau.
       </p>

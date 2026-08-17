@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getReaderSession } from '@/domains/auth/session.ts'
 import { quarantineSummary } from '@/domains/pipeline/quarantine.ts'
+import { autoAcceptThreshold } from '@/domains/review/auto.ts'
 import { getReviewQueue } from '@/domains/review/queue.ts'
 import { ReopenPanel } from './reopen-panel.tsx'
 import { ReviewBoard } from './review-board.tsx'
@@ -83,7 +84,15 @@ export default async function ReviewPage({
         )}
       </div>
 
-      <ReviewBoard queue={serialisable(queue)} />
+      {/*
+        * The threshold travels with the queue.
+        *
+        * Read here, on the server, where the environment is visible: the board
+        * pre-accepts on exactly the line the automatic pass uses, so tuning it
+        * moves both at once instead of leaving the screen showing a rule the
+        * pipeline stopped following.
+        */}
+      <ReviewBoard queue={serialisable(queue)} autoAcceptAt={autoAcceptThreshold()} />
 
       {reopenable.length > 0 && (
         <ReopenPanel runId={runId} items={serialisable(reopenable)} />
@@ -135,6 +144,8 @@ function quarantineLabel(reason: string): string {
     unknown_subject: 'sujet introuvable : son entité a été écartée',
     unknown_object: 'objet introuvable',
     literal_object: 'objet écrit en toutes lettres au lieu d’une entité',
+    missing_object:
+      'relation sans objet — ni entité ni valeur en face du prédicat, donc rien à relier',
     self_reference:
       'relation d’une chose vers elle-même — une question qui se résout elle-même, le plus souvent',
     empty_excerpt: 'preuve sans extrait',

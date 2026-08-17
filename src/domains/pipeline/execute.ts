@@ -196,10 +196,28 @@ async function runAutoPublish(context: StepContext): Promise<StepResult> {
   const result = await autoReview(context.userId, context.runId)
   const opened = result.published?.chapterPublished ?? result.chapterOpened ?? null
 
+  /*
+   * « Rien en attente » has to mean the pass saw nothing at all.
+   *
+   * Every reason a card is left standing counts here, not just the naming
+   * question: a run whose whole queue sits under the confidence floor accepts
+   * nothing, defers nothing and opens nothing — and reporting that as « aucune
+   * proposition en attente » would put a skipped step on the progress view of a
+   * chapter holding eighty-seven of them, with nothing to say why the lot
+   * stopped.
+   */
+  const held =
+    result.heldForNaming +
+    result.heldForIdentity +
+    result.heldByConfidence +
+    result.heldByName +
+    result.heldByTypes
+
   if (
     result.accepted === 0 &&
-    result.heldForNaming === 0 &&
+    held === 0 &&
     result.deferred === 0 &&
+    result.deferredWithoutObject === 0 &&
     opened === null
   ) {
     return { note: 'Aucune proposition en attente.', status: 'skipped' }

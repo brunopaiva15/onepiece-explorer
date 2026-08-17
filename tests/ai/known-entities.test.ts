@@ -175,7 +175,22 @@ describe('the extraction prompt', () => {
   it('carries a version that moved with the wording', () => {
     // Stored on every assertion the model proposes. Without a bump, a run
     // before this change and a run after it are indistinguishable in the record.
-    expect(PROMPT_VERSION).toBe('13')
+    expect(PROMPT_VERSION).toBe('14')
+  })
+
+  /**
+   * « Kaloo blesse », and nothing after the verb.
+   *
+   * '5' ruled the sentence out of the object slot and left the empty slot
+   * standing: both object fields null passed every check downstream and reached
+   * the reviewer as a card that could not be accepted. The rule is enforced in
+   * three places now; this is the one that stops it being written at all.
+   */
+  it('says that a relation always has an object, and where the fact goes when it has none', () => {
+    const prompt = extractionSystem('(ontologie)', 'summary')
+
+    expect(prompt).toMatch(/toujours un objet/)
+    expect(prompt).toMatch(/« events »/)
   })
 
   /**

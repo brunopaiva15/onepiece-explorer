@@ -38,7 +38,9 @@
  * modèle, dans `audit-run.ts`, et ses constats arrivent dans la même liste.
  */
 import { sameBeat } from '@/domains/knowledge/beats.ts'
+import { readsAsDescription } from '@/domains/knowledge/label-shape.ts'
 import { boundedEditDistance, normalizeText } from '@/domains/knowledge/normalize.ts'
+import { OCCURRENCE_TYPES } from '@/domains/knowledge/ontology.ts'
 
 /** Un libellé, tel que la règle a besoin de le lire. */
 export interface AuditLabel {
@@ -108,6 +110,7 @@ export type AuditKind =
   | 'entree_tardive'
   | 'entree_en_double'
   | 'variantes_du_meme_nom'
+  | 'libelle_verbeux'
   | 'relecture'
 
 /**
@@ -130,6 +133,8 @@ export type AuditFix =
   | { action: 'retirer_identite'; assertionId: string }
   /** L'entrée en scène ramenée au chapitre qui en parle en premier. */
   | { action: 'avancer_entree'; entityId: string; chapter: number }
+  /** Un libellé qui raconte, ramené au nom qu'il contient. */
+  | { action: 'raccourcir_libelle'; labelId: string; label: string }
   /** La phrase d'une scène, réécrite. Vient de la relecture, jamais des règles. */
   | { action: 'reecrire_scene'; entityId: string; summary: string }
 
@@ -185,6 +190,7 @@ export function auditStorySnapshot(snapshot: AuditSnapshot): AuditFinding[] {
     ...lateEntrances(snapshot),
     ...doubledEntrances(snapshot),
     ...spellingVariants(snapshot),
+    ...verboseLabels(snapshot),
   ]
 
   return findings.sort((a, b) => a.chapter - b.chapter || a.kind.localeCompare(b.kind))
@@ -615,6 +621,131 @@ function spellingVariants(snapshot: AuditSnapshot): AuditFinding[] {
 }
 
 /**
+ * Les types dont le nom EST une phrase, par construction.
+ *
+ * Une scène s'appelle par son résumé et un mystère par sa question : la
+ * publication écrit le libellé depuis l'un ou l'autre, exprès. Les passer à la
+ * règle ci-dessous reprocherait à la bibliothèque entière d'être ce qu'elle est
+ * — quelques milliers de constats, tous faux, et la page devient illisible pour
+ * les défauts réels.
+ */
+const TOLD_NOT_NAMED = new Set<string>([...OCCURRENCE_TYPES, 'mystery'])
+
+/**
+ * Un libellé qui raconte la scène au lieu de nommer la chose.
+ *
+ * « Escargophone utilisé par Crocodile pour contacter les Billions » est le nom
+ * d'un objet dans cette bibliothèque. L'extraction le refuse depuis qu'elle sait
+ * lire la grammaire d'un nom, et les cent soixante-douze chapitres importés
+ * avant en portent : ce défaut-là n'existe qu'*au passé*, et c'est exactement ce
+ * que cette page est pour.
+ *
+ * Ce que ça coûte de le laisser n'est pas la verbosité. Les circonstances sont
+ * dans le nom, donc le nom n'est vrai que dans une case : le même escargophone
+ * revu six chapitres plus loin dans une autre main reçoit une autre description,
+ * et le graphe garde deux objets là où l'œuvre en a un. Aucune règle voisine ne
+ * les rapprochera — `variantes_du_meme_nom` cherche une lettre d'écart, et il y
+ * a ici trente mots.
+ *
+ * La règle est celle de l'extraction, la même fonction : un nom est un groupe
+ * nominal, une description y accroche une proposition, et c'est la proposition
+ * qui appartient à une relation. Deux copies de ce test voudraient dire qu'un
+ * chapitre importé aujourd'hui et un chapitre relu aujourd'hui ne sont pas jugés
+ * pareil.
+ *
+ * Seuls les libellés qui s'affichent. Une graphie rangée sous le rang
+ * d'affichage n'est là que pour être trouvée par une recherche ou par un
+ * catalogue, et la raccourcir ne changerait rien pour personne — c'est aussi ce
+ * qui fait qu'un constat corrigé ne revient pas : le raccourci démet l'ancienne
+ * formulation à ce rang-là.
+ *
+ * La correction n'est proposée que si la coupe laisse un nom. « Tempêtes de
+ * sable de Yuba provoquées par Crocodile » se raccourcit tout seul ; un libellé
+ * long sans proposition à couper n'a pas de forme courte mécanique, et le
+ * constat reste utile sans correction : il dit où regarder, et le geste est sur
+ * la fiche.
+ */
+function verboseLabels(snapshot: AuditSnapshot): AuditFinding[] {
+  /*
+   * Qui porte déjà chaque nom affiché, pour ne pas en donner un qui est pris.
+   *
+   * « Base de la Marine, 153e branche » se raccourcit mécaniquement en « Base de
+   * la Marine », et il y a des chances que ce nom soit déjà celui d'une autre
+   * fiche. Écrire quand même donnerait deux fiches du même nom, ce qui est soit
+   * un rapprochement à faire soit deux lieux à distinguer — dans les deux cas un
+   * jugement, et la page offre « corriger les quarante » d'un clic.
+   *
+   * Donc le constat reste et la correction disparaît : c'est la convention de ce
+   * fichier pour tout ce qui demande de choisir.
+   */
+  const claimed = new Map<string, Set<string>>()
+  for (const entity of snapshot.entities) {
+    for (const label of entity.labels) {
+      if (label.precedence <= SEARCH_ONLY) continue
+      const holders = claimed.get(label.normalized)
+      if (holders) holders.add(entity.id)
+      else claimed.set(label.normalized, new Set([entity.id]))
+    }
+  }
+
+  const takenByAnother = (suggestion: string, entityId: string): boolean => {
+    const holders = claimed.get(normalizeText(suggestion))
+    if (holders === undefined) return false
+    return [...holders].some((holder) => holder !== entityId)
+  }
+
+  const findings: AuditFinding[] = []
+
+  for (const entity of snapshot.entities) {
+    if (TOLD_NOT_NAMED.has(entity.nodeType)) continue
+
+    for (const label of entity.labels) {
+      if (label.precedence <= SEARCH_ONLY) continue
+
+      const found = readsAsDescription(label.label)
+      if (found === null) continue
+
+      const shape =
+        found.suggestion !== null && takenByAnother(found.suggestion, entity.id)
+          ? { reason: found.reason, suggestion: null, taken: found.suggestion }
+          : { ...found, taken: null }
+
+      findings.push({
+        kind: 'libelle_verbeux',
+        // Le chapitre où ce nom s'affiche, et l'entrée en scène à défaut : un
+        // libellé hors de l'axe des chapitres se lit quand même sur la fiche.
+        chapter: label.revealedInChapter ?? entity.firstSeenChapter,
+        title: `« ${label.label} » raconte au lieu de nommer`,
+        detail:
+          shape.taken !== null
+            ? `Un nom est un groupe nominal court, et celui-ci est une phrase. ` +
+              `« ${shape.taken} » serait la forme courte, mais une autre fiche porte ` +
+              `déjà ce nom : ou c'est la même chose et il faut les rapprocher, ou ce ` +
+              `sont deux choses et il faut les distinguer. Cela se tranche sur la fiche.`
+            : shape.suggestion === null
+            ? `Un nom est un groupe nominal court, et celui-ci est une phrase. ` +
+              `Aucune coupe mécanique n'y laisse un nom : le raccourci se choisit ` +
+              `sur la fiche.`
+            : `Un nom est un groupe nominal court : « ${shape.suggestion} ». ` +
+              `Ce que le libellé perd — qui s'en sert, ce que ça provoque — s'écrit ` +
+              `en relations, où ça se retrouve depuis les deux bouts ; gardé dans le ` +
+              `nom, ça ne vaut que dans cette case et donne une seconde fiche à la ` +
+              `prochaine apparition.`,
+        subjectEntityId: entity.id,
+        objectEntityId: null,
+        fix:
+          shape.suggestion === null
+            ? null
+            : { action: 'raccourcir_libelle', labelId: label.id, label: shape.suggestion },
+        fingerprint: `libelle_verbeux|${label.id}`,
+      })
+    }
+  }
+
+  return findings
+}
+
+/**
  * À quel chapitre les sources écrivent chacun de ces noms pour la première fois.
  *
  * La question que `repair:noms` pose pour dater une révélation, posée ici pour
@@ -831,5 +962,6 @@ export const AUDIT_KIND_LABELS: Record<AuditKind, string> = {
   entree_tardive: 'Entrées en scène trop tardives',
   entree_en_double: 'Entrées en scène en double',
   variantes_du_meme_nom: 'Deux graphies d’un même nom',
+  libelle_verbeux: 'Libellés qui racontent au lieu de nommer',
   relecture: 'Ce que la relecture a trouvé',
 }

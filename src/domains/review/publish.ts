@@ -1062,6 +1062,32 @@ export async function publishDecisions(
       }
 
       /*
+       * A relation joins two things, and here there is one.
+       *
+       * `object` null and `object_value` null: the card shows « Kaloo blesse »
+       * and stops. `assertion_has_object` refuses it, correctly, and what the
+       * reviewer got back was the constraint's own name — twice, because the
+       * chapter contained two of them.
+       *
+       * Extraction quarantines these now, so nothing new arrives in this shape.
+       * This is for the ones already sitting in a queue, and for the automatic
+       * pass, which has no card to read: they get a sentence saying what is
+       * missing and that rejecting is the answer, since nothing here is
+       * repairable — an object nobody can name is not one the reviewer can pick.
+       */
+      const literalObject = candidate.object_value?.trim() ?? ''
+      if (objectId === null && literalObject.length === 0) {
+        result.failures.push({
+          reviewItemId: item.id,
+          reason:
+            `« ${candidate.predicate} » n'a pas d'objet : la relation n'a qu'un bout. ` +
+            `Elle ne peut pas être écrite — rejetez-la. Ce que le chapitre montre, ` +
+            `quand l'autre bout n'a pas de nom, est un événement.`,
+        })
+        continue
+      }
+
+      /*
        * The ontology's last word, and the only place it is enforced.
        *
        * A trigger refuses an edge whose ends do not match the predicate —

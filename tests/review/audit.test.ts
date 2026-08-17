@@ -6,6 +6,7 @@ import {
   relectureFinding,
   scenesMatching,
   type AuditEntity,
+  type AuditLabel,
   type AuditSnapshot,
 } from '@/domains/review/audit.ts'
 
@@ -697,5 +698,181 @@ describe('la réponse du modèle, ligne par ligne', () => {
 
   it('ignore une réponse en prose, qui n’est pas le format demandé', () => {
     expect(parseRelecture('insufficient_data', ['scene-41'])).toEqual([])
+  })
+})
+
+/**
+ * Les libellés que la bibliothèque a déjà, et que l'extraction refuse désormais.
+ *
+ * « Escargophone utilisé par Crocodile pour contacter les Billions » est un nom
+ * d'objet réel, tiré d'un vrai chapitre. Le défaut n'existe qu'au passé — les
+ * cent soixante-douze chapitres importés avant que l'extraction sache lire la
+ * grammaire d'un nom — et c'est le seul endroit qui puisse le rattraper, puisque
+ * aucune règle voisine ne s'intéresse à un libellé bien daté, bien relié et
+ * simplement bavard.
+ */
+describe('un libellé qui raconte au lieu de nommer', () => {
+  const label = (input: Partial<AuditLabel> & { id: string; label: string }): AuditLabel => ({
+    normalized: input.label.toLowerCase(),
+    kind: 'placeholder',
+    revealedInChapter: 173,
+    precedence: 10,
+    ...input,
+  })
+
+  it('propose la forme courte, sans jamais l’écrire seule', () => {
+    const findings = auditStorySnapshot({
+      ...EMPTY,
+      entities: [
+        entity({
+          id: 'escargophone',
+          nodeType: 'object',
+          firstSeenChapter: 173,
+          labels: [
+            label({
+              id: 'l-den-den',
+              label: 'Escargophone utilisé par Crocodile pour contacter les Billions',
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.kind).toBe('libelle_verbeux')
+    expect(findings[0]?.chapter).toBe(173)
+    expect(findings[0]?.fix).toEqual({
+      action: 'raccourcir_libelle',
+      labelId: 'l-den-den',
+      label: 'Escargophone',
+    })
+  })
+
+  it('garde le constat sans correction quand aucune coupe ne laisse un nom', () => {
+    const findings = auditStorySnapshot({
+      ...EMPTY,
+      entities: [
+        entity({
+          id: 'navire',
+          nodeType: 'object',
+          labels: [
+            label({
+              id: 'l-navire',
+              label: 'Grand navire de guerre noir aux voiles déchirées et à la proue brisée',
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(findings).toHaveLength(1)
+    // Le constat dit où regarder ; couper au sixième mot inventerait un nom.
+    expect(findings[0]?.fix).toBeNull()
+  })
+
+  it('se tait sur une scène et sur un mystère, dont le nom EST une phrase', () => {
+    const findings = auditStorySnapshot({
+      ...EMPTY,
+      entities: [
+        entity({
+          id: 'scene',
+          nodeType: 'battle',
+          labels: [
+            label({
+              id: 'l-scene',
+              label: 'Les Bananawani sortent du bassin et poursuivent Vivi, qui leur échappe.',
+              kind: 'alias',
+            }),
+          ],
+        }),
+        entity({
+          id: 'mystere',
+          nodeType: 'mystery',
+          labels: [
+            label({
+              id: 'l-mystere',
+              label: 'Qui a prévenu Crocodile pour qu’il attende l’équipage à Rainbase ?',
+              kind: 'alias',
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(findings).toEqual([])
+  })
+
+  it('ignore une graphie que rien n’affiche : la raccourcir ne changerait rien', () => {
+    const findings = auditStorySnapshot({
+      ...EMPTY,
+      entities: [
+        entity({
+          id: 'escargophone',
+          nodeType: 'object',
+          labels: [
+            label({
+              id: 'l-anglais',
+              label: 'Den Den Mushi used by Crocodile to call the Billions',
+              kind: 'alias',
+              precedence: 5,
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(findings).toEqual([])
+  })
+
+  it('retire la correction quand la forme courte est déjà le nom d’une autre fiche', () => {
+    const findings = auditStorySnapshot({
+      ...EMPTY,
+      entities: [
+        entity({
+          id: 'la-marine',
+          nodeType: 'group',
+          labels: [
+            label({ id: 'l-marine', label: 'la Marine', kind: 'alias', precedence: 50 }),
+          ],
+        }),
+        entity({
+          id: 'base-153',
+          nodeType: 'place',
+          labels: [
+            label({ id: 'l-base', label: 'la Marine, 153e branche', kind: 'alias', precedence: 50 }),
+          ],
+        }),
+      ],
+    })
+
+    const verbose = findings.filter((finding) => finding.kind === 'libelle_verbeux')
+    expect(verbose).toHaveLength(1)
+    // Écrire « la Marine » ici donnerait deux fiches du même nom : ou un
+    // rapprochement, ou deux choses à distinguer, et les deux se choisissent.
+    expect(verbose[0]?.fix).toBeNull()
+    expect(verbose[0]?.detail).toContain('une autre fiche porte déjà ce nom')
+  })
+
+  it('laisse tranquilles les noms que l’œuvre emploie', () => {
+    const findings = auditStorySnapshot({
+      ...EMPTY,
+      entities: [
+        entity({
+          id: 'vivi',
+          labels: [label({ id: 'l-vivi', label: 'Nefertari Vivi', kind: 'true_name', precedence: 100 })],
+        }),
+        entity({
+          id: 'equipage',
+          nodeType: 'group',
+          labels: [label({ id: 'l-eq', label: 'Équipage du Chapeau de Paille', kind: 'alias', precedence: 50 })],
+        }),
+        entity({
+          id: 'silhouette',
+          labels: [label({ id: 'l-sil', label: 'l’homme au foulard rayé' })],
+        }),
+      ],
+    })
+
+    expect(findings).toEqual([])
   })
 })
