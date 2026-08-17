@@ -112,6 +112,22 @@ export interface ReviewItemView {
    */
   typeMismatch: TypeMismatch | null
   /**
+   * For relations: no object at all, neither entity nor value.
+   *
+   * The neighbouring signal to `typeMismatch`, and the case it cannot see: a
+   * relation whose object is simply absent is well typed by construction —
+   * nothing to disagree with — so the card said « Kaloo blesse » and offered
+   * « Accepter », and the database answered « violates check constraint
+   * "assertion_has_object" » once « Publier » had been pressed.
+   *
+   * Unlike a mismatch, this one has no repair on the card. A predicate that
+   * would fit two ends can be offered because both ends exist; here the other
+   * end was never proposed, and choosing one for the reviewer would be
+   * inventing the fact. So the notice says to reject, which is the whole
+   * decision.
+   */
+  missingObject: boolean
+  /**
    * Set when another item of this run proposes the same thing.
    *
    * Counted over every item of the run, not just the pending page: a copy
@@ -348,6 +364,7 @@ export async function getReviewQueue(
         row.category === 'entity' ? (merges.get(row.fingerprint) ?? null) : null,
       typeMismatch:
         row.category === 'assertion' ? mismatchOf(row.payload, nodeTypes) : null,
+      missingObject: row.category === 'assertion' && lacksObject(row.payload),
       names: Object.fromEntries(
         referencedIds(row.payload)
           .map((id) => [id, names.get(id)] as const)
@@ -787,6 +804,24 @@ export function mismatchOf(
   if (object !== '' && objectType === null) return null
 
   return checkTypes(predicate, nodeTypes.get(subject) ?? null, objectType)
+}
+
+/**
+ * A relation with nothing on the other side.
+ *
+ * `assertion_has_object` demands one of the two columns, so this is exactly
+ * what the database will refuse. Read from the payload rather than from the
+ * resolved ends, because it is not a resolution failure: nothing was named to
+ * resolve.
+ */
+export function lacksObject(payload: unknown): boolean {
+  if (payload === null || typeof payload !== 'object') return false
+  const record = payload as Record<string, unknown>
+
+  const object = typeof record.object === 'string' ? record.object.trim() : ''
+  const value = typeof record.object_value === 'string' ? record.object_value.trim() : ''
+
+  return object === '' && value === ''
 }
 
 /**

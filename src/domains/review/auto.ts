@@ -4,7 +4,7 @@ import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { ingestionRuns, reviewItems } from '@/db/schema/ingestion.ts'
 import { AUTO_ACCEPT_CONFIDENCE, confidentEnough } from './confidence.ts'
-import { mismatchOf, resolveNodeTypes } from './queue.ts'
+import { lacksObject, mismatchOf, resolveNodeTypes } from './queue.ts'
 import {
   markChapterReviewed,
   publishDecisions,
@@ -189,6 +189,8 @@ export interface AutoReviewResult {
   heldByName: number
   /** Relations the ontology refuses as written, left for a human to reshape. */
   heldByTypes: number
+  /** Relations with no object at all, parked: unwritable and unrepairable. */
+  deferredWithoutObject: number
   /** Categories publication cannot apply, parked rather than accepted. */
   deferred: number
   published: PublishResult | null
@@ -290,6 +292,7 @@ export async function autoReview(
     heldByConfidence: 0,
     heldByName: 0,
     heldByTypes: 0,
+    deferredWithoutObject: 0,
     deferred: 0,
     published: null,
     chapterOpened: null,
@@ -405,6 +408,31 @@ export async function autoReview(
     }
 
     /*
+     * Parked rather than held, because holding it would never end.
+     *
+     * A relation with no object cannot be written and cannot be repaired: the
+     * other end is absent from the chapter, not merely from the payload. Left
+     * proposed it would sit in the queue for ever, and a chapter with a
+     * proposal outstanding never counts as read — so an automatic lot would
+     * stop dead on a duck nobody shot.
+     *
+     * Before every other reason to hold one, and that ordering is the point:
+     * neither a score under the threshold, nor a subject waiting on its name,
+     * nor a predicate the ontology refuses changes anything about a relation
+     * that has nothing in front of the verb. Held for one of those, it would
+     * block the chapter exactly as it did before it was parked.
+     *
+     * Deferred writes no decision against the fingerprint: nothing is
+     * destroyed, the card stays visible, and re-processing the chapter is
+     * still free to propose the fact in the shape it should have had.
+     */
+    if (item.category === 'assertion' && lacksObject(item.payload)) {
+      decisions.push({ reviewItemId: item.id, decision: 'defer' })
+      result.deferredWithoutObject++
+      continue
+    }
+
+    /*
      * The model's own doubt, taken at face value.
      *
      * Counted before the dependency checks below, so a card held on its own
@@ -514,6 +542,12 @@ export function autoReviewNote(result: AutoReviewResult): string {
     parts.push(
       `${result.heldByTypes} relation(s) au prédicat incompatible — ` +
         `la carte propose ceux qui conviennent`,
+    )
+  }
+  if (result.deferredWithoutObject > 0) {
+    parts.push(
+      `${result.deferredWithoutObject} relation(s) sans objet reportée(s) — ` +
+        `une relation n'ayant qu'un bout ne s'écrit pas`,
     )
   }
   if (result.heldForIdentity > 0) {

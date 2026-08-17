@@ -213,7 +213,13 @@ async function runAutoPublish(context: StepContext): Promise<StepResult> {
     result.heldByName +
     result.heldByTypes
 
-  if (result.accepted === 0 && held === 0 && result.deferred === 0 && opened === null) {
+  if (
+    result.accepted === 0 &&
+    held === 0 &&
+    result.deferred === 0 &&
+    result.deferredWithoutObject === 0 &&
+    opened === null
+  ) {
     return { note: 'Aucune proposition en attente.', status: 'skipped' }
   }
 

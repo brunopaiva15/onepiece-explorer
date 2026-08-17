@@ -218,7 +218,10 @@ function sweepConfident(
     if (
       item.requiresExplicitReview ||
       !confidentEnough(item.confidence, threshold) ||
-      item.typeMismatch !== null
+      item.typeMismatch !== null ||
+      // Missing its other end in the chapter as much as in the payload, so no
+      // score says anything about it: accepted, it bounces at publication.
+      item.missingObject
     ) {
       continue
     }
@@ -541,7 +544,10 @@ export function ReviewBoard({ queue, autoAcceptAt = AUTO_ACCEPT_CONFIDENCE }: Pr
         // The database would refuse it, and a bulk action must not queue up a
         // failure. Which predicate it should have carried is a judgement, and
         // this button does not make judgements.
-        (item.typeMismatch !== null && !predicates.has(item.id))
+        (item.typeMismatch !== null && !predicates.has(item.id)) ||
+        // Refused for the other reason, and this one has no repair at all: a
+        // relation missing its object is missing it in the chapter too.
+        item.missingObject
       ) {
         continue
       }
@@ -567,9 +573,12 @@ export function ReviewBoard({ queue, autoAcceptAt = AUTO_ACCEPT_CONFIDENCE }: Pr
     () =>
       items.filter(
         (item) =>
-          item.typeMismatch !== null &&
           decisions.get(item.id) === 'accept' &&
-          !predicates.has(item.id),
+          ((item.typeMismatch !== null && !predicates.has(item.id)) ||
+            // Same notice, same count: from the publish button's point of view
+            // a relation with no object and one with the wrong predicate are
+            // the same thing — an accepted card that will bounce.
+            item.missingObject),
       ).length,
     [decisions, items, predicates],
   )
@@ -1253,6 +1262,9 @@ function ProposalCard({
               />
             )}
             {item.echo && <EchoNotice echo={item.echo} />}
+            {item.missingObject && (
+              <MissingObjectNotice payload={item.payload} names={item.names} />
+            )}
             {item.typeMismatch && (
               <TypeMismatchNotice
                 mismatch={item.typeMismatch}
@@ -1446,6 +1458,50 @@ function MergeNotice({
       >
         Aller au rapprochement
       </button>
+    </div>
+  )
+}
+
+/**
+ * The relation whose other end was never written.
+ *
+ * « Kaloo blesse », and then nothing: `object` and `object_value` both null.
+ * The card printed the two words it had and offered « Accepter », and the
+ * answer came back after « Publier » as « violates check constraint
+ * "assertion_has_object" », twice, for the two the chapter contained.
+ *
+ * Its own notice rather than a case of `TypeMismatchNotice`, because it is the
+ * opposite situation. A mismatch has two ends and the wrong verb between them,
+ * which is why that panel offers verbs. Here there is one end, and the missing
+ * one is missing from the chapter as much as from the payload — a stray bullet
+ * hits the duck and nobody fired it. Offering a picker would be asking the
+ * reviewer to supply a fact the source does not state, so the panel offers
+ * nothing and says so: reject, and what the chapter really showed is an event.
+ */
+function MissingObjectNotice({
+  payload,
+  names,
+}: {
+  payload: unknown
+  names: Record<string, string>
+}) {
+  const record = (payload ?? {}) as Record<string, unknown>
+  const subject = typeof record.subject === 'string' ? record.subject : ''
+  const subjectName = names[subject] ?? subject
+  const predicate = typeof record.predicate === 'string' ? record.predicate : ''
+
+  return (
+    <div className="mb-3 border-[3px] border-ink bg-[var(--coral)] px-2 py-1.5 text-white">
+      <p className="font-display text-sm uppercase">Relation sans objet</p>
+
+      <p className="mt-1 text-sm">
+        «&nbsp;{subjectName} {predicateLabel(predicate)}&nbsp;»…&nbsp;quoi&nbsp;?
+        Cette relation n&apos;a qu&apos;un bout : ni entité, ni valeur en face.
+        La base la refusera à l&apos;écriture, et il n&apos;y a rien à corriger
+        ici — choisir un objet à la place du modèle reviendrait à inventer le
+        fait. Rejetez-la. Ce que le chapitre montre, quand l&apos;autre bout
+        n&apos;a pas de nom, est un événement.
+      </p>
     </div>
   )
 }
