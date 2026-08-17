@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { postersFor, wantedEntityIds } from '@/domains/images/posters.ts'
+import { postersFor, wantedAtChapter } from '@/domains/images/posters.ts'
 import { displayImages } from '@/domains/images/index.ts'
 import { castAtChapter, castOf } from '@/domains/temporal/spotlight.ts'
 import {
@@ -164,15 +164,24 @@ describe('un avis de recherche est daté comme tout le reste', () => {
 /**
  * Qui est recherché, et par quel bout on le demande.
  *
- * The home page asked the wrong question for a release: it took the sixty
- * best-connected characters and kept whichever of them had a poster. That reads
- * as a reasonable ordering and it is a filter, and what it filtered out was
- * everybody wanted early and mentioned rarely — Higuma above all, who carries
- * the first bounty in One Piece and three lines of dialogue. These tests pin the
- * inversion: the pictures decide who is on the wall, and the boundary decides
- * which of them the reader has reached.
+ * The home page has asked this wrongly twice, and each answer threw away part
+ * of the wall:
+ *
+ *   **By rank.** The sixty best-connected characters, filtered to those with a
+ *   poster. Higuma carries the first bounty in One Piece and three lines of
+ *   dialogue, so he was never in the pool to be filtered.
+ *
+ *   **By picture.** Everybody with a stored poster, which reads as the whole
+ *   answer and is the intersection of « wanted » and « photographed ». The wiki
+ *   has a file for about a quarter of the printings the manifest knows, so
+ *   Brogy — a hundred million on the page at chapter 118, no picture of it
+ *   anywhere — was missing from the wall of a reader who had just read it.
+ *
+ * The question is now the reader's own: who do I know a bounty for. These tests
+ * pin that, and pin the two things it must not become — a wall that invents a
+ * bounty for somebody who has none, and a wall that shows one early.
  */
-describe('le mur part des affiches, pas du classement', () => {
+describe('le mur part des primes connues, pas du classement ni des images', () => {
   /** A bandit with a poster, a name and no relations whatsoever. */
   async function seedHiguma(): Promise<string> {
     const higuma = await createEntity(world, 'character', 1)
@@ -186,23 +195,97 @@ describe('le mur part des affiches, pas du classement', () => {
     // Somebody with relations, so the ranking has something to prefer.
     await seedLuffy()
 
-    const wanted = await wantedEntityIds(world.userId, 1100)
-    expect(wanted).toContain(higuma)
+    const wanted = await wantedAtChapter(world.userId, 1100)
+    expect(wanted.has(higuma)).toBe(true)
 
     // And the cast built from that list holds him with his name, which the
     // degree-ranked pool is free never to have heard of.
-    const cast = await castOf(world.userId, 1100, wanted)
+    const cast = await castOf(world.userId, 1100, [...wanted.keys()])
     expect(cast.find((member) => member.memberIds.includes(higuma))?.label).toBe('Higuma')
+  })
+
+  /*
+   * Le chapitre 118, tel qu'il a été signalé.
+   *
+   * Brogy is worth a hundred million at Little Garden and the wiki has no
+   * picture of that poster: the one file that names him shows the printing of
+   * chapter 1130, and the one that shows both giants is an anime frame with no
+   * figure on it. Under the picture-first wall he was simply absent, which told
+   * a reader of chapter 118 that the bounty they had just read did not exist.
+   */
+  it('affiche une prime que personne n’a jamais photographiée', async () => {
+    const brogy = await createEntity(world, 'character', 118)
+    await addLabel(world, brogy, 'Brogy', 'true_name', 118, 100)
+
+    const wanted = await wantedAtChapter(world.userId, 187)
+    expect(wanted.get(brogy)?.amount).toBe(100_000_000)
+    expect(wanted.get(brogy)?.chapter).toBe(118)
+
+    // And no picture is conjured to go with it: the page shows the character.
+    const posters = await postersFor(world.userId, 187, [brogy], new Map([[brogy, 'Brogy']]))
+    expect(posters.size).toBe(0)
+  })
+
+  /*
+   * The bounty is the manga's and the drawing is the anime's, and the site
+   * shows the first without the second. The picture stays in the library —
+   * nothing deletes it — and the manifest decides at read time that it does not
+   * reach a page, so the rule holds for libraries enriched before the decision.
+   */
+  it('donne le montant sans l’affiche quand l’image vient de l’anime', async () => {
+    const higuma = await seedHiguma()
+
+    const wanted = await wantedAtChapter(world.userId, 187)
+    expect(wanted.get(higuma)?.amount).toBe(8_000_000)
+
+    const posters = await postersFor(world.userId, 187, [higuma], new Map([[higuma, 'Higuma']]))
+    expect(posters.size).toBe(0)
+
+    // The row was never removed; it is the reading that refuses it.
+    const held = await raw<Array<{ n: number }>>`
+      SELECT count(*)::int AS n FROM entity_images
+      WHERE entity_id = ${higuma} AND kind = 'poster'
+    `
+    expect(held[0]?.n).toBe(1)
   })
 
   it('s’arrête au chapitre du lecteur, comme la lecture des affiches', async () => {
     await seedHiguma()
     const luffy = await seedLuffy()
 
-    // Chapter 1 shows Higuma's eight million and nothing of Luffy's printings,
-    // the earliest of which is six hundred chapters away.
-    expect(await wantedEntityIds(world.userId, 1)).not.toContain(luffy)
-    expect(await wantedEntityIds(world.userId, 700)).toContain(luffy)
+    // Chapter 1 shows Higuma's eight million. Luffy is not wanted for anything
+    // until chapter 96, whatever the library holds a picture of.
+    expect((await wantedAtChapter(world.userId, 1)).has(luffy)).toBe(false)
+    expect((await wantedAtChapter(world.userId, 700)).has(luffy)).toBe(true)
+  })
+
+  /*
+   * The figure follows the reader, and stops at them. Luffy is worth thirty
+   * million from 96, four hundred from 601 and three billion from 1053, and the
+   * wall must never be one printing ahead of the person reading it.
+   */
+  it('ne montre jamais le tirage suivant', async () => {
+    const luffy = await seedLuffy()
+
+    expect((await wantedAtChapter(world.userId, 96)).get(luffy)?.amount).toBe(30_000_000)
+    expect((await wantedAtChapter(world.userId, 600)).get(luffy)?.amount).toBe(300_000_000)
+    expect((await wantedAtChapter(world.userId, 700)).get(luffy)?.amount).toBe(400_000_000)
+    expect((await wantedAtChapter(world.userId, 1100)).get(luffy)?.amount).toBe(3_000_000_000)
+  })
+
+  /*
+   * A name the reader has not been told cannot put anybody on the wall. The
+   * labels are read inside the boundary, so an entity known here only as « le
+   * bandit » matches no manifest line and carries no bounty — which is the
+   * conservative half of the same rule that dates everything else.
+   */
+  it('ne reconnaît pas un personnage dont le nom n’est pas encore révélé', async () => {
+    const higuma = await createEntity(world, 'character', 1)
+    await addLabel(world, higuma, 'un bandit des montagnes', 'placeholder', 1, 10)
+    await addLabel(world, higuma, 'Higuma', 'true_name', 96, 100)
+
+    expect((await wantedAtChapter(world.userId, 10)).has(higuma)).toBe(false)
+    expect((await wantedAtChapter(world.userId, 96)).get(higuma)?.amount).toBe(8_000_000)
   })
 
   /*
@@ -244,31 +327,38 @@ describe('le mur part des affiches, pas du classement', () => {
       }
     }
 
-    const wanted = await wantedEntityIds(world.userId, 124)
-    expect(wanted).toContain(higuma)
+    const wanted = await wantedAtChapter(world.userId, 124)
+    expect(wanted.get(higuma)?.amount).toBe(8_000_000)
 
     // And the ranking really would have buried him: asked for the two best
     // connected characters, the old pool holds none of the reader's bandits.
     const podium = await castAtChapter(world.userId, 124, { pool: 2 })
     expect(podium.some((member) => member.memberIds.includes(higuma))).toBe(false)
 
-    // The wall keeps him because it is built from the posters, in any order.
-    const cast = await castOf(world.userId, 124, wanted)
+    // The wall keeps him because it is built from the bounties, in any order.
+    const cast = await castOf(world.userId, 124, [...wanted.keys()])
+    expect(cast.some((member) => member.memberIds.includes(higuma))).toBe(true)
+
+    /*
+     * Three of the four carry a picture: Higuma's is the anime's drawing of the
+     * poster, so his card is the bandit's face and his eight million rather
+     * than a rendering no chapter printed.
+     */
     const posters = await postersFor(
       world.userId,
       124,
       cast.flatMap((member) => member.memberIds),
       new Map(cast.map((member) => [member.entityId, member.label])),
     )
-    expect(posters.get(higuma)?.amount).toBe(8_000_000)
-    expect(posters.size).toBe(4)
+    expect(posters.has(higuma)).toBe(false)
+    expect(posters.size).toBe(3)
   })
 
-  it('ne rend rien quand la bibliothèque n’a aucune affiche', async () => {
+  it('ne rend rien quand le manifeste ne connaît personne de la bibliothèque', async () => {
     const nobody = await createEntity(world, 'character', 1)
     await addLabel(world, nobody, 'Makino', 'true_name', 1, 100)
 
-    expect(await wantedEntityIds(world.userId, 1100)).toEqual([])
+    expect(await wantedAtChapter(world.userId, 1100)).toEqual(new Map())
     // The page falls through to faces, and the pool for those is unchanged.
     expect(await castOf(world.userId, 1100, [])).toEqual([])
     expect((await castAtChapter(world.userId, 1100)).length).toBeGreaterThan(0)

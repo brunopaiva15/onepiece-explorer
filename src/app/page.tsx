@@ -4,8 +4,9 @@ import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts
 import {
   displayImages,
   postersFor,
-  wantedEntityIds,
+  wantedAtChapter,
   type DisplayImage,
+  type KnownBounty,
   type PosterView,
 } from '@/domains/images/index.ts'
 import { ARCS, arcOf, type Arc } from '@/domains/temporal/arcs.ts'
@@ -89,6 +90,8 @@ export default async function HomePage({
     member: CastMember
     portrait: DisplayImage | null
     poster: PosterView | null
+    /** The figure the reader knows, when a chapter has printed one for them. */
+    bounty: KnownBounty | null
   }> = []
   let questions: OpenQuestion[] = []
   /**
@@ -123,30 +126,37 @@ export default async function HomePage({
       .filter((chapter) => chapter.status === 'published' && chapter.number <= boundary)
       .sort((a, b) => b.number - a.number)
 
-    const [cast, open, wantedIds] = await Promise.all([
+    const [cast, open, bounties] = await Promise.all([
       castAtChapter(session.userId, boundary, { nodeTypes: ['character'] }),
       openQuestionsAtChapter(session.userId, boundary),
-      wantedEntityIds(session.userId, boundary),
+      wantedAtChapter(session.userId, boundary),
     ])
 
     /*
-     * The posters first, and they decide what the wall is.
+     * The bounties first, and they decide who is on the wall.
      *
-     * Six characters dressed in a drawn poster frame was worse than the
-     * portraits it replaced: Laboon is a whale and Kaloo is a duck, and neither
-     * has ever been wanted for anything. A frame reading « avis de recherche »
-     * around a duck is the interface inventing the one thing this site does not
-     * invent. So the wall shows real posters, or it is not a wall of posters.
+     * Not the cast: the first version drew from `cast` — the sixty
+     * best-connected characters — and kept whichever of them happened to have a
+     * poster, which quietly cost the wall everybody wanted early and mentioned
+     * rarely. Higuma has the first bounty in the story and three relations to
+     * his name; a reader of chapter 100 saw Buggy, Krieg and Arlong and no sign
+     * that the bandit of chapter 1 was ever worth eight million.
      *
-     * Who those are is asked of the pictures, not of the cast. The first
-     * version drew from `cast` — the sixty best-connected characters — and kept
-     * whichever of them happened to have a poster, which quietly cost the wall
-     * everybody wanted early and mentioned rarely. Higuma has the first bounty
-     * in the story and three relations to his name; a reader of chapter 100 saw
-     * Buggy, Krieg and Arlong and no sign that the bandit of chapter 1 was ever
-     * worth eight million.
+     * And not the pictures either, which was the second version and a quieter
+     * form of the same loss. The wiki has a file for about a quarter of the
+     * printings the manifest knows, so « wanted » silently meant « wanted and
+     * photographed »: Brogy is worth a hundred million on the page at chapter
+     * 118 and no picture of that poster exists anywhere, so a reader who had
+     * just read it was shown a wall that did not include him.
+     *
+     * So the wall is who the reader knows a bounty for, and the picture is a
+     * second question asked of each of them. A poster when the manga printed
+     * one and somebody found it; the character and the figure otherwise. What
+     * never happens is the third thing: a face dressed in a drawn poster frame.
+     * Laboon is a whale and Kaloo is a duck, and « avis de recherche » printed
+     * around either is the interface asserting what no chapter did.
      */
-    const affiches = await castOf(session.userId, boundary, wantedIds)
+    const affiches = await castOf(session.userId, boundary, [...bounties.keys()])
     const posters = await postersFor(
       session.userId,
       boundary,
@@ -163,6 +173,25 @@ export default async function HomePage({
     }
 
     /*
+     * The figure for a card, read off the component rather than off one id.
+     *
+     * A merged character carries several entity ids and the manifest was
+     * matched against each of their labels, so the bounty can sit on the half
+     * that did not become the representative. They agree on the figure when
+     * they agree on the person; taking the latest printing is what makes the
+     * disagreement harmless — an entity labelled « Luffy » and one labelled
+     * « Mugiwara » resolve to the same manifest line anyway.
+     */
+    const bountyOf = (member: CastMember): KnownBounty | null => {
+      let known: KnownBounty | null = null
+      for (const id of member.memberIds) {
+        const found = bounties.get(id)
+        if (found && (!known || found.chapter > known.chapter)) known = found
+      }
+      return known
+    }
+
+    /*
      * One card per person, and « per person » is by name here.
      *
      * `castOf` folds what the reader knows to be one character, which is the
@@ -172,30 +201,68 @@ export default async function HomePage({
      * is the thing the visitor compares, so it is the thing deduplicated.
      */
     const seen = new Set<string>()
-    const wanted = tirage(affiches)
-      .filter((member) => posterOf(member) !== null)
+    const connus = tirage(affiches)
+      .filter((member) => bountyOf(member) !== null)
       .filter((member) => {
         const key = member.label.trim().toLowerCase()
         if (seen.has(key)) return false
         seen.add(key)
         return true
       })
-      .slice(0, MUR)
+
+    /*
+     * Six slots, and the real posters take them first.
+     *
+     * The draw is still a draw — everybody with a bounty is in it, and which of
+     * the portrait cards come up changes on every visit. What is not left to
+     * chance is a card showing the actual paper losing its place to one that
+     * cannot: the manifest knows three times as many printings as the wiki has
+     * pictures of, so an unordered draw would spend most of a wall of wanted
+     * posters on faces while a real poster sat out.
+     *
+     * Same shape as the ordering on the wall of faces below, for the same
+     * reason: the cap falls on the tail, so what is at the head has to be what
+     * the section is about.
+     */
+    const wanted = [
+      ...connus.filter((member) => posterOf(member) !== null),
+      ...connus.filter((member) => posterOf(member) === null),
+    ].slice(0, MUR)
 
     mur = wanted.length > 0 ? 'affiches' : 'visages'
 
     /*
-     * Nobody wanted yet, which is most of the story: the earliest poster the
-     * wiki can be pinned to is Higuma's in chapter 1, but a library that has
-     * not been enriched, or a reader before the first bounty they hold, has
-     * none at all. They get faces instead, under a heading that says faces.
-     * Same cards, no poster chrome and no pretending.
+     * Nobody wanted yet, which is most of the story: the earliest bounty is
+     * Higuma's on the first page of chapter 1, but a library that holds none of
+     * the manifest's characters, or a reader before the first poster their
+     * library knows, has nothing to put here. They get faces instead, under a
+     * heading that says faces. Same cards, no poster chrome and no pretending.
      *
-     * Portraits are signed only on that path. Each one is a round trip and a
-     * wall of real posters has no use for a single face.
+     * Portraits are signed on both paths now, and on this one only for the
+     * people whose poster is missing — which is the majority, because the
+     * gallery is a quarter of the manifest. Signing is one batched round trip
+     * whatever the length, so asking for the shortfall costs the page nothing
+     * it was not already paying.
      */
     if (wanted.length > 0) {
-      wall = wanted.map((member) => ({ member, portrait: null, poster: posterOf(member) }))
+      const facesNeeded = wanted.filter((member) => posterOf(member) === null)
+      const faces = await displayImages(
+        session.userId,
+        boundary,
+        facesNeeded.flatMap((member) => member.memberIds),
+      )
+
+      wall = wanted.map((member) => {
+        const poster = posterOf(member)
+        return {
+          member,
+          portrait: poster
+            ? null
+            : (member.memberIds.map((id) => faces.get(id)).find((face) => face) ?? null),
+          poster,
+          bounty: bountyOf(member),
+        }
+      })
     } else {
       const drawn = tirage(cast)
       const images = await displayImages(
@@ -218,7 +285,7 @@ export default async function HomePage({
         ...drawn.filter((member) => faceOf(member) === null),
       ]
         .slice(0, MUR)
-        .map((member) => ({ member, portrait: faceOf(member), poster: null }))
+        .map((member) => ({ member, portrait: faceOf(member), poster: null, bounty: null }))
     }
 
     questions = tirage(open).slice(0, 3)
@@ -289,13 +356,16 @@ export default async function HomePage({
             </h2>
             <p className="text-sm text-secondary">
               {mur === 'affiches'
-                ? "Les affiches que vous avez vues, avec la prime qui était dessus."
+                ? 'Les primes que vos chapitres vous ont apprises, avec l’affiche quand le manga l’a montrée.'
                 : 'Tirés au sort. Rechargez : les visages changent.'}
             </p>
           </div>
 
           <ul className={`mur mt-5 ${mur === 'affiches' ? 'mur-affiches' : ''}`}>
-            {wall.map(({ member, portrait, poster }) => (
+            {wall.map(({ member, portrait, poster, bounty }) => {
+              /* The number to print, and where it is allowed to come from. */
+              const prime = poster ?? bounty
+              return (
               <li key={member.entityId}>
                 <Link
                   href={`/entite/${member.entityId}?ch=${boundary}`}
@@ -308,9 +378,10 @@ export default async function HomePage({
                    * was a mistake worth writing down: Laboon is a whale, Kaloo
                    * is a duck, and « avis de recherche » printed around either
                    * is the interface asserting something no chapter ever did.
-                   * The wall now shows the real ones when the reader has
-                   * reached any, and plain faces under a plain heading when
-                   * they have not.
+                   * That rule survives the wall being built from bounties
+                   * rather than from pictures — a card whose poster is missing
+                   * is a portrait with a figure under it, and the paper chrome
+                   * stays on the cards that really are paper.
                    *
                    * `object-fit: contain` on the poster, because it is a
                    * document: cropping one throws away the half that says what
@@ -345,18 +416,25 @@ export default async function HomePage({
                   {/*
                    * The band under the name, and what may go on it.
                    *
-                   * A figure when it comes off a poster the reader has read,
-                   * dated by the printing rather than by their chapter.
-                   * Otherwise the chapter they met the character in, which is
-                   * also a fact. What never goes here is an invented berry
-                   * amount: on a page whose whole claim is that its numbers
-                   * come from chapters, that would be the one lie.
+                   * A figure whenever a chapter the reader has read printed
+                   * one, which is now most of this wall: the poster's own
+                   * number when there is a poster, and the last printing the
+                   * manifest knows at their position when there is not. Both
+                   * are dated by a chapter and neither is dated by the reader's
+                   * — a poster older than their position keeps the number on
+                   * the paper, stale and true.
+                   *
+                   * The chapter they met the character in is the fallback, and
+                   * it is only reached by the wall of faces. What never goes
+                   * here is an invented berry amount: on a page whose whole
+                   * claim is that its numbers come from chapters, that would be
+                   * the one lie.
                    */}
                   <span className="affiche-prime">
-                    {poster ? (
+                    {prime ? (
                       <>
                         <span className="affiche-prime-mot">Mort ou vif</span>
-                        <span className="chiffre affiche-prime-somme">{poster.berries}</span>
+                        <span className="chiffre affiche-prime-somme">{prime.berries}</span>
                       </>
                     ) : (
                       <>
@@ -367,7 +445,8 @@ export default async function HomePage({
                   </span>
                 </Link>
               </li>
-            ))}
+              )
+            })}
           </ul>
 
           {/*
@@ -385,7 +464,7 @@ export default async function HomePage({
               Illustrations : {sources.join(', ')}. Ce n&apos;est pas une preuve
               tirée de vos pages.
               {mur === 'affiches'
-                ? " La prime affichée est celle imprimée sur l'affiche, datée du chapitre qui la montre."
+                ? " La prime vient du chapitre qui l'imprime. Quand le manga a montré l'affiche et qu'on en a l'image, elle est là ; sinon vous voyez le personnage et sa prime."
                 : ' Les portraits sont rapprochés de chaque personnage par le nom.'}
             </p>
           )}
