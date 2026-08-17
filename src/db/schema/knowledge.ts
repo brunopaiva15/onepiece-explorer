@@ -3,7 +3,9 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -388,6 +390,74 @@ export const auditLog = pgTable(
       .defaultNow(),
   },
   (t) => [index('audit_log_user_idx').on(t.userId, t.createdAt)],
+)
+
+/**
+ * Ce qu'une relecture de toute l'histoire a trouvé.
+ *
+ * Hors du graphe volontairement : un constat n'est pas une connaissance, il ne
+ * prouve rien, et aucune assertion ne le cite. C'est une note de bibliothécaire
+ * sur l'état de la bibliothèque — « ce nom s'affiche trois chapitres avant que
+ * la moindre source ne l'écrive » — dont la durée de vie est celle du défaut.
+ *
+ * Et jamais lisible par le rôle du lecteur : un constat *contient* la révélation
+ * qu'il signale, sous la forme la plus concentrée possible. La table est donc
+ * refusée à `authenticated` plutôt que filtrée pour lui — voir migration 0029.
+ */
+export const auditFindings = pgTable(
+  'audit_findings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    workId: uuid('work_id')
+      .notNull()
+      .references(() => works.id, { onDelete: 'cascade' }),
+    /** Le chapitre où le lecteur bute dessus, pas toujours celui qui a tort. */
+    chapter: integer('chapter').notNull(),
+    kind: text('kind').notNull(),
+    /** `regles` quand une règle l'a déduit, `modele` quand une relecture l'a lu. */
+    source: text('source').notNull().default('regles'),
+    title: text('title').notNull(),
+    detail: text('detail'),
+    subjectEntityId: uuid('subject_entity_id').references(() => entities.id, {
+      onDelete: 'cascade',
+    }),
+    objectEntityId: uuid('object_entity_id').references(() => entities.id, {
+      onDelete: 'cascade',
+    }),
+    /** La correction proposée. Null quand elle demande un jugement. */
+    fix: jsonb('fix'),
+    /** Ce qui fait que ce constat est le même d'un balayage à l'autre. */
+    fingerprint: text('fingerprint').notNull(),
+    status: text('status').notNull().default('open'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique('audit_findings_unique').on(t.userId, t.workId, t.fingerprint),
+    index('audit_findings_open_idx').on(t.userId, t.workId, t.status, t.chapter),
+  ],
+)
+
+/** Les chapitres déjà relus par le modèle : ce qui rend la relecture reprenable. */
+export const auditReads = pgTable(
+  'audit_reads',
+  {
+    userId: uuid('user_id').notNull(),
+    workId: uuid('work_id')
+      .notNull()
+      .references(() => works.id, { onDelete: 'cascade' }),
+    chapter: integer('chapter').notNull(),
+    modelId: text('model_id'),
+    costCents: numeric('cost_cents', { precision: 14, scale: 6, mode: 'number' })
+      .notNull()
+      .default(0),
+    findings: integer('findings').notNull().default(0),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.workId, t.chapter] })],
 )
 
 /**

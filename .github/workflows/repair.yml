@@ -98,6 +98,20 @@ name: Réparations (production)
 # complete as that list. `identites` finds them instead of listing them, which is
 # what a thousand chapters need, and costs a model call per unnamed figure. Run
 # `noms` first if you want the known seven for nothing.
+#
+# `chronologie` is the same kind of list, from a full read of chapters 1 to 145:
+# the sentences that say something the chapter does not — Usopp made captain,
+# Nojiko enlisted in the crew, Crocus filed with Laboon's old pirates — plus the
+# scenes told twice, a name revealed a chapter early, and two attacks announced
+# as new long after they were named. It touches no model, so a dry run costs
+# nothing and prints every change with the reason it was made; read that list
+# before switching to « appliquer », because a wording correction is the one
+# repair whose evidence is a sentence rather than a date.
+#
+# What it does *not* do is find the sixteenth defect. That is what the
+# « Analyser l'histoire » button on /admin/chapitres is for: the same rules,
+# weighed against the whole library, whenever you ask — and shown before
+# anything is written.
 
 on:
   workflow_dispatch:
@@ -111,6 +125,7 @@ on:
           - chapitres-1-42
           - chapitres-1-100
           - chapitre-1
+          - chronologie
           - details
           - noms
           - identites
