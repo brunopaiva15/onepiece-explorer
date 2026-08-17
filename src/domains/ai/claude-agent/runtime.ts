@@ -97,6 +97,17 @@ export class ClaudeAgentError extends Error {
   constructor(
     readonly kind: AgentErrorKind,
     message: string,
+    /**
+     * Vrai quand la panne ne dit rien d'elle-même.
+     *
+     * Un refus, un quota épuisé, un schéma raté sont des réponses : les rejouer
+     * rendrait la même. Une machine reprise par la plateforme et un CLI qui sort
+     * en code 1 sans un mot ne sont pas des réponses — ce sont des absences de
+     * réponse, et elles ne se distinguent l'une de l'autre par rien. Ce drapeau
+     * est ce qui autorise `runInSandbox` à retenter une fois plutôt qu'à
+     * remonter « code 1 » à quelqu'un qui n'en peut rien faire.
+     */
+    readonly retryable = false,
   ) {
     super(message)
     this.name = 'ClaudeAgentError'
@@ -347,14 +358,28 @@ export function agentFailure(
     return new ClaudeAgentError('quota', `${label} : ${QUOTA_MESSAGE}`)
   }
 
+  /*
+   * Un CLI mort sans un mot est une panne, pas un verdict.
+   *
+   * Le SDK ajoute lui-même la fin de la sortie d'erreur au message « exited
+   * with code N » qu'il lève : un message qui s'arrête au code de sortie dit
+   * donc que le processus n'a *rien* écrit, et non qu'on l'a perdu en route.
+   * Un CLI qui refuse de démarrer explique pourquoi ; un CLI qui disparaît en
+   * silence est une machine qui s'en est allée sous lui — plateforme qui
+   * reprend le bac à sable, mémoire, durée de vie atteinte. Rien de tout cela
+   * ne se reproduit sur un processus neuf, et c'est ce que dit `retryable`.
+   */
   return new ClaudeAgentError(
     'sdk',
     `${label} : le Claude Agent SDK a échoué${where ? ` ${where}` : ''} — ${detail}.` +
       (said
         ? ` Sortie d’erreur du CLI : ${said}`
-        : ' Le CLI n’a rien écrit sur sa sortie d’erreur : relancez avec ' +
-          'CLAUDE_AGENT_RUNTIME=inline pour le voir démarrer localement.') +
+        : ' Le CLI n’a rien écrit sur sa sortie d’erreur : il a disparu plutôt ' +
+          'qu’échoué, ce qui désigne la machine et non la requête. L’appel a été ' +
+          'retenté une fois. Relancez avec CLAUDE_AGENT_RUNTIME=inline pour le voir ' +
+          'démarrer localement.') +
       ' Rien n’a été enregistré pour cet appel.',
+    !said,
   )
 }
 

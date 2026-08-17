@@ -35,12 +35,37 @@ import {
  * reprendre plus tard ne redemande pas ce qui est fait.
  */
 
-interface Line extends SweepStep {
+interface Line extends Omit<SweepStep, 'kind'> {
+  /**
+   * Les verdicts du serveur, plus celui que la boucle ajoute elle-même.
+   *
+   * `failed` ne vient pas de `ClosingVerdict` et ne doit pas y entrer : le
+   * serveur rend ce qu'une question est devenue, et « l'appel n'a pas abouti »
+   * n'est pas un état de la question. C'est un état de la ligne du rapport.
+   */
+  kind?: SweepStep['kind'] | 'failed'
   question: string
   openedInChapter: number
 }
 
 type Phase = 'idle' | 'running' | 'stopped' | 'done'
+
+/**
+ * Combien d'échecs **de suite** avant de renoncer.
+ *
+ * Une question qui échoue n'emportait pas seulement elle-même : la boucle
+ * s'arrêtait dessus, et un arriéré de soixante-dix questions se terminait à la
+ * douzième parce qu'un CLI était mort sans rien dire dans le bac à sable. Ce
+ * n'est pas un verdict sur la treizième, qui n'avait pas été posée.
+ *
+ * Alors on continue — mais pas indéfiniment. Une panne qui ne se déclare pas
+ * fatale et qui échoue pourtant trois fois d'affilée n'est plus un accident :
+ * c'est une panne de fond que la boucle ne saurait pas nommer, et lui donner
+ * soixante-dix appels de modèle pour se répéter serait cher pour rien. Trois,
+ * parce que deux est un doublon de malchance et que quatre ne l'apprendrait pas
+ * mieux.
+ */
+const GIVE_UP_AFTER = 3
 
 export function VerifierLesMysteres({
   boundaryChapter,
@@ -90,21 +115,33 @@ export function VerifierLesMysteres({
     setTotal(plan.questions.length)
 
     let closed = 0
+    let consecutiveFailures = 0
+
     for (const question of plan.questions) {
       if (stopped.current) break
 
       const step = await sweepQuestionAction(question.entityId)
-
-      if (!step.ok) {
-        setError(step.error ?? 'Vérification impossible.')
-        break
+      const line: Line = {
+        ...step,
+        entityId: question.entityId,
+        question: question.question,
+        openedInChapter: question.openedInChapter,
       }
 
+      if (!step.ok) {
+        consecutiveFailures++
+        setLines((previous) => [...previous, { ...line, kind: 'failed' }])
+
+        if (step.fatal || consecutiveFailures >= GIVE_UP_AFTER) {
+          setError(step.error ?? 'Vérification impossible.')
+          break
+        }
+        continue
+      }
+
+      consecutiveFailures = 0
       if (step.kind === 'closed') closed++
-      setLines((previous) => [
-        ...previous,
-        { ...step, question: question.question, openedInChapter: question.openedInChapter },
-      ])
+      setLines((previous) => [...previous, line])
     }
 
     // Les questions refermées ne sont plus au même endroit de la page.
@@ -115,6 +152,7 @@ export function VerifierLesMysteres({
   const running = phase === 'running'
   const closed = lines.filter((line) => line.kind === 'closed')
   const stillOpen = lines.filter((line) => line.kind === 'open')
+  const failed = lines.filter((line) => line.kind === 'failed')
   const cost = lines.reduce((sum, line) => sum + (line.costCents ?? 0), 0)
 
   return (
@@ -190,8 +228,12 @@ export function VerifierLesMysteres({
         <div className="mt-4">
           <p role="status" className="text-sm text-primary">
             {lines.length} question(s) examinée(s) sur {total} — {closed.length}{' '}
-            refermée(s), {stillOpen.length} laissée(s) ouverte(s).
+            refermée(s), {stillOpen.length} laissée(s) ouverte(s)
+            {failed.length > 0 ? `, ${failed.length} en échec` : ''}.
             {cost > 0 ? ` Coût des appels : ${(cost / 100).toFixed(2)} $.` : ''}
+            {failed.length > 0
+              ? ' Les questions en échec n’ont rien changé : relancez pour les reprendre.'
+              : ''}
             {phase === 'stopped' ? ' Arrêté : le reste n’a pas été examiné.' : ''}
           </p>
 
@@ -226,6 +268,15 @@ function Resultat({
   boundaryChapter: number
 }) {
   const closed = line.kind === 'closed' || line.kind === 'already'
+  /*
+   * Une question que l'appel n'a pas pu examiner n'est pas « toujours ouverte ».
+   *
+   * La distinction n'est pas cosmétique : « toujours ouverte » est un résultat —
+   * le modèle a relu les scènes et aucune n'y répond — et l'afficher sur un
+   * appel qui n'a jamais eu lieu ferait dire au rapport le contraire de ce qui
+   * s'est passé. Elle est intacte, elle n'a rien coûté, et la relancer la posera.
+   */
+  const broke = line.kind === 'failed'
   /* Refermée sans chapitre : la réponse est au-delà du curseur. */
   const beyond = closed && line.chapter == null
 
@@ -246,8 +297,10 @@ function Resultat({
         </p>
 
         <p className="mt-2 flex flex-wrap items-center gap-2">
-          <span className={`badge ${closed ? 'badge-vert' : 'badge-mer'}`}>
-            {closed ? 'Refermée' : 'Toujours ouverte'}
+          <span
+            className={`badge ${broke ? 'badge-gris' : closed ? 'badge-vert' : 'badge-mer'}`}
+          >
+            {broke ? 'Non examinée' : closed ? 'Refermée' : 'Toujours ouverte'}
           </span>
           <span className="cartouche">
             posée au chapitre {line.openedInChapter}
@@ -282,6 +335,14 @@ function Resultat({
             {line.scenesDropped
               ? ` ${line.scenesDropped} scène(s) non lues (plafond par question).`
               : ''}
+          </p>
+        )}
+
+        {broke && (
+          <p className="mt-2 text-sm text-muted">
+            L&apos;appel a échoué&nbsp;: {line.error ?? 'raison inconnue'} Le
+            balayage a continué sans elle — elle est restée telle quelle, et la
+            relancer la posera.
           </p>
         )}
 

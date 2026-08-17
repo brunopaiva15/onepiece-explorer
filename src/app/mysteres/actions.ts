@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireOwner } from '@/domains/auth/session.ts'
+import { ClaudeAgentError } from '@/domains/ai/claude-agent/runtime.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
 import {
   closeIfAnswered,
@@ -64,6 +65,18 @@ export interface SweepStep {
   entityId?: string
   /** 'closed' | 'open' | 'already' | 'gone' — voir ClosingVerdict. */
   kind?: 'closed' | 'open' | 'already' | 'gone'
+  /**
+   * Vrai quand la question suivante n'a aucune raison d'échouer aussi.
+   *
+   * Le balayage est une boucle de soixante-dix appels, et toutes les pannes n'ont
+   * pas la même portée. Un jeton refusé ou une allocation épuisée se
+   * reproduiront à l'identique : les soixante-neuf appels restants ne feraient
+   * que le confirmer plus lentement, et le balayage s'arrête. Un CLI qui meurt
+   * sans un mot, un bac à sable repris, un modèle qui rend une réponse non
+   * conforme au schéma n'engagent que la question qu'ils ont rencontrée — la
+   * suivante repart intacte, et c'est ce que dit `false`.
+   */
+  fatal?: boolean
   /** Pourquoi elle reste ouverte, quand elle reste ouverte. */
   because?: 'no-scenes' | 'unanswered' | 'refused'
   /**
@@ -102,6 +115,9 @@ export async function sweepQuestionAction(entityId: string): Promise<SweepStep> 
     if (!allowance.allowed) {
       return {
         ok: false,
+        entityId,
+        // Une limite horaire ne se rouvre pas à la question d'après.
+        fatal: true,
         error:
           `Limite atteinte après ${allowance.max} question(s). Réessayez dans ` +
           `${allowance.retryInMinutes} minute(s). ${allowance.explain}`,
@@ -155,7 +171,23 @@ export async function sweepQuestionAction(entityId: string): Promise<SweepStep> 
     return {
       ok: false,
       entityId,
+      fatal: condemnsTheRest(error),
       error: error instanceof Error ? error.message : 'Vérification impossible.',
     }
   }
+}
+
+/**
+ * Cette panne emporte-t-elle aussi les questions qu'on n'a pas encore posées ?
+ *
+ * Deux genres seulement, et ce sont les deux qui décrivent l'accès plutôt que la
+ * requête : un jeton que Claude refuse, et une allocation épuisée. Tout le reste
+ * — le bac à sable repris, le CLI disparu, la réponse hors schéma — est une
+ * panne de cet appel-là. Se tromper ici du côté « fatal » perd le travail
+ * restant ; s'en tromper de l'autre côté coûte quelques appels que la boucle
+ * arrête d'elle-même après trois échecs de suite. Le doute penche donc vers
+ * « continuer ».
+ */
+function condemnsTheRest(error: unknown): boolean {
+  return error instanceof ClaudeAgentError && (error.kind === 'auth' || error.kind === 'quota')
 }
