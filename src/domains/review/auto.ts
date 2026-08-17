@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { ingestionRuns, reviewItems } from '@/db/schema/ingestion.ts'
@@ -177,6 +177,44 @@ interface Pending {
   fingerprint: string
 }
 
+/**
+ * Open the chapter — but only if there was ever anything to review.
+ *
+ * "Nothing left proposed" has two causes and they are opposites. A review that
+ * happened and is finished leaves decided cards behind it; an extraction that
+ * produced *nothing* leaves the same empty queue and means the chapter has not
+ * been read at all — the model refused, or every proposal it made was
+ * quarantined for evidence nobody could verify.
+ *
+ * Opening on the second is how thirty-six chapters entered a library marked as
+ * published with nothing in them: no proposal, therefore nothing to decide,
+ * therefore — by a rule written for the first case — read to the end. Each one
+ * then released the next, so the mistake did not stop at one chapter, it walked
+ * the whole lot.
+ *
+ * So the chapter must carry at least one review item, in any state and from any
+ * run of it. That is the trace a review leaves and the thing an empty
+ * extraction cannot fake. A chapter that has none stays where it is, and the
+ * lot stops on it and says so — `batchStatus` calls it `empty`, which is a
+ * sentence someone can act on.
+ */
+async function openIfSomethingWasReviewed(
+  userId: string,
+  runId: string,
+): Promise<number | null> {
+  const everProposed = await withIngest(async (db) => {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(reviewItems)
+      .innerJoin(ingestionRuns, eq(ingestionRuns.chapterId, reviewItems.chapterId))
+      .where(and(eq(ingestionRuns.id, runId), eq(reviewItems.userId, userId)))
+    return Number(row?.count ?? 0)
+  })
+
+  if (everProposed === 0) return null
+  return markChapterReviewed(userId, runId)
+}
+
 /** The one category nothing knows how to publish. See the note above. */
 const UNPUBLISHABLE = new Set(['conflict'])
 
@@ -215,7 +253,7 @@ export async function autoReview(
   }
 
   if (pending.length === 0) {
-    result.chapterOpened = await markChapterReviewed(userId, runId)
+    result.chapterOpened = await openIfSomethingWasReviewed(userId, runId)
     return result
   }
 
@@ -353,7 +391,7 @@ export async function autoReview(
    * the end as surely as one whose cards were accepted.
    */
   if (decisions.length === 0) {
-    result.chapterOpened = await markChapterReviewed(userId, runId)
+    result.chapterOpened = await openIfSomethingWasReviewed(userId, runId)
     return result
   }
 
@@ -369,7 +407,7 @@ export async function autoReview(
    * for the case in between, where a deferred item was the last card.
    */
   if (result.published.chapterPublished === null) {
-    result.chapterOpened = await markChapterReviewed(userId, runId)
+    result.chapterOpened = await openIfSomethingWasReviewed(userId, runId)
   }
 
   return result

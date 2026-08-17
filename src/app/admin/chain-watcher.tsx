@@ -153,12 +153,22 @@ function ChainSentence({
     return (
       <>
         Le chapitre {blocked.chapterNumber}{' '}
-        {blocked.reason === 'failed' ? 'a échoué' : 'n’a pas de traitement'}.{' '}
+        {blocked.reason === 'failed'
+          ? 'a échoué'
+          : blocked.reason === 'empty'
+            ? 'n’a rien produit : le modèle a refusé, ou toutes ses propositions ' +
+              'sont en quarantaine. Il n’est pas publié'
+            : 'n’a pas de traitement'}
+        .{' '}
         <Link
-          href={`/admin/chapitres/${blocked.chapterId}`}
+          href={
+            blocked.reason === 'empty' && blocked.runId
+              ? `/admin/runs/${blocked.runId}`
+              : `/admin/chapitres/${blocked.chapterId}`
+          }
           className="text-accent hover:underline"
         >
-          Ouvrir le chapitre
+          {blocked.reason === 'empty' ? 'Voir pourquoi' : 'Ouvrir le chapitre'}
         </Link>
       </>
     )

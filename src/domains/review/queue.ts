@@ -2,7 +2,7 @@ import 'server-only'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters, pages, panels, textBlocks } from '@/db/schema/documents.ts'
-import { reviewItems } from '@/db/schema/ingestion.ts'
+import { ingestionRuns, reviewItems } from '@/db/schema/ingestion.ts'
 import { entities, entityLabels } from '@/db/schema/knowledge.ts'
 import type { EvidenceRef } from '@/domains/ai/schemas.ts'
 import {
@@ -179,16 +179,28 @@ export async function getReviewQueue(
   const limit = options.limit ?? 100
 
   const data = await withIngest(async (db) => {
+    /*
+     * The chapter comes from the run, not from its proposals.
+     *
+     * This asked `review_items` which chapter the run was about, so a run that
+     * proposed nothing had no chapter, and the page 404'd. That is the worst
+     * possible answer to the one question being asked: a run produces nothing
+     * when the model refused or when every proposal was quarantined for
+     * unverifiable evidence, and both are things you need to *see* — the
+     * quarantine reasons are on this very page. « Cette page n'existe pas »
+     * about a run that exists sent the reader looking for a broken link
+     * instead of at the reason.
+     */
     const [head] = await db
       .select({
-        chapterId: reviewItems.chapterId,
+        chapterId: ingestionRuns.chapterId,
         chapterNumber: chapters.number,
         chapterTitle: chapters.title,
         chapterStatus: chapters.status,
       })
-      .from(reviewItems)
-      .innerJoin(chapters, eq(chapters.id, reviewItems.chapterId))
-      .where(and(eq(reviewItems.runId, runId), eq(reviewItems.userId, userId)))
+      .from(ingestionRuns)
+      .innerJoin(chapters, eq(chapters.id, ingestionRuns.chapterId))
+      .where(and(eq(ingestionRuns.id, runId), eq(ingestionRuns.userId, userId)))
       .limit(1)
 
     if (!head) return null

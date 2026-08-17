@@ -853,12 +853,26 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     )
   }
 
+  /*
+   * A refusal that produced nothing is a broken step, not a quiet note.
+   *
+   * This returned a success carrying « le modèle a refusé » in a note. Under a
+   * manual review that was survivable: you opened the review centre, found it
+   * empty, and went to look at the run. Under a lot that publishes itself it is
+   * not survivable at all — no proposal means nothing left to decide, which the
+   * automatic pass reads as a chapter read to the end, and thirty-six empty
+   * chapters march into the library marked as published with nothing in them.
+   *
+   * So it fails, like the block above it, and for the same reason: the run
+   * carries the cause, the chapter stays where it was, and the chain stops and
+   * names it. Nothing is lost — the text is imported, and relaunching replays
+   * the slices already paid for.
+   */
   if (refusal !== null && accepted.entities.length === 0 && accepted.assertions.length === 0) {
-    return {
-      note: `Le modèle a refusé : ${refusal}`,
-      costCents: usage.costCents,
-      modelId: usage.modelId,
-    }
+    throw new Error(
+      `Le modèle a refusé et n'a rien produit : ${refusal}. ` +
+        `Le chapitre reste importé ; relancez le traitement.`,
+    )
   }
 
   const filtered = { accepted, quarantined }

@@ -56,9 +56,9 @@ const { advanceQueue, queueForRun, queuedChapters } = await import(
   '@/domains/pipeline/queue.ts'
 )
 const { batchStatus } = await import('@/domains/pipeline/batch.ts')
-const { autoReviewsChapter, autoReviewsRun, enableAutoReview } = await import(
-  '@/domains/review/auto.ts'
-)
+const { autoReview, autoReviewsChapter, autoReviewsRun, enableAutoReview } =
+  await import('@/domains/review/auto.ts')
+const { getReviewQueue } = await import('@/domains/review/queue.ts')
 const { importSummary } = await import('@/domains/ingestion/summary.ts')
 const { closeDb, raw, resetDatabase, seedWorld } = await import('../helpers/db.ts')
 
@@ -327,41 +327,62 @@ describe('a lot that publishes itself', () => {
     expect(status.running?.stalled).toBe(true)
   })
 
-  it('opens a chapter whose run had nothing left to propose', async () => {
+  it('never publishes a chapter whose run produced nothing at all', async () => {
     /*
-     * The chain-stopper that looked like nothing at all.
+     * Thirty-six empty chapters, in one afternoon.
      *
-     * A decision is recorded against the proposal's fingerprint so a re-import
-     * never asks twice, so a chapter repeating text you have already answered
-     * queues *nothing*: extraction re-applies the decisions and the automatic
-     * pass finds an empty queue. It used to return there, which left the chapter
-     * in review for ever — with no proposal to answer and no button pressed, the
-     * lot stopped dead on a chapter that had asked nothing.
+     * A run that extracts nothing — the model refused, or every proposal it
+     * made was quarantined for evidence nobody could verify — leaves the same
+     * empty queue as a review that is finished. Reading the second as the first
+     * is what published them: no proposal, therefore nothing to decide,
+     * therefore read to the end. And each one released the next, so the mistake
+     * did not stop at one chapter, it walked the whole lot.
+     *
+     * The trace a real review leaves is a decided card. A chapter with none has
+     * not been read, whatever its queue looks like.
      */
-    const first = await importChapter(1)
-    const { chapterId: second } = await importSummary({
-      userId: world.userId,
-      workId: world.workId,
-      chapterNumber: 2,
-      language: 'en',
-      // The same text, which is the whole point: same fingerprints, so the
-      // second run re-applies decisions instead of proposing anything.
-      text: summary(1),
-    })
-    await enableAutoReview(world.userId, [first, second])
-    await queueForRun(world.userId, [first, second])
+    const chapterId = await importChapter(1)
+    const waiting = await importChapter(2)
+    await enableAutoReview(world.userId, [chapterId, waiting])
+    await queueForRun(world.userId, [waiting])
 
-    // One start: the first chapter chains the second, which is where the
-    // stopper used to bite — a chapter that proposes nothing opened nothing,
-    // so nothing released whatever came after it.
-    expect((await advanceQueue(world.userId)).started?.number).toBe(1)
+    const runId = await createRun(world.userId, chapterId)
+    await executeRun(world.userId, chapterId, runId)
+    // The state a refusal or a wholly quarantined extraction leaves behind.
+    await raw`DELETE FROM review_items WHERE chapter_id = ${chapterId}`
+    await raw`UPDATE chapters SET status = 'review', published_at = NULL
+               WHERE id = ${chapterId}`
 
-    expect(await stillProposed(second)).toBe(0)
-    expect(await chapterStatus(second)).toBe('published')
+    const swept = await autoReview(world.userId, runId)
+    expect(swept.chapterOpened).toBeNull()
+    expect(await chapterStatus(chapterId)).not.toBe('published')
 
+    // And the lot stops on it, saying which chapter and what happened, rather
+    // than marching on through chapters nobody will ever see the contents of.
     const status = await batchStatus(world.userId)
-    expect(status.queued).toBe(0)
-    expect(status.blocked).toBeNull()
+    expect(status.blocked?.chapterNumber).toBe(1)
+    expect(status.blocked?.reason).toBe('empty')
+    expect(status.queued).toBe(1)
+  })
+
+  it('shows a run that proposed nothing instead of a 404', async () => {
+    /*
+     * The page that answered « cette page n'existe pas » about a run that
+     * existed. It read the chapter off the run's proposals, so a run with none
+     * had no chapter — and the reader went looking for a broken link instead of
+     * at the quarantine reasons, which are on that very page.
+     */
+    const chapterId = await importChapter(1)
+    const runId = await createRun(world.userId, chapterId)
+    await executeRun(world.userId, chapterId, runId)
+    await raw`DELETE FROM review_items WHERE chapter_id = ${chapterId}`
+
+    const queue = await getReviewQueue(world.userId, runId)
+
+    expect(queue).not.toBeNull()
+    expect(queue?.chapterNumber).toBe(1)
+    expect(queue?.items).toEqual([])
+    expect(queue?.counts.pending).toBe(0)
   })
 
   it('never counts another reader’s lot', async () => {

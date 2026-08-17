@@ -25,6 +25,7 @@
     "repair:chapitres-1-42": "tsx --conditions=react-server scripts/repair-chapitres-1-42.ts",
     "repair:chapitres-1-100": "tsx --conditions=react-server scripts/repair-chapitres-1-100.ts",
     "repair:chapitre-1": "tsx --conditions=react-server scripts/repair-chapitre-1.ts",
+    "repair:chapitres-vides": "tsx scripts/repair-chapitres-vides.ts",
     "repair:details": "tsx --conditions=react-server scripts/repair-details.ts",
     "repair:noms": "tsx --conditions=react-server scripts/repair-noms-reveles.ts",
     "repair:chronologie": "tsx --conditions=react-server scripts/repair-chronologie.ts",

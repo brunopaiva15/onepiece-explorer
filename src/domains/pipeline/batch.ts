@@ -60,14 +60,19 @@ export interface BatchStatus {
    * The chapter the chain is waiting on, and what it wants.
    *
    * `review` — proposals nobody has answered. `failed` — the run did not
-   * finish. `unprocessed` covers the rest: a chapter of the batch that never
-   * got a run at all, which is what an abandoned queue leaves behind.
+   * finish. `empty` — the run finished and extracted nothing at all: the model
+   * refused, or every proposal it made was quarantined for evidence nobody
+   * could verify. That one is named apart because it used to be indistinguishable
+   * from a finished review — no proposal left, therefore nothing to decide — and
+   * that reading is what let empty chapters be published as read. `unprocessed`
+   * covers the rest: a chapter of the batch that never got a run at all, which
+   * is what an abandoned queue leaves behind.
    */
   blocked: {
     chapterId: string
     chapterNumber: number
     runId: string | null
-    reason: 'review' | 'failed' | 'unprocessed'
+    reason: 'review' | 'failed' | 'empty' | 'unprocessed'
   } | null
 }
 
@@ -126,6 +131,7 @@ export async function batchStatus(userId: string): Promise<BatchStatus> {
       number: number
       run_id: string | null
       pending_items: number
+      any_items: number
       failed_run: string | null
     }>(sql`
       SELECT c.id AS chapter_id,
@@ -136,6 +142,10 @@ export async function batchStatus(userId: string): Promise<BatchStatus> {
              (SELECT count(*)::int FROM review_items i
                WHERE i.chapter_id = c.id AND i.user_id = ${userId}
                  AND i.status = 'proposed') AS pending_items,
+             -- Any card at all, in any state: the trace a review leaves behind,
+             -- and the thing an extraction that produced nothing cannot fake.
+             (SELECT count(*)::int FROM review_items i
+               WHERE i.chapter_id = c.id AND i.user_id = ${userId}) AS any_items,
              (SELECT r.id FROM ingestion_runs r
                WHERE r.chapter_id = c.id AND r.user_id = ${userId}
                  AND r.status IN ('failed', 'cancelled')
@@ -178,7 +188,9 @@ export async function batchStatus(userId: string): Promise<BatchStatus> {
                 ? 'review'
                 : stuck.failed_run !== null
                   ? 'failed'
-                  : 'unprocessed',
+                  : stuck.run_id !== null && Number(stuck.any_items) === 0
+                    ? 'empty'
+                    : 'unprocessed',
           }
         : null,
     }
