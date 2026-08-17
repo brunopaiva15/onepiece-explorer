@@ -20,8 +20,16 @@ const nextConfig: NextConfig = {
 
   // sharp, pdfjs-dist and @napi-rs/canvas are native/heavy modules that must stay
   // outside the bundler and run in the Node runtime.
+  //
+  // @anthropic-ai/claude-agent-sdk is here for a different reason: it does not
+  // export a library so much as launch one. It resolves and spawns a bundled
+  // Claude Code executable by path at runtime, and a bundler that inlined its
+  // modules would rewrite the paths it resolves against. It has to stay a real
+  // package in node_modules.
   serverExternalPackages: [
+    '@anthropic-ai/claude-agent-sdk',
     '@napi-rs/canvas',
+    '@vercel/sandbox',
     'pdfjs-dist',
     'postgres',
     'pg-boss',
@@ -29,6 +37,24 @@ const nextConfig: NextConfig = {
     'tesseract.js',
     'yauzl',
   ],
+
+  /**
+   * Ship the whole Agent SDK, not the files the tracer could see.
+   *
+   * File tracing follows imports. The SDK's imports are a thin wrapper; the CLI
+   * it actually runs — several megabytes of JavaScript plus its own assets — is
+   * reached by a path computed at runtime, which the tracer has no way to
+   * follow. Without this the package deploys as a stub that resolves cleanly,
+   * builds cleanly, and fails on the first chapter with a missing file.
+   *
+   * This only matters for CLAUDE_AGENT_RUNTIME=inline. The sandbox runtime
+   * installs its own copy inside the microVM and does not read this one — but
+   * the two are meant to be interchangeable, and a build where only one of them
+   * works is a trap waiting for whoever flips the switch.
+   */
+  outputFileTracingIncludes: {
+    '/**': ['./node_modules/@anthropic-ai/claude-agent-sdk/**'],
+  },
 
   // Private assets are only ever served through an authenticated route handler.
   // Nothing under var/ is exposed statically, and no remote image host is allowed.

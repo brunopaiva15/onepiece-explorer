@@ -726,3 +726,77 @@ export function refList(refs: string[]): string {
     ...refs.map((ref) => `  - ${ref}`),
   ].join('\n')
 }
+
+/**
+ * Panel descriptions, rendered for the extraction prompt.
+ *
+ * Lives here rather than in a provider because it is part of the question, not
+ * part of the transport: two providers asking Claude to extract from the same
+ * chapter must be asking the same thing, or a difference in the graph would be
+ * a difference in wording nobody wrote down.
+ */
+export function panelDescriptionList(
+  descriptions: Array<{
+    panel_ref: string
+    description: string
+    setting: string | null
+    characters_visible: string[]
+    actions: string[]
+  }>,
+): string {
+  if (descriptions.length === 0) return 'Aucune description de case disponible.'
+  return [
+    'Descriptions des cases produites lors de ce traitement :',
+    ...descriptions.map((d) =>
+      [
+        `  [${d.panel_ref}] ${d.description}`,
+        d.setting ? `    lieu : ${d.setting}` : '',
+        d.characters_visible.length > 0
+          ? `    présents : ${d.characters_visible.join(' ; ')}`
+          : '',
+        d.actions.length > 0 ? `    actions : ${d.actions.join(' ; ')}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ),
+  ].join('\n')
+}
+
+/**
+ * Entities this same chapter proposed in earlier slices.
+ *
+ * Not yet validated, so they must not be re-proposed — but nameable, which is
+ * the whole point: without this, a relation between someone introduced in the
+ * first slice and someone in the third could not be expressed at all.
+ */
+export function proposedSoFarList(
+  proposed: Array<{ id: string; label: string; nodeType: string }>,
+): string {
+  return [
+    'Entités déjà proposées pour ce chapitre, dans les passages précédents.',
+    'Elles ne sont pas encore validées : ne les reproposez pas, mais',
+    'servez-vous de leur identifiant tel quel pour écrire une relation',
+    'qui les nomme.',
+    ...proposed.map((e) => `  - ${e.id} · ${e.nodeType} · « ${e.label} »`),
+  ].join('\n')
+}
+
+/**
+ * Citable passages, labelled by ref.
+ *
+ * A passage is labelled by its ref alone; a bubble says which panel it sits in.
+ * Telling a model reading prose that a paragraph is "hors case" would be
+ * describing a page layout that does not exist.
+ */
+export function textBlockList(
+  blocks: Array<{ ref: string; text: string; panelRef: string | null }>,
+  source: SourceKind,
+): string {
+  return blocks
+    .map((b) =>
+      source === 'summary'
+        ? `[${b.ref}] ${b.text}`
+        : `[${b.ref}${b.panelRef ? ` dans ${b.panelRef}` : ' hors case'}] ${b.text}`,
+    )
+    .join('\n\n')
+}

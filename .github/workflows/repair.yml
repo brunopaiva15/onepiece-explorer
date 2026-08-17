@@ -74,12 +74,13 @@ name: Réparations (production)
 #
 # One of them is not like the others, and it is worth knowing before pressing
 # the button. `mysteres` reads: it asks a model, once per open question, whether
-# the scenes published after it carry the answer. So it also needs
-# ANTHROPIC_API_KEY, it costs real money — a few dollars for a backlog of
-# seventy, in either mode, because a dry run makes the same calls and only skips
-# the writing — and it takes minutes rather than seconds, which is why the
-# timeout below is not a single number. Without the key the script stops before
-# the first question: the fallback providers answer by counting shared words,
+# the scenes published after it carry the answer. So it also needs a model —
+# CLAUDE_CODE_OAUTH_TOKEN, which spends the Claude Max allowance rather than
+# money, or ANTHROPIC_API_KEY, which costs real money: a few dollars for a
+# backlog of seventy, in either mode, because a dry run makes the same calls and
+# only skips the writing — and it takes minutes rather than seconds, which is why
+# the timeout below is not a single number. Without either the script stops
+# before the first question: the fallback providers answer by counting words,
 # and « Où se trouve le trésor de Gold Roger ? » would close on the first scene
 # containing « trésor ».
 
@@ -201,10 +202,16 @@ jobs:
       - name: pnpm repair:${{ inputs.script }}
         env:
           DIRECT_URL: ${{ secrets.PRODUCTION_DIRECT_URL }}
-          # Only `mysteres` reads it, and it stops with an explanation if it is
-          # missing. Passed to every script rather than conditionally, because a
-          # conditional env is one more thing to get wrong for a value the other
-          # two never look at.
+          # Only `mysteres` reads them, and it stops with an explanation if both
+          # are missing. Passed to every script rather than conditionally,
+          # because a conditional env is one more thing to get wrong for a value
+          # the other two never look at.
+          #
+          # The subscription token is preferred when both are set — same reason
+          # as everywhere else, it is already paid for. On a runner the Agent SDK
+          # runs inline: there is a filesystem and a process to fork, so no
+          # sandbox is involved.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Same reasoning for the bucket: only `illustrations` opens it, and the
           # step above has already refused to start without these three when it

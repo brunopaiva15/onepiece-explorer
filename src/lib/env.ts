@@ -24,8 +24,30 @@ const schema = z.object({
   SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
 
   // --- Model provider ---
+  /**
+   * A Claude Max subscription, reached through the Claude Agent SDK.
+   *
+   * Generated with `claude setup-token`. This is the default path for chapter
+   * processing: the work is one person's, in one admin interface, and a
+   * subscription already pays for it. Never prefixed NEXT_PUBLIC_, never
+   * returned in a response — see the note on ANTHROPIC_API_KEY below.
+   */
+  CLAUDE_CODE_OAUTH_TOKEN: z.string().min(1).optional(),
+  /** 'inline' spawns Claude here, 'sandbox' runs it in a Vercel Sandbox. */
+  CLAUDE_AGENT_RUNTIME: z.enum(['auto', 'inline', 'sandbox']).default('auto'),
+  CLAUDE_AGENT_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  CLAUDE_AGENT_SDK_VERSION: z.string().min(1).optional(),
+  CLAUDE_SANDBOX_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  CLAUDE_SANDBOX_IDLE_MS: z.coerce.number().int().positive().optional(),
+  /**
+   * The metered API key, kept and no longer the default.
+   *
+   * Still honoured — `MODEL_PROVIDER=anthropic` uses it, and the recorded
+   * cassettes are refreshed with it — but nothing falls back onto it. A spent
+   * Claude Max allowance stops the import; it does not move the bill.
+   */
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  MODEL_PROVIDER: z.enum(['anthropic', 'replay', 'synthetic']).default('anthropic'),
+  MODEL_PROVIDER: z.enum(['claude-max', 'anthropic', 'replay', 'synthetic']).optional(),
   // Self-hosted, OpenAI-compatible endpoint. Set both to use it.
   LOCAL_AI_BASE_URL: z.string().url().optional(),
   LOCAL_AI_MODEL: z.string().min(1).optional(),
@@ -121,9 +143,20 @@ export function hasModelCredentials(): boolean {
   // banner must not appear for it. Without this the interface would announce
   // fabricated extraction over extraction that actually happened.
   if (hasLocalModel()) return true
-  const provider = process.env.MODEL_PROVIDER ?? 'anthropic'
+  const provider = process.env.MODEL_PROVIDER
   if (provider === 'synthetic' || provider === 'replay') return true
-  return Boolean(process.env.ANTHROPIC_API_KEY)
+  return hasClaudeSubscription() || Boolean(process.env.ANTHROPIC_API_KEY)
+}
+
+/**
+ * Is a Claude Max subscription token configured?
+ *
+ * The presence of the variable, not its validity: a token that has expired
+ * fails at the first call with a message that says so, and pretending here that
+ * it is absent would send someone to set a variable they have already set.
+ */
+export function hasClaudeSubscription(): boolean {
+  return Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim())
 }
 
 /** Is a self-hosted, OpenAI-compatible endpoint configured? */
@@ -175,14 +208,40 @@ export function publicLibraryOwnerId(): string | null {
  * Deliberately blind to LOCAL_AI_*: this is the fallback half of the routing
  * table, and a fallback that could itself resolve to "local" would be a loop.
  */
-export function remoteModelProvider(): 'anthropic' | 'replay' | 'synthetic' {
-  const requested = (process.env.MODEL_PROVIDER ?? 'anthropic') as
+export function remoteModelProvider(): 'claude-max' | 'anthropic' | 'replay' | 'synthetic' {
+  const requested = process.env.MODEL_PROVIDER as
+    | 'claude-max'
     | 'anthropic'
     | 'replay'
     | 'synthetic'
-  if (requested === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {
+    | undefined
+
+  /*
+   * Unset means "use what is configured", and the order is the answer to the
+   * question this migration was about.
+   *
+   * A subscription token wins over a metered key, because the subscription is
+   * already paid for and the key is not. This is a choice made once, when the
+   * provider is built — not a fallback taken when something fails. Nothing
+   * below reaches for ANTHROPIC_API_KEY after a Claude Max call has been
+   * refused: a spent allowance stops the import, loudly, which is the whole
+   * point of preferring the subscription in the first place.
+   */
+  if (!requested) {
+    if (hasClaudeSubscription()) return 'claude-max'
+    if (process.env.ANTHROPIC_API_KEY) return 'anthropic'
     return 'synthetic'
   }
+
+  /*
+   * An explicit choice whose credentials are missing degrades to synthetic
+   * rather than throwing, which is how this has always behaved: the interface
+   * says plainly that the extraction is generated, and a misconfigured
+   * deployment stays readable instead of erroring on every page.
+   */
+  if (requested === 'claude-max' && !hasClaudeSubscription()) return 'synthetic'
+  if (requested === 'anthropic' && !process.env.ANTHROPIC_API_KEY) return 'synthetic'
+
   return requested
 }
 
@@ -193,7 +252,12 @@ export function remoteModelProvider(): 'anthropic' | 'replay' | 'synthetic' {
  * weights are the ones nobody else can reproduce, and that is what a reader of
  * the run history needs to know when two runs of the same chapter disagree.
  */
-export function effectiveModelProvider(): 'anthropic' | 'local' | 'replay' | 'synthetic' {
+export function effectiveModelProvider():
+  | 'anthropic'
+  | 'claude-max'
+  | 'local'
+  | 'replay'
+  | 'synthetic' {
   if (hasLocalModel()) return 'local'
   return remoteModelProvider()
 }
