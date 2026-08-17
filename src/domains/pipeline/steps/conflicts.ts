@@ -393,4 +393,6 @@ const ACTION_PREDICATES = new Set([
   'knocks_out',
   'gives',
   'receives',
+  // Manger un fruit demande d'être là pour le porter à sa bouche.
+  'eats',
 ])
