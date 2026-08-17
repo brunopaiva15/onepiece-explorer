@@ -180,14 +180,23 @@ export async function sweepQuestionAction(entityId: string): Promise<SweepStep> 
 /**
  * Cette panne emporte-t-elle aussi les questions qu'on n'a pas encore posées ?
  *
- * Deux genres seulement, et ce sont les deux qui décrivent l'accès plutôt que la
- * requête : un jeton que Claude refuse, et une allocation épuisée. Tout le reste
- * — le bac à sable repris, le CLI disparu, la réponse hors schéma — est une
- * panne de cet appel-là. Se tromper ici du côté « fatal » perd le travail
- * restant ; s'en tromper de l'autre côté coûte quelques appels que la boucle
- * arrête d'elle-même après trois échecs de suite. Le doute penche donc vers
- * « continuer ».
+ * Trois genres seulement, et ce sont les trois qui décrivent l'accès plutôt que
+ * la requête : un jeton que Claude refuse, une allocation épuisée, et un
+ * hébergeur qui refuse de fournir la machine sur laquelle Claude devait
+ * tourner. Tout le reste — le bac à sable repris, le CLI disparu, la réponse
+ * hors schéma — est une panne de cet appel-là. Se tromper ici du côté « fatal »
+ * perd le travail restant ; s'en tromper de l'autre côté coûte quelques appels
+ * que la boucle arrête d'elle-même après trois échecs de suite. Le doute penche
+ * donc vers « continuer ».
+ *
+ * `billing` a rejoint la liste par l'observation : une allocation Sandbox
+ * épuisée est aussi définitive qu'un quota Claude, et la faire découvrir trois
+ * fois de suite ne fait que répéter le même paragraphe à quelqu'un qui l'a
+ * déjà lu.
  */
 function condemnsTheRest(error: unknown): boolean {
-  return error instanceof ClaudeAgentError && (error.kind === 'auth' || error.kind === 'quota')
+  return (
+    error instanceof ClaudeAgentError &&
+    (error.kind === 'auth' || error.kind === 'quota' || error.kind === 'billing')
+  )
 }

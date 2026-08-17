@@ -8,6 +8,7 @@ import {
   agentTimeoutMs,
   AUTH_MESSAGE,
   ClaudeAgentError,
+  creationRefusal,
   oauthToken,
   type AgentRequest,
   type RawAgentResult,
@@ -106,15 +107,7 @@ function build(): Promise<Warm> {
         resources: { vcpus: 2 },
       })
     } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new ClaudeAgentError(
-        'sandbox',
-        'Impossible de créer le bac à sable Vercel : ' +
-          `${detail}. En déploiement, l'authentification passe par le jeton OIDC du ` +
-          'projet — vérifiez que « Secure Backend Access » (OIDC) est activé. En local, ' +
-          'renseignez VERCEL_TOKEN, VERCEL_TEAM_ID et VERCEL_PROJECT_ID, ou basculez sur ' +
-          'CLAUDE_AGENT_RUNTIME=inline, qui ne demande aucun bac à sable.',
-      )
+      throw creationRefusal(error)
     }
 
     try {
@@ -139,6 +132,7 @@ function build(): Promise<Warm> {
           'sandbox',
           `L'installation du Claude Agent SDK (${version}) dans le bac à sable a échoué : ` +
             `${detail}. Le bac à sable a besoin d'un accès réseau au registre npm.`,
+          true,
         )
       }
     } catch (error) {
@@ -192,9 +186,16 @@ export async function runInSandbox(request: AgentRequest): Promise<RawAgentResul
      * neuve. Un CLI disparu ne désigne qu'un processus : la machine est réputée
      * saine et gardée, ce qui rend la seconde tentative immédiate au lieu de
      * coûter la minute d'installation d'un microVM.
+     *
+     * Le droit de retenter se lit maintenant sur l'erreur elle-même et non sur
+     * son genre. « Tout ce qui est `sandbox` se retente » traitait un refus de
+     * la plateforme comme un hoquet : une allocation Sandbox épuisée bâtissait
+     * une seconde machine pour se faire refuser une seconde fois, et le
+     * balayage payait deux appels et deux minutes par question pour apprendre
+     * ce que le premier 402 avait déjà dit. Voir `creationRefusal`.
      */
     if (!(error instanceof ClaudeAgentError)) throw error
-    if (error.kind !== 'sandbox' && !error.retryable) throw error
+    if (!error.retryable) throw error
 
     if (error.kind === 'sandbox') warm = undefined
     return attempt(request, token)
@@ -256,6 +257,7 @@ async function attempt(request: AgentRequest, token: string): Promise<RawAgentRe
         'sandbox',
         `${request.label} : le script n’a rien écrit (code ${command.exitCode}). ` +
           (stderr ? `Sortie d’erreur : ${stderr}` : 'Aucune sortie d’erreur.'),
+        true,
       )
     }
 
@@ -274,6 +276,7 @@ async function attempt(request: AgentRequest, token: string): Promise<RawAgentRe
         'sandbox',
         `${request.label} : réponse illisible du bac à sable — le fichier de sortie ` +
           "n'est pas du JSON. Rien n’a été enregistré pour cet appel.",
+        true,
       )
     }
 
