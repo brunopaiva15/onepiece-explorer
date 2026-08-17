@@ -86,8 +86,15 @@ import { DESCRIPTION_BUDGET, EXTRACTION_BUDGET } from './schemas.ts'
  *     then the cast by recency — and a sentence saying how many of how many,
  *     because a truncation the model cannot see is one it reads as « this thing
  *     does not exist ».
+ * '14' says that a relation always has an object. '5' ruled out the sentence in
+ *     the object slot and left the empty slot standing: « Kaloo blesse », both
+ *     object fields null, a real quote behind it and every check content — the
+ *     predicate exists, the subject resolves, the types agree because there is
+ *     no second type to disagree. Only `assertion_has_object` refused it, after
+ *     « Publier », by its own name. What the chapter showed — a stray bullet
+ *     nobody fired — is an event, and the prompt now says where it goes.
  */
-export const PROMPT_VERSION = '13'
+export const PROMPT_VERSION = '14'
 
 /**
  * What the model is reading.
@@ -507,6 +514,13 @@ validée — et jamais une phrase. Si ce que vous voulez dire ne s'écrit qu'en
 toutes lettres (« meurt en tombant dans un escalier »), c'est un événement :
 proposez-le comme tel. Une phrase glissée à la place d'un objet ne relie rien,
 ne se retrouve pas depuis l'autre bout, et sera mise en quarantaine.
+
+Et une relation a toujours un objet. « object » et « object_value » tous les
+deux à null n'écrit rien du tout : « Kaloo — blesse — ∅ » ne dit ni qui blesse,
+ni qui est blessé, et ne peut être retrouvé depuis nulle part. Si l'autre bout
+n'est nommé par personne dans le chapitre — une balle perdue, un assaillant
+hors champ — alors le fait est un événement, pas une relation : proposez-le dans
+« events ». Ne posez jamais un prédicat sans rien en face.
 
 UN IDENTIFIANT EXISTANT DÉSIGNE LA MÊME CHOSE, JAMAIS LA PLUS PROCHE. Les deux
 listes qui vous sont fournies — entités déjà validées, entités proposées dans

@@ -46,6 +46,7 @@ export type QuarantineReason =
   | 'unknown_subject'
   | 'unknown_object'
   | 'literal_object'
+  | 'missing_object'
   | 'self_reference'
   | 'empty_excerpt'
 
@@ -579,6 +580,40 @@ export function filterExtraction(
         detail:
           `L'objet de « ${assertion.predicate} » doit être une entité, pas une phrase : ` +
           `« ${literal.slice(0, 120)} ». Ce qui se raconte en une phrase est un événement.`,
+        payload: assertion,
+      })
+      continue
+    }
+
+    /*
+     * A relation with one end is not a relation.
+     *
+     * « Kaloo — blesse — ∅ » is what this catches: the chapter says a stray
+     * bullet hits him, there is no shooter to point at, and the model writes the
+     * predicate anyway with `object` and `object_value` both null. Every other
+     * check agrees — the predicate exists, the subject resolves, the excerpt is
+     * a real quote — so the card reaches review reading « Kaloo blesse », with
+     * nothing after the verb and no way to tell that accepting it cannot work.
+     *
+     * The database has said so since the first migration: `assertion_has_object`
+     * demands one of the two columns. It was saying it at the last possible
+     * moment, in the red block after « Publier », as
+     * « violates check constraint "assertion_has_object" » — a sentence about a
+     * constraint name, for a reviewer who asked about a duck.
+     *
+     * Universal, and not a property of the predicate: even one the ontology lets
+     * carry a literal must carry *that*. A predicate with nothing on the other
+     * side states nothing, and what the chapter did show — someone is hit, by
+     * something nobody can name — is an event, which the extraction has a
+     * category for.
+     */
+    if (!hasEntityObject && literal.length === 0) {
+      quarantined.push({
+        reason: 'missing_object',
+        detail:
+          `« ${assertion.predicate} » n'a pas d'objet : ni entité, ni valeur. ` +
+          `Une relation joint deux choses, et il n'y en a qu'une ici. ` +
+          `Si l'autre bout n'a pas de nom dans le chapitre, c'est un événement.`,
         payload: assertion,
       })
       continue
