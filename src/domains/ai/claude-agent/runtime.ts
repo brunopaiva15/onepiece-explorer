@@ -366,10 +366,11 @@ function looksLikeMissingCli(text: string): boolean {
 /**
  * Où trouver Claude Code, dit à l'endroit où il manque.
  *
- * Sur une machine à soi c'est une réinstallation. En déploiement c'est deux
- * choses, et il faut les deux : le binaire doit être tracé dans le bundle, et
- * la fonction doit avoir le droit de peser ce qu'il pèse — trois cents
- * mégaoctets contre une limite de deux cent cinquante.
+ * Sur une machine à soi c'est une réinstallation. En déploiement, ce n'est pas
+ * une réparation mais un renoncement : `inline` n'y est pas praticable, et le
+ * message le dit plutôt que d'envoyer quelqu'un poursuivre trois limites de
+ * plateforme les unes après les autres. Voir le commentaire en tête de
+ * next.config.ts, qui garde le compte de ce qui a été essayé.
  *
  * La dorsale d'abord, et l'hôte seulement ensuite. Le même binaire manquant
  * désigne deux installations opposées : en `inline` c'est le paquet optionnel
@@ -392,13 +393,13 @@ function whereClaudeCodeLives(): string {
 
   if (isVercelRuntime()) {
     return (
-      'En déploiement, il faut deux choses et les deux ensemble : que le binaire soit tracé ' +
-      'dans le bundle (outputFileTracingIncludes dans next.config.ts ne l’inclut que si ' +
-      'CLAUDE_AGENT_RUNTIME=inline est posée au moment du build, parce qu’il pèse trois cents ' +
-      'mégaoctets), et que la fonction ait le droit de dépasser 250 Mo ' +
-      '(VERCEL_SUPPORT_LARGE_FUNCTIONS=1, qui demande Fluid compute). Sans les deux, ' +
-      'CLAUDE_AGENT_RUNTIME=sandbox est la seule exécution possible ici — ou lancez le ' +
-      'balayage hors de l’hébergeur, par le bouton « Réparations (production) ».'
+      'CLAUDE_AGENT_RUNTIME=inline n’est pas praticable sur cet hébergeur : le binaire pèse ' +
+      'trois cent dix mégaoctets contre 250 Mo par fonction, et l’embarquer empêche Vercel de ' +
+      'fusionner les vingt-cinq routes de ce dépôt sous les 12 fonctions d’un plan Hobby — le ' +
+      'déploiement entier est alors refusé. Retirez cette variable des réglages du projet. ' +
+      'Ici, Claude tourne en bac à sable (CLAUDE_AGENT_RUNTIME=sandbox ou rien du tout) ; pour ' +
+      'un balayage, le bouton « Réparations (production) » des Actions GitHub le fait tourner ' +
+      'hors de l’hébergeur, où aucune de ces limites n’existe.'
     )
   }
 

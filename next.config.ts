@@ -1,50 +1,45 @@
 import type { NextConfig } from 'next'
 
-/**
- * Le CLI que le SDK lance, et ce qu'il faut embarquer pour qu'il existe.
+/*
+ * Le binaire de Claude Code n'est **pas** embarqué ici, et c'est une décision.
  *
- * Ce projet a longtemps cru que Claude Code était « plusieurs mégaoctets de
- * JavaScript » à l'intérieur du paquet du SDK. Ce n'est plus vrai, et le
- * démenti a coûté un balayage : le CLI est un **exécutable natif** de trois
- * cents mégaoctets, livré par un paquet optionnel propre à la plateforme —
- * `@anthropic-ai/claude-agent-sdk-linux-x64` et ses sept frères — que le paquet
- * du SDK ne contient pas et que le traceur ne voit pas. Embarquer le SDK seul
- * donnait une installation qui se résout, un build qui passe, et « Native CLI
- * binary for linux-x64 not found » au premier appel.
+ * Ce projet a longtemps cru que le CLI était « plusieurs mégaoctets de
+ * JavaScript » dans le paquet du SDK. Ce n'est plus vrai : c'est un exécutable
+ * natif de trois cent dix mégaoctets, livré par un paquet optionnel propre à la
+ * plateforme — `@anthropic-ai/claude-agent-sdk-linux-x64` et ses sept frères —
+ * que le paquet du SDK ne contient pas et que le traceur ne suit pas. La
+ * dorsale `inline` en déploiement échoue donc sur « Native CLI binary for
+ * linux-x64 not found », et la tentation est grande d'ajouter le paquet aux
+ * fichiers tracés.
  *
- * Alors pourquoi ne pas l'embarquer toujours ? Parce qu'une fonction Vercel
- * plafonne à 250 Mo décompressés et que le binaire en pèse plus à lui seul :
- * l'inclure sans y penser ferait échouer le *déploiement entier* — le site,
- * pas la fonctionnalité — pour une dorsale que la plupart des installations
- * n'utilisent pas. Il n'est donc embarqué que quand on a demandé `inline`, ce
- * qui est exactement le moment où on en a besoin.
+ * Elle a été essayée, derrière une garde qui ne l'ajoutait que si
+ * CLAUDE_AGENT_RUNTIME=inline. Le build passait ; le déploiement, non. Trois
+ * limites de plateforme s'y opposent, et il faut les franchir toutes les trois :
  *
- * L'autre moitié n'est pas ici et ne peut pas y être : au-delà de 250 Mo il
- * faut aussi que le projet ait le droit de déployer une grosse fonction
- * (`VERCEL_SUPPORT_LARGE_FUNCTIONS=1`, qui demande Fluid compute, et qui monte
- * la limite à 5 Go). Une variable de projet chez l'hébergeur ; rien qu'un
- * fichier de configuration puisse poser.
+ *   250 Mo par fonction, que le binaire crève à lui seul. Franchissable avec
+ *   VERCEL_SUPPORT_LARGE_FUNCTIONS=1, qui monte la limite à 5 Go et demande
+ *   Fluid compute.
  *
- * Les deux dispositions sont listées parce que les deux existent : `.pnpm/`
- * pour l'installation de ce dépôt, et le chemin à plat pour npm et yarn.
+ *   12 fonctions par déploiement en Hobby. Ce dépôt a vingt-cinq routes, et
+ *   Vercel ne tient sous la limite qu'en les fusionnant ; une inclusion posée
+ *   sur `'/**'` rend chaque route trop grosse pour être fusionnée, et le
+ *   déploiement entier est refusé — le site, pas la fonctionnalité. C'est ce
+ *   qui est arrivé.
  *
- * Et les motifs s'arrêtent aux *fichiers* — `…/@anthropic-ai/&#42;/&#42;` et non
- * `…/@anthropic-ai/&#42;&#42;`. Sous pnpm, le paquet de la plateforme apparaît une
- * seconde fois comme lien symbolique dans le dossier du SDK ; un motif qui
- * ramasse ce lien fait échouer le build entier sur « Is a directory (os error
- * 21) », le traceur essayant de lire un dossier comme un fichier.
+ *   Et l'on n'embarquerait de toute façon trois cent dix mégaoctets dans
+ *   `/graph`, `/recherche` et `/mentions-legales` que pour deux ou trois routes
+ *   qui parlent à un modèle.
+ *
+ * Ce qui reste, et qui marche : `sandbox` en déploiement, où la microVM
+ * installe le SDK elle-même et n'a aucune de ces limites ; et, pour les
+ * balayages, le bouton « Réparations (production) » des Actions GitHub, qui
+ * tourne sur un runner où rien de tout cela ne se pose.
+ *
+ * Si quelqu'un reprend cette idée : les motifs doivent s'arrêter aux *fichiers*
+ * (`…/@anthropic-ai/&#42;/&#42;`), parce que pnpm pose le paquet de la plateforme une
+ * seconde fois comme lien symbolique dans le dossier du SDK et qu'un motif qui
+ * ramasse ce lien fait échouer le build sur « Is a directory (os error 21) ».
  */
-function claudeCodeFiles(): string[] {
-  const sdk = ['./node_modules/@anthropic-ai/claude-agent-sdk/**']
-
-  if (process.env.CLAUDE_AGENT_RUNTIME?.trim() !== 'inline') return sdk
-
-  return [
-    ...sdk,
-    './node_modules/@anthropic-ai/claude-agent-sdk-*/*',
-    './node_modules/.pnpm/@anthropic-ai+claude-agent-sdk-*/node_modules/@anthropic-ai/*/*',
-  ]
-}
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -96,12 +91,16 @@ const nextConfig: NextConfig = {
    * This only matters for CLAUDE_AGENT_RUNTIME=inline. The sandbox runtime
    * installs its own copy inside the microVM and does not read this one — but
    * the two are meant to be interchangeable, and a build where only one of them
-   * works is a trap waiting for whoever flips the switch. Ce piège s'est
-   * refermé : voir `claudeCodeFiles`, qui dit ce qu'il manquait et pourquoi il
-   * n'est ajouté que sur demande.
+   * works is a trap waiting for whoever flips the switch.
+   *
+   * Ce piège s'est refermé, et il ne se referme pas ici. Ce qui manque à
+   * `inline` en déploiement est le binaire natif, et il n'est pas dans cette
+   * liste : le commentaire en tête de fichier dit pourquoi, et ce qu'il a coûté
+   * d'essayer. Ce qui suit reste utile sur une machine et sur un runner, où le
+   * paquet de la plateforme est déjà installé à côté.
    */
   outputFileTracingIncludes: {
-    '/**': claudeCodeFiles(),
+    '/**': ['./node_modules/@anthropic-ai/claude-agent-sdk/**'],
   },
 
   // Private assets are only ever served through an authenticated route handler.

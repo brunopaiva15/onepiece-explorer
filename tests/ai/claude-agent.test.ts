@@ -371,16 +371,36 @@ describe('a host where Claude Code is not installed', () => {
     expect(failure.retryable).toBe(false)
   })
 
-  it('tells a laptop to reinstall and a deployment to ship the binary', () => {
+  it('tells a laptop to reinstall', () => {
     setEnv({ CLAUDE_AGENT_RUNTIME: undefined, VERCEL: undefined, NODE_ENV: 'test' })
+
     expect(agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message).toContain(
       '--omit=optional',
     )
+  })
 
+  /*
+   * Et dit à un déploiement d'abandonner, plutôt que de poursuivre.
+   *
+   * Trois limites de plateforme s'opposent à `inline` sur Vercel, et elles se
+   * sont présentées une par une : 250 Mo par fonction, puis 12 fonctions par
+   * déploiement en Hobby — les vingt-cinq routes de ce dépôt ne tiennent qu'en
+   * étant fusionnées, ce qu'un binaire de trois cent dix mégaoctets dans chacune
+   * rend impossible. Le message qui envoie franchir la première laisse
+   * découvrir la seconde par un déploiement refusé.
+   */
+  it('tells a deployment to give up on inline rather than chase it', () => {
     setEnv({ CLAUDE_AGENT_RUNTIME: 'inline', VERCEL: '1', NODE_ENV: 'production' })
+
     const deployed = agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message
-    expect(deployed).toContain('VERCEL_SUPPORT_LARGE_FUNCTIONS')
-    expect(deployed).toContain('outputFileTracingIncludes')
+
+    expect(deployed).toContain('n’est pas praticable')
+    expect(deployed).toContain('Retirez cette variable')
+    // Ce que le message conseillait quand next.config.ts embarquait le binaire.
+    // Il ne l'embarque plus, et pointer vers un mécanisme absent est pire que
+    // de ne rien pointer.
+    expect(deployed).not.toContain('outputFileTracingIncludes')
+    expect(deployed).not.toContain('VERCEL_SUPPORT_LARGE_FUNCTIONS')
   })
 
   /*
