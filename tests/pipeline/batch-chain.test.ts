@@ -147,6 +147,16 @@ beforeEach(async () => {
   // per-import answer, and a test that leant on the environment would pass
   // whether or not the column was ever read.
   delete process.env.AUTO_REVIEW_NAMES_ONLY
+  /*
+   * No confidence floor here, and the reason is the provider rather than the
+   * policy. The synthetic extractor copies proper nouns out of the text and
+   * scores everything it produces at a quarter — honestly, since it has no
+   * judgement to offer — so a floor of three quarters would hold every card of
+   * every chapter and these tests would be pinning the threshold instead of the
+   * chain. What the floor does to a lot is pinned where it belongs, in
+   * tests/review/confidence.test.ts.
+   */
+  process.env.AUTO_ACCEPT_CONFIDENCE = '0'
   process.env.MODEL_PROVIDER = 'synthetic'
   const { resetModelProvider } = await import('@/domains/ai/index.ts')
   resetModelProvider()
@@ -154,6 +164,7 @@ beforeEach(async () => {
 })
 
 afterAll(async () => {
+  delete process.env.AUTO_ACCEPT_CONFIDENCE
   await closeDb()
 })
 

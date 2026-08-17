@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
+// The same line the automatic pass draws in the pipeline, drawn once: a board
+// that pre-accepted at one threshold while the batch accepted at another would
+// show the reviewer a rule the product does not run.
+import { AUTO_ACCEPT_CONFIDENCE, confidentEnough } from '@/domains/review/confidence.ts'
 import type { DuplicateInfo } from '@/domains/review/duplicates.ts'
 import type { Echo } from '@/domains/review/echoes.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
@@ -42,6 +46,13 @@ const KEYS: Record<string, DecisionKind> = {
 
 interface Props {
   queue: ReviewQueue
+  /**
+   * The confidence above which a proposal arrives already marked « accepter ».
+   *
+   * Passed in rather than read here because the environment may move it and the
+   * client bundle cannot see the environment. Absent, the shared default holds.
+   */
+  autoAcceptAt?: number
 }
 
 /** A name the reviewer replaced, and what they replaced it with. */
@@ -166,8 +177,81 @@ function revealOffer(
   return { label, existingLabel: item.relatedLabel }
 }
 
-export function ReviewBoard({ queue }: Props) {
-  const [decisions, setDecisions] = useState<Map<string, DecisionKind>>(new Map())
+/**
+ * The decisions the queue arrives with: the confident ones, already accepted.
+ *
+ * The button this replaces asked the reviewer to perform a decision they had
+ * already delegated. Eighty-seven cards, of which perhaps sixty carry a score
+ * the owner has decided is enough, and pressing « Accepter 60 sûres » every
+ * single time is a reflex rather than a judgement — and a reflex dressed as
+ * review is worse than an honest automatic pass, because it carries a person's
+ * signature. Marking them on arrival says the same thing out loud and puts the
+ * reviewer's attention on what is left: the identity claims, the naming
+ * questions, and whatever the model hedged on.
+ *
+ * Still nothing is written. These are marks in a local map, the tally above
+ * « Publier » counts them, any one of them can be unmarked, and publication
+ * remains one deliberate click.
+ *
+ * The exclusions are the ones the bulk button already applied, minus everything
+ * that depends on a decision — nothing has been decided yet. Identity,
+ * revelation, death, hidden affiliation, mystery resolution and contradiction
+ * are out whatever their score: those are the claims whose premature acceptance
+ * rewrites what the reader knew at every earlier chapter. A relation the
+ * ontology refuses is out, because the database would bounce it and choosing
+ * another predicate is a judgement. And a proposal already published under
+ * another copy is out, because accepting a second adds a node nothing will ever
+ * join back.
+ */
+function sweepConfident(
+  items: ReviewItemView[],
+  threshold: number,
+): Map<string, DecisionKind> {
+  const claimed = new Set<string>()
+  for (const item of items) {
+    const key = item.duplicate?.key
+    if (key !== undefined && item.duplicate!.others.accepted > 0) claimed.add(key)
+  }
+
+  const swept = new Map<string, DecisionKind>()
+  for (const item of items) {
+    if (
+      item.requiresExplicitReview ||
+      !confidentEnough(item.confidence, threshold) ||
+      item.typeMismatch !== null
+    ) {
+      continue
+    }
+    // One copy per proposal, never two: same score and same flags means both
+    // halves of a duplicate pass this filter, and two nodes for one character
+    // would enter the graph without anyone deciding anything.
+    const key = item.duplicate?.key
+    if (key !== undefined) {
+      if (claimed.has(key)) continue
+      claimed.add(key)
+    }
+    swept.set(item.id, 'accept')
+  }
+  return swept
+}
+
+export function ReviewBoard({ queue, autoAcceptAt = AUTO_ACCEPT_CONFIDENCE }: Props) {
+  /*
+   * Swept once, when the board mounts, rather than in an effect: the queue is
+   * already in hand at first render, and a pass that ran again afterwards would
+   * re-mark the very cards the reviewer had just unmarked.
+   */
+  const [decisions, setDecisions] = useState<Map<string, DecisionKind>>(() =>
+    sweepConfident(queue.items, autoAcceptAt),
+  )
+  /**
+   * How many arrived marked, so the screen can say so.
+   *
+   * Held rather than recomputed: unmarking one is a decision about that card,
+   * not a claim that the sweep never happened. Reset when a publication clears
+   * the board, where the number would otherwise describe a queue that is gone.
+   */
+  const [preAccepted, setPreAccepted] = useState(decisions.size)
   /*
    * Names the reviewer rewrote, by item id.
    *
@@ -413,13 +497,18 @@ export function ReviewBoard({ queue }: Props) {
   }, [current, decide, move])
 
   /*
-   * Bulk accept covers only what is safe to accept in bulk.
+   * What is safe to accept without reading it — swept up on arrival.
    *
    * Identity, revelation, death, hidden affiliation, mystery resolution and
    * contradiction are excluded whatever their confidence — those are exactly the
    * claims whose premature acceptance spoils the story rather than merely being
-   * wrong, and a button that swept them up would make the "explicit review"
+   * wrong, and a rule that swept them up would make the "explicit review"
    * flag decorative.
+   *
+   * The same set feeds two things: the cards pre-marked when the queue opens,
+   * and the button that catches up whatever became eligible afterwards — a
+   * relation whose predicate you have just repaired, a copy freed by a decision
+   * elsewhere. Both are one line of policy, and it is the one the pipeline runs.
    */
   const bulkEligible = useMemo(() => {
     /*
@@ -445,7 +534,7 @@ export function ReviewBoard({ queue }: Props) {
     for (const item of items) {
       if (
         item.requiresExplicitReview ||
-        item.confidence < 0.7 ||
+        !confidentEnough(item.confidence, autoAcceptAt) ||
         decisions.has(item.id) ||
         // Already settled by a copy of its own; nothing left to sweep up.
         autoDeferred.has(item.id) ||
@@ -464,7 +553,7 @@ export function ReviewBoard({ queue }: Props) {
       picked.push(item)
     }
     return picked
-  }, [autoDeferred, items, decisions, predicates])
+  }, [autoAcceptAt, autoDeferred, items, decisions, predicates])
 
   /**
    * Relations marked « accepter » that the database is going to refuse.
@@ -632,6 +721,9 @@ export function ReviewBoard({ queue }: Props) {
       if (response.ok && response.published) {
         setResult(response.published)
         setDecisions(new Map())
+        // The sweep's tally described the queue that has just been published;
+        // what is left on the board is what the sweep declined to take.
+        setPreAccepted(0)
         setRenames(new Map())
         setPredicates(new Map())
         setReveals(new Set())
@@ -801,6 +893,28 @@ export function ReviewBoard({ queue }: Props) {
             </span>
           )}
 
+          {/*
+            * Said out loud, next to the tally it changed.
+            *
+            * Sixty cards marked by something other than the person about to
+            * press « Publier » is exactly the kind of thing an interface must
+            * not do quietly: the number, the rule and the threshold, where the
+            * decision is taken.
+            */}
+          {preAccepted > 0 && (
+            <span
+              className="badge badge-or"
+              title={
+                `Confiance ≥ ${Math.round(autoAcceptAt * 100)} %, hors identité, ` +
+                'révélation, contradiction et doublons. Décochables une par une ; ' +
+                'rien n’est écrit avant « Publier ».'
+              }
+            >
+              {preAccepted} pré-acceptée{preAccepted > 1 ? 's' : ''} ≥{' '}
+              {Math.round(autoAcceptAt * 100)} %
+            </span>
+          )}
+
           {doubleAccepted > 0 && (
             <span
               className="badge badge-rouge"
@@ -817,7 +931,10 @@ export function ReviewBoard({ queue }: Props) {
                 type="button"
                 onClick={acceptBulk}
                 className="bouton !py-1 !text-sm"
-                title="Uniquement les propositions sûres : ni identité, ni révélation, ni contradiction"
+                title={
+                  `Confiance ≥ ${Math.round(autoAcceptAt * 100)} % : ni identité, ` +
+                  'ni révélation, ni contradiction'
+                }
               >
                 Accepter {bulkEligible.length} sûres
               </button>

@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
 import { ingestionRuns, reviewItems } from '@/db/schema/ingestion.ts'
+import { AUTO_ACCEPT_CONFIDENCE, confidentEnough } from './confidence.ts'
 import { mismatchOf, resolveNodeTypes } from './queue.ts'
 import {
   markChapterReviewed,
@@ -59,6 +60,13 @@ import {
  *   the proposal it is about. It is publishable now — accepting one folds the
  *   proposal into the entity you already have — and it is the last question
  *   this pass refuses to take on its own.
+ *
+ * And one about the model rather than about the category: a proposal the model
+ * itself is unsure of is left standing too. `AUTO_ACCEPT_CONFIDENCE` is the line
+ * — three quarters — and it is the same line the review board draws on screen.
+ * Everything above it enters the graph unread, which is what this mode is for;
+ * everything below it is exactly the handful of cards a person is worth being
+ * asked about, so they wait, and the chapter waits with them.
  */
 
 /**
@@ -69,6 +77,30 @@ import {
  */
 export function autoReviewEnabled(): boolean {
   return process.env.AUTO_REVIEW_NAMES_ONLY === '1'
+}
+
+/**
+ * The confidence a proposal has to carry to be decided without a reader.
+ *
+ * `AUTO_ACCEPT_CONFIDENCE` is the answer, and the environment may move it —
+ * read at call time, like the mode above, so a test or an instance can set it
+ * without depending on the order modules happened to load in. A value outside
+ * [0, 1], or one that is not a number at all, is ignored rather than obeyed: a
+ * typo in an environment file must not silently accept everything.
+ *
+ * Zero is a legitimate setting and means what it says — accept whatever the
+ * category rules allow, whatever the model thought of it. That is the behaviour
+ * this pass had before the threshold existed, and the tests that pin the
+ * category rules keep asking for it, because the synthetic provider has no
+ * confidence to offer and its numbers say nothing about the rule under test.
+ */
+export function autoAcceptThreshold(): number {
+  const raw = process.env.AUTO_ACCEPT_CONFIDENCE?.trim()
+  if (raw === undefined || raw === '') return AUTO_ACCEPT_CONFIDENCE
+
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0 || value > 1) return AUTO_ACCEPT_CONFIDENCE
+  return value
 }
 
 /**
@@ -145,7 +177,15 @@ export interface AutoReviewResult {
   heldForNaming: number
   /** Identity questions left for the reviewer, with what they hold up. */
   heldForIdentity: number
-  /** Relations left waiting on one of those names. */
+  /** Proposals the model was not sure enough of, left for the reviewer. */
+  heldByConfidence: number
+  /**
+   * Relations and scenes left waiting on a proposal that is itself held.
+   *
+   * For its name or for its confidence, and the two are the same problem from
+   * here: publishing a relation whose subject stayed behind fails on an entity
+   * that does not exist, and an automatic pass has nobody to show that to.
+   */
   heldByName: number
   /** Relations the ontology refuses as written, left for a human to reshape. */
   heldByTypes: number
@@ -175,6 +215,7 @@ interface Pending {
   category: string
   payload: Record<string, unknown>
   fingerprint: string
+  confidence: number
 }
 
 /**
@@ -229,6 +270,7 @@ export async function autoReview(
         category: reviewItems.category,
         payload: reviewItems.payload,
         fingerprint: reviewItems.proposalFingerprint,
+        confidence: reviewItems.confidence,
       })
       .from(reviewItems)
       .where(
@@ -245,6 +287,7 @@ export async function autoReview(
     accepted: 0,
     heldForNaming: 0,
     heldForIdentity: 0,
+    heldByConfidence: 0,
     heldByName: 0,
     heldByTypes: 0,
     deferred: 0,
@@ -318,6 +361,24 @@ export async function autoReview(
     if (localId.length > 0) heldLocalIds.add(localId)
   }
 
+  /*
+   * And the question the model asks about itself: how sure was it?
+   *
+   * Below the threshold nothing is accepted, whatever the category. A scene is
+   * held here as well as an entity, and for the reason the naming rule holds
+   * entities: both are pointed at by relations, both would publish a card whose
+   * end does not exist, and an event fails silently where a relation at least
+   * fails. So a doubtful one joins the held set and takes its dependants with
+   * it, rather than leaving half a chapter written against a scene nobody kept.
+   */
+  const threshold = autoAcceptThreshold()
+  for (const item of pending) {
+    if (item.category !== 'entity' && item.category !== 'event') continue
+    if (confidentEnough(item.confidence, threshold)) continue
+    const localId = typeof item.payload.local_id === 'string' ? item.payload.local_id : ''
+    if (localId.length > 0) heldLocalIds.add(localId)
+  }
+
   const decisions: Decision[] = []
 
   for (const item of pending) {
@@ -340,6 +401,19 @@ export async function autoReview(
 
     if (item.category === 'entity' && item.payload.naming_confident === false) {
       result.heldForNaming++
+      continue
+    }
+
+    /*
+     * The model's own doubt, taken at face value.
+     *
+     * Counted before the dependency checks below, so a card held on its own
+     * merit is reported as such: « en dessous du seuil » is something the
+     * reviewer can act on, « en attente d'un nom » about a card whose own score
+     * is 0.3 would send them looking for a naming question that does not exist.
+     */
+    if (!confidentEnough(item.confidence, threshold)) {
+      result.heldByConfidence++
       continue
     }
 
@@ -418,9 +492,22 @@ export function autoReviewNote(result: AutoReviewResult): string {
   const parts = [`${result.accepted} proposition(s) acceptées d'office`]
 
   if (result.heldForNaming > 0) {
+    parts.push(`${result.heldForNaming} question(s) de nom laissée(s) à trancher`)
+  }
+  /*
+   * Its own line rather than a parenthesis behind the naming count: a name is
+   * no longer the only thing a relation can be waiting on, and a « (+ 12
+   * relations en attente) » printed behind « 0 question de nom » — which is
+   * what the parenthesis did once a card could be held for its confidence —
+   * names the wrong cause for twelve cards.
+   */
+  if (result.heldByName > 0) {
+    parts.push(`${result.heldByName} carte(s) en attente d'une proposition retenue`)
+  }
+  if (result.heldByConfidence > 0) {
     parts.push(
-      `${result.heldForNaming} question(s) de nom laissée(s) à trancher` +
-        (result.heldByName > 0 ? ` (+ ${result.heldByName} relation(s) en attente)` : ''),
+      `${result.heldByConfidence} proposition(s) sous le seuil de confiance ` +
+        `(${Math.round(autoAcceptThreshold() * 100)} %) laissée(s) à trancher`,
     )
   }
   if (result.heldByTypes > 0) {

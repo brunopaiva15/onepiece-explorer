@@ -238,10 +238,11 @@ export function BatchForm({ suggestedNumber }: { suggestedNumber: number }) {
               <strong className="text-primary">
                 Traiter et publier le lot tout seul.
               </strong>{' '}
-              Chaque chapitre accepte ce qui ne demande personne, garde les
-              questions qui en demandent une — un nom dont le modèle n’est pas
-              sûr, une identité, une contradiction — et s’ouvre quand il ne
-              reste rien&nbsp;: le suivant démarre alors sans vous. Un chapitre
+              Chaque chapitre accepte ce dont le modèle est sûr et qui ne
+              demande personne, garde les questions qui en demandent une — un
+              nom dont le modèle n’est pas sûr, une identité, une contradiction,
+              une proposition sous le seuil de confiance — et s’ouvre quand il
+              ne reste rien&nbsp;: le suivant démarre alors sans vous. Un chapitre
               qui pose une question arrête la chaîne à cet endroit&nbsp;; cette
               page vous dit lequel et pourquoi, et y répondre relance tout.
               <span className="mt-1 block text-muted">
