@@ -13,6 +13,7 @@ import {
   type RawAgentResult,
 } from '@/domains/ai/claude-agent/runtime.ts'
 import { ClaudeAgentProvider } from '@/domains/ai/claude-agent/provider.ts'
+import { inlineRuntimeIgnored } from '@/lib/hosting.ts'
 import { isProviderChoice, modelProvider, providerOptions, resetModelProvider } from '@/domains/ai/index.ts'
 import { env, hasClaudeSubscription, remoteModelProvider, resetEnvCache } from '@/lib/env.ts'
 
@@ -158,8 +159,43 @@ describe('the environment Claude runs in', () => {
 
     // An explicit choice wins over the host, which is how the unused one gets
     // exercised before somebody needs it.
-    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline' })
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline', VERCEL: undefined, NODE_ENV: 'test' })
     expect(agentRuntime()).toBe('inline')
+
+    // Y compris la dorsale du déploiement sur une machine : c'est la seule façon
+    // de savoir qu'elle marche encore avant d'en avoir besoin.
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'sandbox' })
+    expect(agentRuntime()).toBe('sandbox')
+  })
+
+  /*
+   * La demande qui ne peut mener qu'à la panne.
+   *
+   * Mesurée en production, et c'est la panne que ce dépôt s'est faite à lui-même :
+   * `CLAUDE_AGENT_RUNTIME=inline` posée dans les réglages du projet Vercel — en
+   * suivant le conseil que `creationRefusal` donnait alors — et les cent trente
+   * et une questions du balayage échouant à l'identique sur « Native CLI binary
+   * for linux-x64 not found », sans qu'aucune n'ait atteint un modèle. Trois
+   * limites de plateforme s'y opposent et aucune ne se contourne ; honorer la
+   * demande, c'est garantir le zéro.
+   */
+  it('refuses an inline runtime a deployment cannot possibly run', () => {
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline', VERCEL: '1', NODE_ENV: 'production' })
+
+    expect(agentRuntime()).toBe('sandbox')
+    // Refusée, et dite : la variable reste dans le tableau de bord, et une
+    // correction muette promet le même après-midi à quelqu'un d'autre.
+    expect(inlineRuntimeIgnored()).toBe(true)
+  })
+
+  it('leaves a laptop its inline runtime, pulled VERCEL lines and all', () => {
+    // `vercel env pull` écrit VERCEL=1 dans .env.local. Le refus ci-dessus ne
+    // doit pas se déclencher là : la machine peut lancer le CLI, elle l'a
+    // installé, et c'est là que ce projet importe.
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline', VERCEL: '1', NODE_ENV: 'development' })
+
+    expect(agentRuntime()).toBe('inline')
+    expect(inlineRuntimeIgnored()).toBe(false)
   })
 })
 
@@ -313,7 +349,7 @@ describe('a token Claude refuses', () => {
    * dire de basculer dessus, et doutait ensuite de tout le reste du message.
    */
   it('never advises the runtime it is already running on', () => {
-    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline' })
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline', VERCEL: undefined, NODE_ENV: 'test' })
     expect(agentFailure('extraction', 'exited with code 1', '').message).not.toContain(
       'CLAUDE_AGENT_RUNTIME=inline',
     )
@@ -322,6 +358,23 @@ describe('a token Claude refuses', () => {
     expect(agentFailure('extraction', 'exited with code 1', '').message).toContain(
       'CLAUDE_AGENT_RUNTIME=inline',
     )
+  })
+
+  /*
+   * Ni celle qu'un déploiement ne peut pas suivre.
+   *
+   * « Relancez avec CLAUDE_AGENT_RUNTIME=inline » lu dans l'atelier en
+   * production se comprend comme un réglage à poser en production, et c'est
+   * précisément par là que la variable est arrivée dans les réglages du projet.
+   * Le conseil reste bon sur une machine ; il doit dire laquelle.
+   */
+  it('says where inline is worth trying, when read from a deployment', () => {
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'sandbox', VERCEL: '1', NODE_ENV: 'production' })
+
+    const message = agentFailure('extraction', 'exited with code 1', '').message
+
+    expect(message).toContain('Sur une machine')
+    expect(message).toContain('en déploiement cette variable est ignorée')
   })
 
   it('keeps the end of a long diagnostic, which is where the reason is', () => {
@@ -380,22 +433,25 @@ describe('a host where Claude Code is not installed', () => {
   })
 
   /*
-   * Et dit à un déploiement d'abandonner, plutôt que de poursuivre.
+   * Et le déploiement n'a plus à abandonner `inline` : il ne l'a jamais pris.
    *
-   * Trois limites de plateforme s'opposent à `inline` sur Vercel, et elles se
-   * sont présentées une par une : 250 Mo par fonction, puis 12 fonctions par
-   * déploiement en Hobby — les vingt-cinq routes de ce dépôt ne tiennent qu'en
-   * étant fusionnées, ce qu'un binaire de trois cent dix mégaoctets dans chacune
-   * rend impossible. Le message qui envoie franchir la première laisse
-   * découvrir la seconde par un déploiement refusé.
+   * Trois limites de plateforme s'y opposent, et elles se sont présentées une
+   * par une : 250 Mo par fonction, puis 12 fonctions par déploiement en Hobby —
+   * les vingt-cinq routes de ce dépôt ne tiennent qu'en étant fusionnées, ce
+   * qu'un binaire de trois cent dix mégaoctets dans chacune rend impossible.
+   * Expliquer cela à chaque appel, c'était l'expliquer cent trente et une fois
+   * pour un balayage qui n'extrayait rien ; `agentRuntime` refuse la demande, et
+   * ce qui reste à dire est que la variable est là et ne sert plus à rien.
    */
-  it('tells a deployment to give up on inline rather than chase it', () => {
+  it('names the stale variable rather than the runtime it no longer takes', () => {
     setEnv({ CLAUDE_AGENT_RUNTIME: 'inline', VERCEL: '1', NODE_ENV: 'production' })
 
     const deployed = agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message
 
-    expect(deployed).toContain('n’est pas praticable')
-    expect(deployed).toContain('Retirez cette variable')
+    // La dorsale réelle, donc l'installation réelle : celle de la microVM.
+    expect(deployed).toContain('registre npm')
+    expect(deployed).toContain('est posée sur ce projet et ignorée')
+    expect(deployed).toContain('Retirez-la des réglages du projet')
     // Ce que le message conseillait quand next.config.ts embarquait le binaire.
     // Il ne l'embarque plus, et pointer vers un mécanisme absent est pire que
     // de ne rien pointer.
@@ -419,6 +475,8 @@ describe('a host where Claude Code is not installed', () => {
     expect(message).toContain('registre npm')
     expect(message).not.toContain('outputFileTracingIncludes')
     expect(message).not.toContain('VERCEL_SUPPORT_LARGE_FUNCTIONS')
+    // Et ne mentionne pas une variable que personne n'a posée.
+    expect(message).not.toContain('est posée sur ce projet et ignorée')
   })
 
   it('recognises the older shape of the same absence', () => {
@@ -445,6 +503,7 @@ describe('a host where Claude Code is not installed', () => {
  */
 describe('a sandbox the platform will not create', () => {
   it('reads a spent Sandbox allowance as a bill and not as a login', () => {
+    setEnv({ VERCEL: undefined, NODE_ENV: 'test' })
     const failure = creationRefusal(new Error('Status code 402 is not ok'))
 
     expect(failure.kind).toBe('billing')
@@ -453,6 +512,32 @@ describe('a sandbox the platform will not create', () => {
     // configuration d'authentification qui n'a rien à se reprocher.
     expect(failure.message).not.toContain('Secure Backend Access')
     expect(failure.message).toContain('CLAUDE_AGENT_RUNTIME=inline')
+  })
+
+  /*
+   * Et l'issue proposée doit exister sur l'hôte qui la lit.
+   *
+   * C'est le défaut qui a fabriqué la panne suivante. Ces messages finissaient
+   * tous sur « CLAUDE_AGENT_RUNTIME=inline ne demande aucun bac à sable » — vrai
+   * sur une machine, faux là où un 402 se lit presque toujours. Le conseil a été
+   * suivi : la variable est partie dans les réglages du projet Vercel, et le
+   * balayage suivant a échoué cent trente et une fois sur un binaire absent au
+   * lieu de trois fois sur une facture. Il ne restait alors rien d'exact dans le
+   * message qui avait raison sur le 402.
+   */
+  it('never offers a deployment the one runtime it cannot run', () => {
+    setEnv({ VERCEL: '1', NODE_ENV: 'production' })
+
+    for (const refusal of [
+      creationRefusal(new Error('Status code 402 is not ok')),
+      creationRefusal(new Error('Status code 403 is not ok')),
+      creationRefusal(new Error('Status code 404 is not ok')),
+      creationRefusal(new Error('socket hang up')),
+    ]) {
+      expect(refusal.message).not.toContain('CLAUDE_AGENT_RUNTIME=inline fait tourner')
+      // L'issue qui existe vraiment depuis un déploiement : un runner.
+      expect(refusal.message).toContain('Réparations (production)')
+    }
   })
 
   it('keeps the OIDC advice for the refusal that is actually about identity', () => {

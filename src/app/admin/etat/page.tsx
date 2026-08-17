@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import postgres from 'postgres'
 import { connectionStringIssue } from '@/lib/connection-string.ts'
-import { vercelFlagLooksPulled } from '@/lib/hosting.ts'
+import { inlineRuntimeIgnored, vercelFlagLooksPulled } from '@/lib/hosting.ts'
 
 export const metadata: Metadata = { title: 'État du déploiement' }
 export const dynamic = 'force-dynamic'
@@ -239,6 +239,29 @@ export default async function StatePage() {
         ? "absente, le traitement retombe sur l'API Anthropic facturée au token — générez un jeton avec `claude setup-token` pour utiliser l'abonnement"
         : 'absente, extraction synthétique avec bannière — générez un jeton avec `claude setup-token`',
   })
+
+  /*
+   * La variable que le déploiement ignore, dite là où on peut la lire.
+   *
+   * Elle a tenu la production entière : posée dans les réglages du projet, elle
+   * envoyait chaque appel sur une dorsale qui ne peut pas exister ici, et les
+   * cent trente et une questions d'un balayage échouaient sur « Native CLI
+   * binary for linux-x64 not found » sans qu'aucune n'atteigne un modèle. Le
+   * code ne la suit plus. Mais elle reste dans le tableau de bord, invisible
+   * depuis le site qu'elle a cassé, et c'est cette page-ci qui est ouverte quand
+   * on cherche pourquoi — d'où la ligne, plutôt qu'une correction muette.
+   */
+  if (inlineRuntimeIgnored()) {
+    checks.push({
+      label: 'CLAUDE_AGENT_RUNTIME',
+      state: 'warn',
+      detail:
+        'vaut « inline » et est ignorée : le CLI de Claude Code est un binaire natif de trois ' +
+        'cent dix mégaoctets, contre 250 Mo par fonction. Claude tourne en bac à sable. ' +
+        'Retirez la variable des réglages du projet — elle ne peut plus rien faire ' +
+        "qu'égarer le prochain diagnostic.",
+    })
+  }
 
   for (const [name, note] of [
     [

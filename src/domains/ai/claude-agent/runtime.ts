@@ -1,5 +1,5 @@
 import 'server-only'
-import { isVercelRuntime } from '@/lib/hosting.ts'
+import { inlineRuntimeIgnored, isVercelRuntime } from '@/lib/hosting.ts'
 
 /**
  * The boundary between "what this pipeline asks Claude" and "where Claude runs".
@@ -218,12 +218,49 @@ export type AgentRuntimeKind = 'inline' | 'sandbox'
  * deployment gets the sandbox, a laptop gets the child process. Naming one
  * explicitly is how you test the other, which is the only way to find out that
  * the one you do not use has stopped working.
+ *
+ * Avec une exception, et elle a coûté un déploiement entier. `inline` en
+ * déploiement Vercel n'est pas une préférence discutable mais une impossibilité
+ * mesurée : le CLI est un binaire natif de trois cent dix mégaoctets, la limite
+ * est de 250 Mo par fonction, et l'embarquer empêche la fusion des vingt-cinq
+ * routes de ce dépôt sous les 12 fonctions d'un plan Hobby. Le commentaire en
+ * tête de next.config.ts garde le compte de ce qui a été essayé.
+ *
+ * Honorer cette demande-là, c'est garantir la panne. Elle a été posée dans les
+ * réglages du projet en suivant le conseil que `creationRefusal` donnait alors —
+ * « inline ne demande aucun bac à sable » — et les cent trente et une questions
+ * du balayage ont ensuite échoué à l'identique sur « Native CLI binary for
+ * linux-x64 not found », sans qu'aucune n'ait jamais atteint un modèle. Un
+ * réglage qui ne peut mener qu'à cela n'est pas un réglage : il est refusé ici,
+ * et `inlineRuntimeIgnored` est ce qui le dit aux diagnostics plutôt que de le
+ * corriger en douce.
+ *
+ * `sandbox` reste honoré partout, y compris sur une machine : c'est la dorsale
+ * qu'un déploiement utilise, et pouvoir l'exercer localement est la seule façon
+ * de savoir qu'elle marche encore.
  */
 export function agentRuntime(): AgentRuntimeKind {
   const chosen = process.env.CLAUDE_AGENT_RUNTIME?.trim()
-  if (chosen === 'inline' || chosen === 'sandbox') return chosen
+  if (chosen === 'sandbox') return 'sandbox'
+  if (chosen === 'inline' && !isVercelRuntime()) return 'inline'
   return isVercelRuntime() ? 'sandbox' : 'inline'
 }
+
+/**
+ * Ce qu'il faut savoir de la variable qu'on vient d'ignorer.
+ *
+ * Les trois limites de plateforme sont énoncées plutôt que résumées, parce que
+ * sans elles « ignorée » se lit comme un caprice du code et la variable reste en
+ * place. La page /admin/etat et `pnpm doctor` disent la même chose dans leur
+ * propre voix : ni l'une ni l'autre ne peut importer d'ici — la première par
+ * discipline, la seconde parce que ce module est marqué `server-only`.
+ */
+const INLINE_IGNORED =
+  'CLAUDE_AGENT_RUNTIME=inline est posée sur ce projet et ignorée : le CLI de Claude Code est ' +
+  'un binaire natif de trois cent dix mégaoctets contre 250 Mo par fonction, et l’embarquer ' +
+  'empêche Vercel de fusionner les vingt-cinq routes de ce dépôt sous les 12 fonctions d’un ' +
+  'plan Hobby — le déploiement entier est alors refusé. Retirez-la des réglages du projet : ' +
+  'elle ne peut plus rien faire qu’égarer le prochain diagnostic.'
 
 /**
  * How long one call may take before it is abandoned.
@@ -379,6 +416,11 @@ function looksLikeMissingCli(text: string): boolean {
  * `isVercelRuntime()` seul répondait « tracez-le dans le bundle » à une
  * installation npm qui avait échoué à l'intérieur d'une machine virtuelle, ce
  * qui est un conseil juste appliqué à la mauvaise moitié du système.
+ *
+ * Il n'y a plus de troisième cas — « inline sur cet hébergeur » — parce que
+ * `agentRuntime` ne le produit plus : la demande est refusée en amont plutôt
+ * qu'expliquée cent trente et une fois après coup. Ce qu'il en reste est la
+ * mention de la variable ignorée, ajoutée là où quelqu'un la lira.
  */
 function whereClaudeCodeLives(): string {
   if (agentRuntime() === 'sandbox') {
@@ -387,19 +429,7 @@ function whereClaudeCodeLives(): string {
       'microVM exécute au démarrage : c’est cette installation qui n’a pas posé le paquet de ' +
       'la plateforme. Rien à embarquer dans le build — vérifiez l’accès de la machine au ' +
       'registre npm, et CLAUDE_AGENT_SDK_VERSION si elle est figée sur une version qui ne ' +
-      'publie pas ce paquet.'
-    )
-  }
-
-  if (isVercelRuntime()) {
-    return (
-      'CLAUDE_AGENT_RUNTIME=inline n’est pas praticable sur cet hébergeur : le binaire pèse ' +
-      'trois cent dix mégaoctets contre 250 Mo par fonction, et l’embarquer empêche Vercel de ' +
-      'fusionner les vingt-cinq routes de ce dépôt sous les 12 fonctions d’un plan Hobby — le ' +
-      'déploiement entier est alors refusé. Retirez cette variable des réglages du projet. ' +
-      'Ici, Claude tourne en bac à sable (CLAUDE_AGENT_RUNTIME=sandbox ou rien du tout) ; pour ' +
-      'un balayage, le bouton « Réparations (production) » des Actions GitHub le fait tourner ' +
-      'hors de l’hébergeur, où aucune de ces limites n’existe.'
+      'publie pas ce paquet.' + (inlineRuntimeIgnored() ? ` ${INLINE_IGNORED}` : '')
     )
   }
 
@@ -486,11 +516,21 @@ export function agentFailure(
    * *inline* — quelqu'un qui venait précisément de basculer dessus s'entendait
    * dire de basculer dessus. Un conseil qui décrit l'état actuel n'est pas un
    * conseil ; il fait douter de tout le reste du message.
+   *
+   * Et il doit dire *où* le suivre, sans quoi il rejoue le piège. « Relancez
+   * avec CLAUDE_AGENT_RUNTIME=inline », lu dans une interface de production, se
+   * comprend comme un réglage à poser en production — et c'est exactement le
+   * chemin par lequel cette variable est arrivée dans les réglages du projet.
+   * Sur une machine, le conseil est bon ; là où il est ignoré, la même phrase
+   * doit le dire.
    */
   const elsewhere =
     agentRuntime() === 'inline'
       ? ''
-      : ' Relancez avec CLAUDE_AGENT_RUNTIME=inline pour le voir démarrer localement.'
+      : isVercelRuntime()
+        ? ' Sur une machine, CLAUDE_AGENT_RUNTIME=inline le fait démarrer sans bac à sable ; ' +
+          'en déploiement cette variable est ignorée.'
+        : ' Relancez avec CLAUDE_AGENT_RUNTIME=inline pour le voir démarrer localement.'
 
   return new ClaudeAgentError(
     'sdk',
@@ -520,13 +560,30 @@ export function agentFailure(
  * demande identique une seconde plus tard obtient le même rejet. Retenter n'y
  * ajoute qu'une minute d'attente et un second message. Un 5xx ou un socket
  * coupé sont des accidents, et ceux-là valent une machine neuve.
+ *
+ * Et l'issue proposée dépend de l'hôte, ce qui manquait. Ces quatre messages
+ * finissaient tous sur « CLAUDE_AGENT_RUNTIME=inline ne demande aucun bac à
+ * sable » — vrai sur une machine, faux précisément là où ils se lisent le plus
+ * souvent. Un 402 en production conseillait donc le seul réglage qui ne peut
+ * pas fonctionner en production, et le conseil a été suivi : la variable est
+ * partie dans les réglages du projet, et le balayage suivant a échoué cent
+ * trente et une fois sur un binaire absent au lieu de trois fois sur une
+ * facture. C'est la panne que ce fichier a fabriquée lui-même.
+ *
+ * En déploiement, l'issue est donc celle qui existe vraiment : le bouton
+ * « Réparations (production) » des Actions GitHub, qui fait tourner le balayage
+ * sur un runner — ni bac à sable, ni limite de taille, ni allocation à épuiser.
  */
 export function creationRefusal(error: unknown): ClaudeAgentError {
   const detail = error instanceof Error ? error.message : String(error)
   const status = refusalStatus(error, detail)
-  const inline =
-    'CLAUDE_AGENT_RUNTIME=inline fait tourner Claude dans la fonction elle-même et ne ' +
-    'demande aucun bac à sable.'
+  const inline = isVercelRuntime()
+    ? 'Le mode inline n’est pas l’issue ici : le CLI est un binaire natif trop gros pour une ' +
+      'fonction, et CLAUDE_AGENT_RUNTIME=inline est ignorée en déploiement. Pour un balayage, ' +
+      'le bouton « Réparations (production) » des Actions GitHub le fait tourner sur un ' +
+      'runner, sans bac à sable.'
+    : 'CLAUDE_AGENT_RUNTIME=inline fait tourner Claude dans la fonction elle-même et ne ' +
+      'demande aucun bac à sable.'
 
   if (status === 402) {
     return new ClaudeAgentError(

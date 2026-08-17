@@ -18,7 +18,11 @@
 import '../src/lib/load-env.ts'
 import postgres from 'postgres'
 import { connectionStringIssue, endpointOf } from '../src/lib/connection-string.ts'
-import { vercelFlagLooksPulled } from '../src/lib/hosting.ts'
+import {
+  inlineRuntimeIgnored,
+  isVercelRuntime,
+  vercelFlagLooksPulled,
+} from '../src/lib/hosting.ts'
 
 type Level = 'ok' | 'warn' | 'fail' | 'skip'
 
@@ -575,19 +579,30 @@ async function checkLocalModel(): Promise<boolean> {
  * a diagnostic's time and a bill for a question already half answered — the
  * variables are reported and the first real import proves the rest.
  *
+ * La dorsale est celle que `agentRuntime` choisirait, hôte compris, et non celle
+ * que la variable demande. La différence est tout le sujet : un diagnostic qui
+ * annonce avoir testé `inline` alors que l'application tournera en bac à sable
+ * répond à côté de la question, et c'est cette sorte d'écart qui a laissé une
+ * production entière échouer sans que rien ne le dise.
+ *
  * Returns true when it has said something conclusive.
  */
 async function checkClaudeSubscription(token: string): Promise<boolean> {
   const requested = process.env.CLAUDE_AGENT_RUNTIME?.trim() || 'auto'
-  const runtime = requested === 'auto' ? 'inline' : requested
+  const runtime =
+    requested === 'sandbox' || isVercelRuntime() ? 'sandbox' : 'inline'
 
   if (runtime !== 'inline') {
     record({
-      level: 'ok',
+      level: inlineRuntimeIgnored() ? 'warn' : 'ok',
       label: 'Abonnement Claude Max',
-      detail: `jeton présent, exécution en bac à sable (CLAUDE_AGENT_RUNTIME=${requested})`,
+      detail: inlineRuntimeIgnored()
+        ? 'jeton présent, mais CLAUDE_AGENT_RUNTIME=inline est ignorée sur cet hôte : le CLI ' +
+          'est un binaire natif de trois cent dix mégaoctets contre 250 Mo par fonction. ' +
+          'Exécution en bac à sable'
+        : `jeton présent, exécution en bac à sable (CLAUDE_AGENT_RUNTIME=${requested})`,
       hint: 'Non vérifié ici : la vérification demanderait de démarrer une microVM. ' +
-        'CLAUDE_AGENT_RUNTIME=inline pnpm doctor teste le jeton pour de bon.',
+        'Sur une machine, CLAUDE_AGENT_RUNTIME=inline pnpm doctor teste le jeton pour de bon.',
     })
     return true
   }

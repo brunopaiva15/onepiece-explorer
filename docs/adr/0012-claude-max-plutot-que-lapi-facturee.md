@@ -43,13 +43,20 @@ consommé de l'allocation mensuelle.
 
 | Runtime | Où tourne Claude | Pour |
 |---|---|---|
-| `inline` | sous-processus de ce processus | machine de développement |
+| `inline` | sous-processus de ce processus | machine de développement, runner CI |
 | `sandbox` | microVM Vercel Sandbox | déploiement serverless |
 
 `CLAUDE_AGENT_RUNTIME=auto` choisit d'après l'hôte. Le payload envoyé est
 construit au même endroit pour les deux (`agentPayload`) : les deux runtimes ne
 peuvent pas diverger sur ce qui est demandé, seulement sur l'endroit où c'est
 exécuté.
+
+Le choix explicite est honoré dans un sens seulement. `sandbox` est acceptée
+partout, y compris sur une machine — c'est la dorsale du déploiement, et pouvoir
+l'exercer localement est la seule façon de savoir qu'elle marche encore.
+`inline` sur un déploiement Vercel est en revanche ignorée : voir les
+alternatives écartées, ce n'est pas une préférence mais une impossibilité
+mesurée.
 
 Le bac à sable est créé au premier appel d'un traitement et réutilisé par tous
 les suivants, puis arrêté après trois minutes d'inactivité. Un chapitre dessiné
@@ -124,9 +131,24 @@ journal, et probablement un rapport de bogue.
 ## Alternatives écartées
 
 **Tout faire tourner dans une fonction Vercel.** Le SDK a besoin de forker et
-d'écrire ; `/tmp` et le traçage de fichiers rendent la chose possible, pas
-fiable. Le mode `inline` existe et est configurable pour qui veut essayer ; ce
-n'est pas le défaut en déploiement.
+d'écrire ; `/tmp` et le traçage de fichiers rendaient la chose possible, pas
+fiable. Essayé depuis, et ce n'est plus une question de fiabilité mais de
+taille : le CLI n'est pas du JavaScript dans le paquet du SDK, c'est un
+exécutable natif de trois cent dix mégaoctets livré par un paquet optionnel
+propre à la plateforme. Trois limites s'y opposent — 250 Mo par fonction, 12
+fonctions par déploiement en Hobby (les vingt-cinq routes de ce dépôt ne tiennent
+qu'en étant fusionnées, ce que le binaire empêche), cinq minutes d'exécution — et
+la tentative a fait refuser le déploiement entier, le site avec.
+
+`inline` est donc **ignoré** en déploiement, et non seulement déconseillé.
+`agentRuntime` le refuse et les diagnostics le disent. La différence a été payée
+comptant : le message d'échec d'un bac à sable refusé recommandait `inline`, le
+conseil a été suivi dans les réglages du projet, et les cent trente et une
+questions du balayage suivant ont échoué sur « Native CLI binary for linux-x64
+not found » sans qu'aucune n'atteigne un modèle. Un réglage qui ne peut mener
+qu'à cela n'est pas un réglage. Depuis un déploiement, la voie pour un balayage
+est le bouton « Réparations (production) » des Actions GitHub, qui tourne sur un
+runner où aucune de ces limites n'existe.
 
 **Un bac à sable par appel.** Une minute d'installation multipliée par trente
 appels, contre huit à dix minutes de traitement utile.

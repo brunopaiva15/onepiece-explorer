@@ -30,3 +30,22 @@ export function isVercelRuntime(): boolean {
 export function vercelFlagLooksPulled(): boolean {
   return process.env.VERCEL === '1' && process.env.NODE_ENV !== 'production'
 }
+
+/**
+ * `CLAUDE_AGENT_RUNTIME=inline`, posée là où elle ne peut pas être suivie.
+ *
+ * Vit ici plutôt qu'à côté de `agentRuntime`, parce que trois surfaces ont
+ * besoin de la même réponse et qu'une seule d'entre elles peut importer du code
+ * marqué `server-only` : le choix de la dorsale, `pnpm doctor`, et la page
+ * /admin/etat — dont la règle est de ne dépendre de rien de ce qu'elle
+ * diagnostique.
+ *
+ * Le prédicat est là pour être *dit*, pas seulement appliqué. Le silence est ce
+ * qui a coûté cher : la variable reste dans les réglages du projet, elle sera
+ * relue par le prochain qui les ouvre, et rien n'indique qu'elle ne fait plus
+ * rien. La corriger sans le dire, c'est promettre le même après-midi à quelqu'un
+ * d'autre.
+ */
+export function inlineRuntimeIgnored(): boolean {
+  return process.env.CLAUDE_AGENT_RUNTIME?.trim() === 'inline' && isVercelRuntime()
+}
