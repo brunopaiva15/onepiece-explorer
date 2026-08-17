@@ -83,10 +83,24 @@ export interface AgentResponse {
  * so that `quota` in particular is unmistakable: the whole point of this
  * migration is that a spent Claude Max allowance stops the import rather than
  * quietly moving the bill onto a metered API key.
+ *
+ * `billing` est le même constat, une facture plus loin : l'hébergeur refuse de
+ * fournir la machine sur laquelle Claude devait tourner. Distinct de `sandbox`,
+ * qui est un bac à sable qui a raté ; ici il n'y en aura pas, ni maintenant ni
+ * à l'appel suivant. Distinct de `quota` aussi, parce que l'allocation épuisée
+ * n'est pas celle de Claude et qu'envoyer quelqu'un attendre la recharge de son
+ * abonnement le ferait chercher au mauvais endroit.
+ *
+ * `runtime` est en amont de tout cela : Claude Code n'est pas installable là où
+ * on a demandé qu'il tourne. Ni la requête, ni le jeton, ni la facture — la
+ * machine. Aucun appel ne réussira sur cet hôte tant que rien n'a changé, ce
+ * qui en fait la panne à dire une fois plutôt que cent trente et une.
  */
 export type AgentErrorKind =
   | 'auth'
   | 'quota'
+  | 'billing'
+  | 'runtime'
   | 'timeout'
   | 'sandbox'
   | 'empty'
@@ -322,6 +336,61 @@ function looksLikeAuth(text: string): boolean {
 }
 
 /**
+ * Claude Code absent de la machine qui devait le lancer.
+ *
+ * Le CLI n'est plus le mégaoctet de JavaScript que ce projet a supposé quand il
+ * a écrit son `outputFileTracingIncludes` : c'est un exécutable natif de trois
+ * cents mégaoctets, livré par un paquet **optionnel propre à la plateforme** —
+ * `@anthropic-ai/claude-agent-sdk-linux-x64` et ses sept frères — que le paquet
+ * du SDK ne contient pas. Embarquer le SDK sans eux produit exactement ce qui
+ * est arrivé : une installation qui se résout, un build qui passe, et un SDK
+ * qui ne trouve rien à lancer au premier appel.
+ *
+ * Aucune de ces phrases ne vient du CLI, et c'est ce qui rendait le diagnostic
+ * faux avant : c'est le SDK qui lève, avant d'avoir lancé quoi que ce soit,
+ * donc la sortie d'erreur est vide — et une sortie d'erreur vide était lue
+ * comme « le processus a disparu, retentez ». Un binaire absent est encore
+ * absent une seconde plus tard.
+ */
+const MISSING_CLI_SIGNALS = [
+  'native cli binary for',
+  'pathtoclaudecodeexecutable',
+  'cannot find module @anthropic-ai/claude-agent-sdk',
+]
+
+function looksLikeMissingCli(text: string): boolean {
+  const lowered = text.toLowerCase()
+  return MISSING_CLI_SIGNALS.some((signal) => lowered.includes(signal))
+}
+
+/**
+ * Où trouver Claude Code, dit à l'endroit où il manque.
+ *
+ * Sur une machine à soi c'est une réinstallation. En déploiement c'est deux
+ * choses, et il faut les deux : le binaire doit être tracé dans le bundle, et
+ * la fonction doit avoir le droit de peser ce qu'il pèse — trois cents
+ * mégaoctets contre une limite de deux cent cinquante.
+ */
+function whereClaudeCodeLives(): string {
+  if (isVercelRuntime()) {
+    return (
+      'En déploiement, il faut deux choses et les deux ensemble : que le binaire soit tracé ' +
+      'dans le bundle (outputFileTracingIncludes dans next.config.ts ne l’inclut que si ' +
+      'CLAUDE_AGENT_RUNTIME=inline est posée au moment du build, parce qu’il pèse trois cents ' +
+      'mégaoctets), et que la fonction ait le droit de dépasser 250 Mo ' +
+      '(VERCEL_SUPPORT_LARGE_FUNCTIONS=1, qui demande Fluid compute). Sans les deux, ' +
+      'CLAUDE_AGENT_RUNTIME=sandbox est la seule exécution possible ici — ou lancez le ' +
+      'balayage hors de l’hébergeur, par le bouton « Réparations (production) ».'
+    )
+  }
+
+  return (
+    'Réinstallez les dépendances sans --omit=optional : le paquet de votre plateforme est ' +
+    'une dépendance optionnelle du SDK, et `pnpm install` le pose.'
+  )
+}
+
+/**
  * L'échec du SDK, dit avec ce que le CLI en a dit.
  *
  * Trois sorties, dans l'ordre où elles changent ce que quelqu'un doit faire :
@@ -358,6 +427,16 @@ export function agentFailure(
     return new ClaudeAgentError('quota', `${label} : ${QUOTA_MESSAGE}`)
   }
 
+  if (looksLikeMissingCli(`${detail} ${said}`)) {
+    return new ClaudeAgentError(
+      'runtime',
+      `${label} : Claude Code n’est pas installé là où le SDK le cherche — ${detail}. ` +
+        'Le CLI est un binaire natif livré par un paquet optionnel propre à la plateforme ' +
+        '(@anthropic-ai/claude-agent-sdk-<os>-<arch>), et non par le paquet du SDK. ' +
+        `${whereClaudeCodeLives()} Rien n’a été enregistré pour cet appel.`,
+    )
+  }
+
   /*
    * Un CLI mort sans un mot est une panne, pas un verdict.
    *
@@ -380,6 +459,20 @@ export function agentFailure(
    */
   const machine = where || `en mode ${agentRuntime()}`
 
+  /*
+   * Le conseil ne peut pas être celui qu'on est déjà en train de suivre.
+   *
+   * « Relancez avec CLAUDE_AGENT_RUNTIME=inline » était écrit sans regarder la
+   * dorsale en cours, et se lisait donc mot pour mot dans l'échec d'un appel
+   * *inline* — quelqu'un qui venait précisément de basculer dessus s'entendait
+   * dire de basculer dessus. Un conseil qui décrit l'état actuel n'est pas un
+   * conseil ; il fait douter de tout le reste du message.
+   */
+  const elsewhere =
+    agentRuntime() === 'inline'
+      ? ''
+      : ' Relancez avec CLAUDE_AGENT_RUNTIME=inline pour le voir démarrer localement.'
+
   return new ClaudeAgentError(
     'sdk',
     `${label} : le Claude Agent SDK a échoué ${machine} — ${detail}.` +
@@ -387,11 +480,99 @@ export function agentFailure(
         ? ` Sortie d’erreur du CLI : ${said}`
         : ' Le CLI n’a rien écrit sur sa sortie d’erreur : il a disparu plutôt ' +
           'qu’échoué, ce qui désigne la machine et non la requête. L’appel a été ' +
-          'retenté une fois. Relancez avec CLAUDE_AGENT_RUNTIME=inline pour le voir ' +
-          'démarrer localement.') +
+          `retenté une fois.${elsewhere}`) +
       ' Rien n’a été enregistré pour cet appel.',
     !said,
   )
+}
+
+/**
+ * Un refus de fournir la machine, dit par celui qui a refusé.
+ *
+ * Le message ne disait qu'une chose, et c'était la mauvaise la plupart du
+ * temps : « vérifiez OIDC ». Il envoyait relire une configuration
+ * d'authentification irréprochable pour un 402, qui est une facture et non une
+ * identité — un jeton OIDC parfaitement valide reçoit exactement le même refus.
+ * Le client Vercel, lui, sait laquelle des deux : le code HTTP est dans
+ * l'erreur qu'il lève, et il n'était pas lu.
+ *
+ * Le second tri est celui de la reprise. Un 4xx est une phrase, pas un
+ * accident : la plateforme a examiné la demande et l'a rejetée, et une seconde
+ * demande identique une seconde plus tard obtient le même rejet. Retenter n'y
+ * ajoute qu'une minute d'attente et un second message. Un 5xx ou un socket
+ * coupé sont des accidents, et ceux-là valent une machine neuve.
+ */
+export function creationRefusal(error: unknown): ClaudeAgentError {
+  const detail = error instanceof Error ? error.message : String(error)
+  const status = refusalStatus(error, detail)
+  const inline =
+    'CLAUDE_AGENT_RUNTIME=inline fait tourner Claude dans la fonction elle-même et ne ' +
+    'demande aucun bac à sable.'
+
+  if (status === 402) {
+    return new ClaudeAgentError(
+      'billing',
+      `Vercel refuse de facturer un bac à sable (402 : ${detail}). L'allocation Sandbox du ` +
+        "compte est épuisée : sur un plan Hobby elle est offerte jusqu'à un plafond " +
+        'mensuel, après quoi la création est suspendue jusqu’au cycle suivant ; un plan Pro ' +
+        "la rouvre tout de suite. Ce n'est pas un problème d'authentification — un jeton " +
+        'OIDC valide reçoit le même refus. ' +
+        inline,
+    )
+  }
+
+  if (status === 401 || status === 403) {
+    return new ClaudeAgentError(
+      'sandbox',
+      `Vercel a refusé l'accès au bac à sable (${status} : ${detail}). En déploiement, ` +
+        "l'authentification passe par le jeton OIDC du projet — vérifiez que " +
+        '« Secure Backend Access » (OIDC) est activé. En local, renseignez VERCEL_TOKEN, ' +
+        `VERCEL_TEAM_ID et VERCEL_PROJECT_ID. ${inline}`,
+    )
+  }
+
+  if (status !== undefined && status < 500) {
+    return new ClaudeAgentError(
+      'sandbox',
+      `Vercel a rejeté la création du bac à sable (${status} : ${detail}). La demande a été ` +
+        `examinée et refusée : la relancer telle quelle obtiendra le même refus. ${inline}`,
+    )
+  }
+
+  // Ni code, ni code lisible : la plateforme a trébuché plutôt que répondu, et
+  // c'est le seul cas où une seconde machine a une chance d'exister.
+  return new ClaudeAgentError(
+    'sandbox',
+    `Impossible de créer le bac à sable Vercel : ${detail}. L'appel est retenté une fois ` +
+      `sur une machine neuve. ${inline}`,
+    true,
+  )
+}
+
+/**
+ * Le code HTTP derrière l'échec, s'il y en a un.
+ *
+ * Le client peut le porter sur l'erreur ; il peut aussi ne l'avoir écrit que
+ * dans sa phrase — « Status code 402 is not ok » est tout ce qui arrive
+ * aujourd'hui. Les deux sont lus, la propriété d'abord parce qu'elle ne peut
+ * pas être confondue avec autre chose, la phrase ensuite et seulement sur cette
+ * tournure-là : trois chiffres pris n'importe où dans un message attraperaient
+ * un horodatage ou une taille de fichier, et diagnostiquer une facture à partir
+ * d'un numéro de port serait pire que de ne rien diagnostiquer.
+ */
+function refusalStatus(error: unknown, detail: string): number | undefined {
+  const carried = error as {
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
+  } | null
+
+  for (const candidate of [carried?.status, carried?.statusCode, carried?.response?.status]) {
+    if (typeof candidate === 'number' && candidate >= 400 && candidate <= 599) return candidate
+  }
+
+  const said = /status code (\d{3})/i.exec(detail)
+  return said ? Number(said[1]) : undefined
 }
 
 /**

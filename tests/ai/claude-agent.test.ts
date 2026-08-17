@@ -5,6 +5,7 @@ import {
   agentFailure,
   agentRuntime,
   ClaudeAgentError,
+  creationRefusal,
   interpret,
   isAuthFailure,
   stderrTail,
@@ -219,11 +220,11 @@ describe('a token Claude refuses', () => {
     const failure = agentFailure(
       'assistant',
       'Claude Code process exited with code 1',
-      'Error: Cannot find module @anthropic-ai/claude-agent-sdk/cli.js',
+      'Error: EACCES: permission denied, open /vercel/sandbox/req.json',
     )
 
     expect(failure.kind).toBe('sdk')
-    expect(failure.message).toContain('Cannot find module')
+    expect(failure.message).toContain('EACCES')
   })
 
   it('keeps a spent allowance an allowance, wherever it is said', () => {
@@ -264,7 +265,9 @@ describe('a token Claude refuses', () => {
     const failure = agentFailure('extraction', 'exited with code 1', '')
 
     expect(failure.kind).toBe('sdk')
-    expect(failure.message).toContain('CLAUDE_AGENT_RUNTIME=inline')
+    // Le silence lui-même est le diagnostic, et il est dit comme tel. Quelle
+    // dorsale essayer ensuite dépend de celle qui tourne : voir plus bas.
+    expect(failure.message).toContain('n’a rien écrit sur sa sortie d’erreur')
   })
 
   /*
@@ -282,11 +285,11 @@ describe('a token Claude refuses', () => {
   })
 
   it('does not retry a CLI that said why it failed', () => {
-    // Un module manquant manquera tout autant la seconde fois.
+    // Un disque plein le sera tout autant la seconde fois.
     const failure = agentFailure(
       'extraction',
       'exited with code 1',
-      'Error: Cannot find module @anthropic-ai/claude-agent-sdk/cli.js',
+      'Error: ENOSPC: no space left on device',
     )
 
     expect(failure.retryable).toBe(false)
@@ -301,6 +304,26 @@ describe('a token Claude refuses', () => {
     )
   })
 
+  /*
+   * Le conseil qui décrit l'état actuel.
+   *
+   * « Relancez avec CLAUDE_AGENT_RUNTIME=inline » était écrit sans regarder la
+   * dorsale en cours, et se lisait donc mot pour mot dans l'échec d'un appel
+   * inline : quelqu'un qui venait précisément de basculer dessus s'entendait
+   * dire de basculer dessus, et doutait ensuite de tout le reste du message.
+   */
+  it('never advises the runtime it is already running on', () => {
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'inline' })
+    expect(agentFailure('extraction', 'exited with code 1', '').message).not.toContain(
+      'CLAUDE_AGENT_RUNTIME=inline',
+    )
+
+    setEnv({ CLAUDE_AGENT_RUNTIME: 'sandbox' })
+    expect(agentFailure('extraction', 'exited with code 1', '').message).toContain(
+      'CLAUDE_AGENT_RUNTIME=inline',
+    )
+  })
+
   it('keeps the end of a long diagnostic, which is where the reason is', () => {
     const said = stderrTail(40)
     said.collect('bruit'.repeat(50))
@@ -309,6 +332,131 @@ describe('a token Claude refuses', () => {
     // Un CLI qui n'arrive pas à démarrer dit pourquoi en dernier.
     expect(said.text()).toContain('la vraie raison')
     expect(said.text().length).toBeLessThanOrEqual(40)
+  })
+})
+
+/*
+ * Claude Code absent de l'hôte qui devait le lancer.
+ *
+ * Mesuré une seconde fois sur le même balayage, après être passé en `inline` :
+ * « Native CLI binary for linux-x64 not found ». Le CLI n'est plus du
+ * JavaScript dans le paquet du SDK — c'est un exécutable natif de trois cents
+ * mégaoctets dans un paquet optionnel propre à la plateforme, que le traceur
+ * de build ne voyait pas. Et comme c'est le SDK qui lève, avant d'avoir lancé
+ * quoi que ce soit, la sortie d'erreur était vide : lue comme « le processus a
+ * disparu, retentez », puis suivie du conseil de basculer sur la dorsale déjà
+ * en cours.
+ */
+describe('a host where Claude Code is not installed', () => {
+  it('names the missing binary instead of blaming a vanished process', () => {
+    const failure = agentFailure(
+      'assistant',
+      'Native CLI binary for linux-x64 not found. Reinstall @anthropic-ai/claude-agent-sdk ' +
+        'without --omit=optional, or set options.pathToClaudeCodeExecutable.',
+      '',
+    )
+
+    expect(failure.kind).toBe('runtime')
+    expect(failure.message).toContain('paquet optionnel propre à la plateforme')
+    // Ce que le message disait avant, et qui désignait la mauvaise chose.
+    expect(failure.message).not.toContain('il a disparu plutôt qu’échoué')
+  })
+
+  it('does not retry a binary that is not there', () => {
+    // Un exécutable absent l'est tout autant une seconde plus tard, et le
+    // silence de sa sortie d'erreur n'est pas un indice de machine perdue :
+    // c'est le SDK qui a levé avant de lancer quoi que ce soit.
+    const failure = agentFailure('extraction', 'Native CLI binary for linux-x64 not found.', '')
+
+    expect(failure.retryable).toBe(false)
+  })
+
+  it('tells a laptop to reinstall and a deployment to ship the binary', () => {
+    setEnv({ VERCEL: undefined, NODE_ENV: 'test' })
+    expect(agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message).toContain(
+      '--omit=optional',
+    )
+
+    setEnv({ VERCEL: '1', NODE_ENV: 'production' })
+    const deployed = agentFailure('x', 'Native CLI binary for linux-x64 not found.', '').message
+    expect(deployed).toContain('VERCEL_SUPPORT_LARGE_FUNCTIONS')
+    expect(deployed).toContain('outputFileTracingIncludes')
+  })
+
+  it('recognises the older shape of the same absence', () => {
+    // Le SDK a déjà dit ce manque autrement, et le dira encore autrement.
+    const failure = agentFailure(
+      'extraction',
+      'exited with code 1',
+      'Error: Cannot find module @anthropic-ai/claude-agent-sdk/cli.js',
+    )
+
+    expect(failure.kind).toBe('runtime')
+    expect(failure.retryable).toBe(false)
+  })
+})
+
+/*
+ * Un hébergeur qui ne fournit pas la machine.
+ *
+ * Mesuré sur le balayage des mystères, qui s'est arrêté à trois questions sur
+ * cent trente et une : « Status code 402 is not ok », et un message qui
+ * répondait « vérifiez que Secure Backend Access (OIDC) est activé ». OIDC
+ * était activé et parfaitement en ordre — un 402 est une facture, et la seule
+ * chose que le refus avait à dire était dans son code, qui n'était pas lu.
+ */
+describe('a sandbox the platform will not create', () => {
+  it('reads a spent Sandbox allowance as a bill and not as a login', () => {
+    const failure = creationRefusal(new Error('Status code 402 is not ok'))
+
+    expect(failure.kind).toBe('billing')
+    expect(failure.message).toContain('402')
+    // Ce que la phrase ne doit surtout plus faire : envoyer relire une
+    // configuration d'authentification qui n'a rien à se reprocher.
+    expect(failure.message).not.toContain('Secure Backend Access')
+    expect(failure.message).toContain('CLAUDE_AGENT_RUNTIME=inline')
+  })
+
+  it('keeps the OIDC advice for the refusal that is actually about identity', () => {
+    const failure = creationRefusal(new Error('Status code 403 is not ok'))
+
+    expect(failure.kind).toBe('sandbox')
+    expect(failure.message).toContain('Secure Backend Access')
+    expect(failure.message).toContain('VERCEL_TOKEN')
+  })
+
+  it('reads the status off the error when the client carries one', () => {
+    const carried = Object.assign(new Error('request failed'), { status: 402 })
+
+    expect(creationRefusal(carried).kind).toBe('billing')
+  })
+
+  /*
+   * La reprise, qui coûtait le double pour apprendre la même chose.
+   *
+   * Tout ce qui portait le genre `sandbox` était retenté, refus compris : une
+   * allocation épuisée bâtissait une seconde machine pour se faire refuser une
+   * seconde fois. Un 4xx est une phrase — la plateforme a examiné la demande et
+   * l'a rejetée ; un 5xx est un accident, et lui seul vaut une machine neuve.
+   */
+  it('does not pay twice to hear the same refusal', () => {
+    expect(creationRefusal(new Error('Status code 402 is not ok')).retryable).toBe(false)
+    expect(creationRefusal(new Error('Status code 403 is not ok')).retryable).toBe(false)
+    expect(creationRefusal(new Error('Status code 404 is not ok')).retryable).toBe(false)
+  })
+
+  it('retries the platform that stumbled rather than answered', () => {
+    expect(creationRefusal(new Error('Status code 503 is not ok')).retryable).toBe(true)
+    expect(creationRefusal(new Error('socket hang up')).retryable).toBe(true)
+  })
+
+  it('does not read three digits of a path into a verdict', () => {
+    // « 402 » se lit dans un horodatage, une taille, un numéro de port. Seule la
+    // tournure du client compte, et rien d'autre.
+    const failure = creationRefusal(new Error('connect ECONNREFUSED 10.0.0.1:4020'))
+
+    expect(failure.kind).toBe('sandbox')
+    expect(failure.retryable).toBe(true)
   })
 })
 
