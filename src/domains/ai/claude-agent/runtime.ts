@@ -247,6 +247,118 @@ export const AUTH_MESSAGE =
   'Rien n’a été enregistré pour cet appel.'
 
 /**
+ * Ce que le CLI a dit avant de mourir, gardé par la fin.
+ *
+ * Les deux dorsales passaient `stderr: () => {}` au SDK — les diagnostics du
+ * CLI hors du journal du serveur, ce qui est juste pour cent appels qui
+ * réussissent et catastrophique pour celui qui échoue. « Claude Code process
+ * exited with code 1 » est tout ce que le SDK sait dire d'un processus qui
+ * refuse de démarrer ; *pourquoi* était sur cette sortie d'erreur, et on la
+ * jetait.
+ *
+ * Gardée par la fin plutôt que depuis le début : un CLI qui échoue au démarrage
+ * dit sa raison en dernier, après ce qu'il a pu écrire avant.
+ */
+export const STDERR_KEPT = 2000
+
+export function stderrTail(limit = STDERR_KEPT): {
+  collect: (chunk: string) => void
+  text: () => string
+} {
+  let kept = ''
+  return {
+    collect(chunk) {
+      kept += chunk.endsWith('\n') ? chunk : `${chunk}\n`
+      if (kept.length > limit) kept = kept.slice(kept.length - limit)
+    },
+    text: () => kept.trim(),
+  }
+}
+
+/**
+ * Ce qu'une sortie d'erreur de CLI dit d'un jeton.
+ *
+ * Le chemin `api_retry` ne couvre qu'une moitié du problème : il voit un 401
+ * *pendant* une session, quand le CLI a démarré et parle à l'API. Un jeton que
+ * le CLI rejette au démarrage ne produit aucun message de flux — il sort en
+ * code 1, et la raison n'existe que sur sa sortie d'erreur. C'est très
+ * probablement le cas le plus fréquent, et c'était le moins bien dit des deux.
+ *
+ * `\b40[13]\b` plutôt qu'une recherche de « 401 » n'importe où : un horodatage
+ * ou une taille de fichier contiennent ces trois chiffres, et diagnostiquer un
+ * jeton révoqué à tort enverrait quelqu'un régénérer une clé parfaitement
+ * valable.
+ *
+ * Et rien qui ressemble au *nom* de la variable, pour la même raison en sens
+ * inverse : « CLAUDE_CODE_OAUTH_TOKEN » apparaît dans une trace qui déballe un
+ * environnement, dans un message d'aide, dans une ligne de commande — partout
+ * sauf spécifiquement dans un refus. Ce sont des phrases que seul un rejet
+ * produit qui sont listées ici.
+ */
+const AUTH_SIGNALS = [
+  'invalid api key',
+  'invalid bearer token',
+  'authentication_error',
+  'authentication failed',
+  'please run /login',
+  'setup-token',
+  'unauthorized',
+]
+
+function looksLikeAuth(text: string): boolean {
+  const lowered = text.toLowerCase()
+  return AUTH_SIGNALS.some((signal) => lowered.includes(signal)) || /\b40[13]\b/.test(lowered)
+}
+
+/**
+ * L'échec du SDK, dit avec ce que le CLI en a dit.
+ *
+ * Trois sorties, dans l'ordre où elles changent ce que quelqu'un doit faire :
+ *
+ *   Un jeton refusé est une erreur d'authentification, quel que soit l'étage
+ *   qui l'a vue. « Régénérez le jeton » est actionnable ; « code 1 » ne l'est
+ *   pas, et les deux décrivent la même panne.
+ *
+ *   Une allocation épuisée est un quota — même signature que dans `interpret`,
+ *   parce qu'un CLI qui meurt sur un 429 dit la même chose qu'une session qui
+ *   s'arrête dessus.
+ *
+ *   Le reste porte la sortie d'erreur telle quelle. Elle n'est pas toujours
+ *   lisible ; elle est toujours plus qu'un code de sortie.
+ *
+ * Le jeton est masqué avant d'écrire quoi que ce soit. Rien ne dit qu'un CLI
+ * n'imprime jamais son environnement dans une trace, et ce message finit dans
+ * une interface, un journal, et probablement un rapport de bogue.
+ */
+export function agentFailure(
+  label: string,
+  detail: string,
+  stderr: string,
+  where = '',
+): ClaudeAgentError {
+  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
+  const said = token ? stderr.split(token).join('***') : stderr
+
+  if (looksLikeAuth(`${detail} ${said}`)) {
+    return new ClaudeAgentError('auth', `${label} : ${AUTH_MESSAGE}`)
+  }
+
+  if (looksLikeQuotaText(`${detail} ${said}`)) {
+    return new ClaudeAgentError('quota', `${label} : ${QUOTA_MESSAGE}`)
+  }
+
+  return new ClaudeAgentError(
+    'sdk',
+    `${label} : le Claude Agent SDK a échoué${where ? ` ${where}` : ''} — ${detail}.` +
+      (said
+        ? ` Sortie d’erreur du CLI : ${said}`
+        : ' Le CLI n’a rien écrit sur sa sortie d’erreur : relancez avec ' +
+          'CLAUDE_AGENT_RUNTIME=inline pour le voir démarrer localement.') +
+      ' Rien n’a été enregistré pour cet appel.',
+  )
+}
+
+/**
  * The SDK result, as both backends hand it back.
  *
  * Typed loosely on purpose: the sandbox backend parses this out of a JSON line
@@ -294,12 +406,23 @@ const QUOTA_SIGNALS = [
   'rate limit',
 ]
 
+/**
+ * La même signature, sur du texte seul.
+ *
+ * Partagée avec `agentFailure` : un CLI qui meurt sur un 429 dit la même chose
+ * qu'une session qui s'arrête dessus, et une allocation épuisée reconnue d'un
+ * côté et pas de l'autre serait la même panne racontée deux fois.
+ */
+function looksLikeQuotaText(text: string): boolean {
+  const lowered = text.toLowerCase()
+  return QUOTA_SIGNALS.some((signal) => lowered.includes(signal))
+}
+
 function looksLikeQuota(raw: RawAgentResult): boolean {
   if (raw.terminal_reason === 'blocking_limit') return true
   if (raw.api_error_status === 429) return true
 
-  const text = [raw.result ?? '', ...(raw.errors ?? [])].join(' ').toLowerCase()
-  return QUOTA_SIGNALS.some((signal) => text.includes(signal))
+  return looksLikeQuotaText([raw.result ?? '', ...(raw.errors ?? [])].join(' '))
 }
 
 const QUOTA_MESSAGE =

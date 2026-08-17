@@ -4,6 +4,7 @@ import { Sandbox } from '@vercel/sandbox'
 import { agentPayload } from './payload.ts'
 import { agentSdkVersion, RUNNER_SOURCE } from './runner.ts'
 import {
+  agentFailure,
   agentTimeoutMs,
   AUTH_MESSAGE,
   ClaudeAgentError,
@@ -229,6 +230,8 @@ async function attempt(request: AgentRequest, token: string): Promise<RawAgentRe
       ok?: boolean
       result?: RawAgentResult | null
       error?: string
+      /** What the CLI printed before dying. See RUNNER_SOURCE. */
+      stderr?: string
       kind?: 'auth' | 'sdk'
     }
     try {
@@ -247,10 +250,20 @@ async function attempt(request: AgentRequest, token: string): Promise<RawAgentRe
       if (parsed.kind === 'auth') {
         throw new ClaudeAgentError('auth', `${request.label} : ${AUTH_MESSAGE}`)
       }
-      throw new ClaudeAgentError(
-        'sdk',
-        `${request.label} : le Claude Agent SDK a échoué dans le bac à sable — ` +
-          `${parsed.error ?? 'raison inconnue'}. Rien n’a été enregistré pour cet appel.`,
+      /*
+       * Le verdict est rendu ici et non dans la machine.
+       *
+       * Le script ne sait dire que « le SDK a levé » ; ce qui distingue un
+       * jeton refusé au démarrage d'une panne du CLI est dans la sortie
+       * d'erreur qu'il rapporte, et c'est `agentFailure` qui la lit. Un jeton
+       * refusé rendu en « sdk » serait retenté sur une machine neuve, où il
+       * serait tout aussi refusé.
+       */
+      throw agentFailure(
+        request.label,
+        parsed.error ?? 'raison inconnue',
+        parsed.stderr ?? '',
+        'dans le bac à sable',
       )
     }
 
