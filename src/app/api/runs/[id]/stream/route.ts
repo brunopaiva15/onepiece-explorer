@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic'
  * connection open on purpose.
  *
  * Vercel's Hobby default is 60 seconds — long enough to watch a step finish,
- * far short of a chapter. 300 is the Hobby maximum. Asking for it here is
+ * far short of a chapter. 800 is the Pro maximum, and needs Fluid compute —
+ * without it the ceiling stays at 300 and the deployment is refused. Asking
+ * for it here is
  * harmless everywhere else: on a normal Node server the value is ignored, and
  * the stream's own ten-minute ceiling still applies.
  *
@@ -18,7 +20,7 @@ export const dynamic = 'force-dynamic'
  * and re-reads the run's current state, because the stream reports state rather
  * than replaying events. A dropped connection loses nothing.
  */
-export const maxDuration = 300
+export const maxDuration = 800
 
 /**
  * Server-sent events for a run's progress.

@@ -11,8 +11,13 @@ export const dynamic = 'force-dynamic'
  * Le balayage tient dans cette limite parce qu'il est découpé : une question par
  * action serveur, un appel de modèle chacune. Le tout dure des minutes, aucune
  * invocation ne le fait.
+ *
+ * Une question fait tout de même jusqu'à trois appels — trois fenêtres de quatre
+ * cents scènes pour une question du chapitre 1 —, et c'est ce qui débordait des
+ * trois cents secondes d'un plan Hobby : la plate-forme tuait l'action au milieu
+ * d'une lecture déjà payée. 800 est le plafond Pro et laisse tenir les trois.
  */
-export const maxDuration = 300
+export const maxDuration = 800
 
 /**
  * The questions the story has opened, and the ones it has closed.

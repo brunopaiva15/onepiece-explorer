@@ -26,10 +26,17 @@ import 'server-only'
  */
 
 /**
- * Below the 300s the workshop routes declare, with room for the chapter that
+ * Below the 800s the workshop routes declare, with room for the chapter that
  * happens to be running when the window closes and for the publication after it.
+ *
+ * Le même partage qu'avant — sept dixièmes pour ouvrir des chapitres, trois pour
+ * finir celui qui court — appliqué au plafond d'un plan Pro. Ce qui compte dans
+ * ce calcul n'est pas la fenêtre mais la marge, et elle passe de quatre-vingt-dix
+ * secondes à deux cent quarante : c'est elle qui protège le chapitre commencé
+ * juste avant la fermeture, et quatre-vingt-dix secondes pour une extraction plus
+ * une publication était le pari le plus serré de ce fichier.
  */
-const WINDOW_MS = 210_000
+const WINDOW_MS = 560_000
 
 let closesAt: number | null = null
 

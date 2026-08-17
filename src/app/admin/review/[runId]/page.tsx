@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic'
  * not merely delay a picture: it would tear down the invocation mid-run and
  * leave the queued chapter stuck on its first step with nothing to explain it.
  */
-export const maxDuration = 300
+export const maxDuration = 800
 
 export default async function ReviewPage({
   params,

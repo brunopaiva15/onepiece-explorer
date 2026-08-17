@@ -33,38 +33,50 @@ millisecondes par requête.
 
 ---
 
-## Le jour où le projet passe en Pro
+## Ce que le plan Pro a changé, et ce qu'il ne changera pas
 
-Deux choses à faire, et **une seule d'entre elles ne peut pas être faite
-d'avance** — c'est pourquoi elle est écrite ici plutôt que déjà en place.
+Le projet tourne sur un plan Pro, et **quatre valeurs en dépendent**. Elles sont
+posées ; ce qui suit est là pour qu'un retour en arrière sur le plan ne devienne
+pas une panne dont personne ne trouve la cause.
 
-**Monter `maxDuration` de 300 à 800.** Trois cents secondes est le plafond d'un
-plan Hobby, et c'est la valeur déclarée par les routes qui appellent un modèle :
+**`maxDuration = 800`** dans les cinq routes qui appellent un modèle :
 `app/admin/import/page.tsx`, `app/admin/chapitres/[id]/page.tsx`,
 `app/admin/review/[runId]/page.tsx`, `app/mysteres/page.tsx` et
-`app/api/runs/[id]/stream/route.ts`. Il faut aussi remonter la fenêtre de
-`domains/pipeline/chain.ts`, qui est délibérément calée sous ce plafond.
+`app/api/runs/[id]/stream/route.ts`. Trois cents secondes était le plafond Hobby,
+et il coupait : une question du balayage lit jusqu'à trois fenêtres de quatre
+cents scènes, et la plate-forme tuait l'action au milieu d'une lecture déjà payée.
 
-Pourquoi pas d'avance : la plate-forme lit `maxDuration` depuis le build, et une
-valeur au-dessus du plafond du plan fait refuser le déploiement — c'est-à-dire le
-site, pas la fonctionnalité. Le même genre de refus a déjà coûté une journée
-(voir le commentaire en tête de `next.config.ts`). Donc : on passe en Pro, **puis**
-on monte la valeur, et jamais l'inverse.
+Huit cents secondes est le plafond Pro **et demande Fluid compute**. Sans lui, le
+plafond reste à trois cents et le déploiement est refusé — le site, pas la
+fonctionnalité. C'est le premier endroit à regarder si un déploiement échoue sur
+une limite de durée.
 
-Ce que ça change concrètement : une question du balayage qui lit neuf cents
-scènes en trois fenêtres peut dépasser trois cents secondes et se faire tuer au
-milieu par la plate-forme. À 800 s elle tient.
+**La fenêtre de `domains/pipeline/chain.ts`**, calée sous ce plafond : 560 s pour
+ouvrir des chapitres, 240 s de marge pour finir celui qui court. C'est la marge
+qui compte, pas la fenêtre.
 
-**Baisser `CLAUDE_SANDBOX_IDLE_MS` à 60000.** Facultatif, et c'est de l'argent.
-Le bac à sable est facturé à l'usage, et par défaut il reste chaud trois minutes
-après le dernier appel : sur un import chapitre par chapitre, c'est une machine
-payée à ne rien faire entre deux. Une minute suffit à couvrir l'écart entre deux
-étapes d'un même traitement.
+**`STALL_AFTER_MS` dans `app/admin/runs/[id]/run-progress.tsx`**, qui doit rester
+un peu au-dessus du plafond. À six minutes contre un plafond de 800 s, la page
+déclarait morte une exécution à laquelle la plate-forme accordait encore sept
+minutes — et sur les traitements les plus longs, c'est-à-dire ceux pour lesquels
+le plafond a été monté.
+
+**`CLAUDE_SANDBOX_IDLE_MS`**, dans les réglages du projet et non dans le code. Le
+bac à sable est facturé à l'usage et reste chaud trois minutes après le dernier
+appel par défaut : sur un import chapitre par chapitre, c'est une machine payée à
+ne rien faire entre deux. Une minute (`60000`) couvre l'écart entre deux étapes
+d'un même traitement.
+
+**Si le plan redescend en Hobby**, ces quatre valeurs doivent redescendre *avant*
+— dans l'autre sens, le déploiement est refusé et le site tombe. C'est la même
+famille de refus que celle qui a coûté une journée sur `inline` ; voir le
+commentaire en tête de `next.config.ts`.
 
 Ce que Pro ne change **pas**, pour éviter de le redécouvrir : les 4,5 Mo par
-requête, qui sont une limite de plate-forme sur tous les plans. Sans objet depuis
-qu'un chapitre est un texte (ADR 0008), mais l'ancien chemin fichier reste plafonné
-là — voir « Importer, et pourquoi pas depuis un hébergeur serverless ».
+requête, qui sont une limite de plate-forme sur tous les plans, Enterprise
+compris. Sans objet depuis qu'un chapitre est un texte (ADR 0008), mais l'ancien
+chemin fichier reste plafonné là — voir « Importer, et pourquoi pas depuis un
+hébergeur serverless ».
 
 ---
 

@@ -31,8 +31,15 @@ const LABELS: Record<string, string> = {
  *
  * A little above the route's `maxDuration`: below it, a slow but living run
  * would be accused of being dead.
+ *
+ * Ce qui rend cette constante dépendante du plan, et pourquoi elle bouge avec
+ * lui. Elle valait six minutes contre les trois cents secondes d'un plan Hobby ;
+ * laissée là avec un plafond porté à 800 s, elle aurait déclaré morte, au bout de
+ * six minutes, une exécution à laquelle la plate-forme accordait encore sept
+ * minutes — et l'accusation aurait porté sur les traitements les plus longs,
+ * c'est-à-dire précisément ceux pour lesquels le plafond a été monté.
  */
-const STALL_AFTER_MS = 6 * 60 * 1_000
+const STALL_AFTER_MS = 15 * 60 * 1_000
 
 /**
  * Local time, with the offset spelled out.

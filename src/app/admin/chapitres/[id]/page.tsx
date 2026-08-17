@@ -29,11 +29,13 @@ export const dynamic = 'force-dynamic'
  * step forever with nothing recorded to explain it. That is the exact shape of
  * "stuck at step 1".
  *
- * 300s matches the SSE progress route, which has needed it since it was
- * written. Raise it if your plan allows more and a chapter ever runs long;
- * lowering it silently reintroduces the failure above.
+ * 800s matches the SSE progress route, and is the Pro ceiling — the project
+ * moved onto it precisely because 300 was not enough for a chapter whose
+ * extraction runs long. Lowering it silently reintroduces the failure above,
+ * and raising it past the plan's own ceiling makes the platform refuse the
+ * whole deployment rather than this route.
  */
-export const maxDuration = 300
+export const maxDuration = 800
 
 
 export default async function ChapterPage({
