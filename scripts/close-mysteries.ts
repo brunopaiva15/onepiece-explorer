@@ -280,13 +280,27 @@ async function main(): Promise<void> {
     } catch (error: unknown) {
       failed++
       consecutive++
+      /*
+       * Tout sur la même sortie, et la taille avec.
+       *
+       * `console.error` écrit sur un autre flux que `console.log`, et les deux
+       * arrivent entrelacés dans le journal d'une Action : le premier run avec
+       * ces messages a affiché « 3 échecs de suite : le balayage s'arrête »
+       * *avant* l'échec qui l'avait déclenché. Un journal dont l'ordre ment sur
+       * la causalité est pire qu'un journal avare.
+       *
+       * Et le nombre de scènes, parce que c'est la seule variable qui distingue
+       * ces appels les uns des autres : un CLI qui meurt sans un mot ne dit rien,
+       * mais si ce sont toujours les plus gros envois qui meurent, la ligne le
+       * dira au run suivant sans qu'il faille instrumenter quoi que ce soit.
+       */
       console.log(`  · ch.${question.opened_in_chapter} — ${question.question}`)
+      console.log(`      ${offered.length} scènes envoyées.`)
       console.log(`      échec : ${error instanceof Error ? error.message : String(error)}`)
 
       if (condemnsTheRest(error)) {
-        console.log('')
-        console.error(
-          'Cette panne vaudra pour toutes les suivantes : le balayage s’arrête ici. ' +
+        console.log(
+          '      cette panne vaudra pour toutes les suivantes : le balayage s’arrête ici. ' +
             'Les questions déjà refermées le restent ; relancez quand la cause est levée.',
         )
         stopped = true
@@ -294,9 +308,8 @@ async function main(): Promise<void> {
       }
 
       if (consecutive >= CONSECUTIVE_LIMIT) {
-        console.log('')
-        console.error(
-          `${CONSECUTIVE_LIMIT} échecs de suite : le balayage s’arrête plutôt que de ` +
+        console.log(
+          `      ${CONSECUTIVE_LIMIT} échecs de suite : le balayage s’arrête plutôt que de ` +
             'poursuivre contre une panne qui ne passe pas. Les questions déjà refermées ' +
             'le restent ; relancez pour reprendre les autres.',
         )

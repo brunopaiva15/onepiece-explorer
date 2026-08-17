@@ -112,10 +112,36 @@ function remediation(): string {
   )
 }
 
+/**
+ * Une variable vide n'est pas une valeur : c'est une variable absente.
+ *
+ * `.env.example` documente une douzaine de réglages par « vide (défaut) = … »
+ * et les livre vides — MODEL_PROVIDER, EXTRACT_EFFORT, IMAGE_CATALOGUE_PATH,
+ * PUBLIC_LIBRARY_OWNER_ID. Le schéma, lui, voyait la chaîne vide comme une
+ * réponse, et la refusait : copier le fichier d'exemple comme le README le dit
+ * suffisait à obtenir « MODEL_PROVIDER : Invalid option », sur un réglage dont
+ * le commentaire juste au-dessus déclare que vide est le bon état.
+ *
+ * Le même piège se referme depuis un formulaire d'Actions GitHub, où un champ
+ * laissé blanc traverse en chaîne vide et non en rien du tout.
+ *
+ * `trim()`, parce qu'une variable copiée depuis un tableau de bord arrive
+ * régulièrement avec une espace, et qu'une espace n'est pas davantage une
+ * réponse.
+ */
+function withoutBlanks(source: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const kept: Record<string, string | undefined> = {}
+  for (const [name, value] of Object.entries(source)) {
+    if (typeof value === 'string' && value.trim() === '') continue
+    kept[name] = value
+  }
+  return kept
+}
+
 export function env(): Env {
   if (cached) return cached
 
-  const parsed = schema.safeParse(process.env)
+  const parsed = schema.safeParse(withoutBlanks(process.env))
   if (!parsed.success) {
     throw new ConfigurationError(
       parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`),

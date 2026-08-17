@@ -14,7 +14,7 @@ import {
 } from '@/domains/ai/claude-agent/runtime.ts'
 import { ClaudeAgentProvider } from '@/domains/ai/claude-agent/provider.ts'
 import { isProviderChoice, modelProvider, providerOptions, resetModelProvider } from '@/domains/ai/index.ts'
-import { hasClaudeSubscription, remoteModelProvider } from '@/lib/env.ts'
+import { env, hasClaudeSubscription, remoteModelProvider, resetEnvCache } from '@/lib/env.ts'
 
 /**
  * What is worth testing about running Claude on a subscription instead of a
@@ -563,6 +563,34 @@ describe('choosing who answers', () => {
     })
     expect(remoteModelProvider()).toBe('claude-max')
     expect(hasClaudeSubscription()).toBe(true)
+  })
+
+  /*
+   * Une variable vide est une variable absente, pas une réponse fausse.
+   *
+   * `.env.example` documente ce réglage par « Vide (défaut) = le premier
+   * fournisseur configuré » et le livre vide ; le schéma refusait pourtant la
+   * chaîne vide, si bien que copier le fichier d'exemple comme le README le dit
+   * rendait « MODEL_PROVIDER : Invalid option ». Un champ laissé blanc dans un
+   * formulaire d'Actions GitHub traverse de la même façon — en chaîne vide, et
+   * non en rien du tout.
+   */
+  it('reads a blank setting as unset rather than as a wrong answer', () => {
+    setEnv({ MODEL_PROVIDER: '', CLAUDE_CODE_OAUTH_TOKEN: 'oat-token' })
+    resetEnvCache()
+    expect(() => env()).not.toThrow()
+    expect(remoteModelProvider()).toBe('claude-max')
+
+    // Une espace non plus : une variable collée depuis un tableau de bord en
+    // arrive régulièrement avec.
+    setEnv({ MODEL_PROVIDER: '   ' })
+    resetEnvCache()
+    expect(() => env()).not.toThrow()
+
+    // Ce qui reste refusé : une valeur qui prétend en être une.
+    setEnv({ MODEL_PROVIDER: 'gpt' })
+    resetEnvCache()
+    expect(() => env()).toThrow(/MODEL_PROVIDER/)
   })
 
   it('falls back to the metered key only when there is no subscription at all', () => {
