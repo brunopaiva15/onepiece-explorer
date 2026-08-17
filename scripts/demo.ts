@@ -79,11 +79,23 @@ async function main(): Promise<void> {
   const { ask } = await import('../src/domains/assistant/answer.ts')
   const { effectiveModelProvider } = await import('../src/lib/env.ts')
 
-  console.log(`Fournisseur de modèle : ${effectiveModelProvider()}`)
-  if (effectiveModelProvider() !== 'anthropic') {
+  const resolved = effectiveModelProvider()
+  console.log(`Fournisseur de modèle : ${resolved}`)
+  /*
+   * Nommé par ce qui lit, pas par qui facture.
+   *
+   * Trois fournisseurs lisent réellement les images : l'abonnement Claude Max,
+   * l'API Anthropic et un modèle auto-hébergé. Les deux autres — synthétique et
+   * rejeu — dérivent leur réponse du texte que le générateur a écrit. C'est
+   * cette différence-là que l'avertissement doit porter : le confondre avec la
+   * présence d'une clé facturée ferait annoncer une extraction inventée là où
+   * un modèle a vraiment regardé les pages.
+   */
+  if (resolved !== 'claude-max' && resolved !== 'anthropic' && resolved !== 'local') {
     console.log(
-      "Sans clé Anthropic, l'extraction est dérivée du texte des pages, pas d'une\n" +
-        'lecture des images. Le parcours est réel, la lecture ne l’est pas.',
+      "Sans modèle configuré, l'extraction est dérivée du texte des pages, pas d'une\n" +
+        'lecture des images. Le parcours est réel, la lecture ne l’est pas.\n' +
+        'CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`) fait lire les pages pour de bon.',
     )
   }
 

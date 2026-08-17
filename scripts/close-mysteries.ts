@@ -200,11 +200,16 @@ async function main(): Promise<void> {
    * est ce qui rend cette confiance défendable.
    */
   const provider = modelProvider()
-  if (provider.name !== 'anthropic' && provider.name !== 'local') {
+  if (
+    provider.name !== 'claude-max' &&
+    provider.name !== 'anthropic' &&
+    provider.name !== 'local'
+  ) {
     console.error(
       `Fournisseur « ${provider.name} » : il ne lit pas les scènes, il compare des mots.\n` +
-        'Refermer une question demande de la comprendre. Configurez ANTHROPIC_API_KEY, ' +
-        'ou LOCAL_AI_BASE_URL et LOCAL_AI_MODEL pour un modèle auto-hébergé.',
+        'Refermer une question demande de la comprendre. Configurez CLAUDE_CODE_OAUTH_TOKEN ' +
+        '(`claude setup-token`), ou ANTHROPIC_API_KEY, ou LOCAL_AI_BASE_URL et LOCAL_AI_MODEL ' +
+        'pour un modèle auto-hébergé.',
     )
     process.exitCode = 1
     return

@@ -39,7 +39,9 @@ import type {
  * answer: a replay provider that improvised would make the recordings
  * decorative.
  *
- * Record with a real key present:  RECORD=1 ANTHROPIC_API_KEY=... pnpm test
+ * Record against a real model:  RECORD=1 CLAUDE_CODE_OAUTH_TOKEN=... pnpm test
+ * (ANTHROPIC_API_KEY still works, and is used only when no subscription token
+ * is configured — see `baseProvider`.)
  */
 
 const CASSETTE_DIR = path.join(process.cwd(), 'tests', 'fixtures', 'model-responses')
@@ -118,7 +120,7 @@ export class ReplayProvider implements ModelProvider {
       throw new Error(
         `Aucune réponse enregistrée pour « ${operation} » (clé ${key}).\n` +
           `Fichier attendu : ${path.relative(process.cwd(), file)}\n\n` +
-          `Pour enregistrer :  RECORD=1 ANTHROPIC_API_KEY=… pnpm test\n` +
+          `Pour enregistrer :  RECORD=1 CLAUDE_CODE_OAUTH_TOKEN=… pnpm test\n` +
           `Le fournisseur de rejeu n'improvise jamais : une réponse inventée ici ` +
           `rendrait les enregistrements décoratifs et les tests anti-spoiler inutiles.`,
       )

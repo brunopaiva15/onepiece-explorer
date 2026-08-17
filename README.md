@@ -244,7 +244,8 @@ Aucun secret n'est affiché.
 | `SUPABASE_SERVICE_ROLE_KEY` | idem. Serveur uniquement, jamais exposé au navigateur |
 | `DATABASE_URL` | Connection string **Transaction pooler** (port 6543) |
 | `DIRECT_URL` | Connection string **Direct** (port 5432) |
-| `ANTHROPIC_API_KEY` | [console Anthropic](https://console.anthropic.com) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` sur votre machine — le traitement des chapitres passe par votre abonnement Claude Max, pas par l'API facturée |
+| `ANTHROPIC_API_KEY` | [console Anthropic](https://console.anthropic.com). Optionnelle : à ne renseigner que pour utiliser délibérément l'API facturée au token (`MODEL_PROVIDER=anthropic`). Rien n'y bascule tout seul |
 
 Les deux connexions ne sont pas interchangeables. Les lectures applicatives
 passent par le pooler en mode transaction (`prepare: false` obligatoire) ; les

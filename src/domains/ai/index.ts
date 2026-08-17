@@ -1,6 +1,7 @@
 import 'server-only'
-import { remoteModelProvider } from '@/lib/env.ts'
+import { hasClaudeSubscription, remoteModelProvider } from '@/lib/env.ts'
 import { AnthropicProvider } from './anthropic.ts'
+import { ClaudeAgentProvider } from './claude-agent/provider.ts'
 import { localModelConfig, OpenAICompatibleProvider } from './openai-compatible.ts'
 import type { ModelProvider } from './provider.ts'
 import { ReplayProvider } from './replay.ts'
@@ -24,7 +25,7 @@ export { PROMPT_VERSION } from './prompts.ts'
  * the same chapter both ways and compare. A setting in a file cannot do that;
  * a choice attached to a run can.
  */
-export type ProviderChoice = 'auto' | 'anthropic' | 'local'
+export type ProviderChoice = 'auto' | 'claude-max' | 'anthropic' | 'local'
 
 export interface ProviderOption {
   id: ProviderChoice
@@ -43,8 +44,15 @@ export interface ProviderOption {
  */
 export function providerOptions(): ProviderOption[] {
   const local = localModelConfig()
+  const hasSubscription = hasClaudeSubscription()
   const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY)
   const tiers = process.env.LOCAL_AI_TIERS?.trim()
+
+  const fallbackNote = hasSubscription
+    ? 'Claude Max'
+    : hasAnthropic
+      ? 'Anthropic'
+      : 'extraction synthétique'
 
   return [
     {
@@ -52,16 +60,26 @@ export function providerOptions(): ProviderOption[] {
       label: 'Par défaut',
       note: local
         ? tiers
-          ? `Mon modèle pour : ${tiers}. Anthropic pour le reste.`
+          ? `Mon modèle pour : ${tiers}. ${fallbackNote} pour le reste.`
           : 'Mon modèle pour tout.'
-        : hasAnthropic
-          ? 'Anthropic.'
-          : 'Aucun fournisseur configuré : extraction synthétique.',
+        : hasSubscription
+          ? 'Claude Max, via le Claude Agent SDK.'
+          : hasAnthropic
+            ? 'Anthropic.'
+            : 'Aucun fournisseur configuré : extraction synthétique.',
       available: true,
     },
     {
+      id: 'claude-max',
+      label: 'Claude Max',
+      note: hasSubscription
+        ? 'Inclus dans l’abonnement, aucun token facturé. Quota atteint : le traitement échoue, sans bascule payante.'
+        : 'CLAUDE_CODE_OAUTH_TOKEN absente — générez-la avec `claude setup-token`.',
+      available: hasSubscription,
+    },
+    {
       id: 'anthropic',
-      label: 'Anthropic',
+      label: 'Anthropic (API facturée)',
       note: hasAnthropic
         ? 'Facturé au token. Haiku pour les descriptions, Sonnet pour l’extraction.'
         : 'ANTHROPIC_API_KEY absente.',
@@ -79,7 +97,12 @@ export function providerOptions(): ProviderOption[] {
 }
 
 export function isProviderChoice(value: unknown): value is ProviderChoice {
-  return value === 'auto' || value === 'anthropic' || value === 'local'
+  return (
+    value === 'auto' ||
+    value === 'claude-max' ||
+    value === 'anthropic' ||
+    value === 'local'
+  )
 }
 
 const cached = new Map<ProviderChoice, ModelProvider>()
@@ -101,7 +124,37 @@ export function modelProvider(choice: ProviderChoice = 'auto'): ModelProvider {
 }
 
 function build(choice: ProviderChoice): ModelProvider {
-  if (choice === 'anthropic') return baseProvider()
+  if (choice === 'anthropic') {
+    const key = process.env.ANTHROPIC_API_KEY
+    if (!key) {
+      throw new Error(
+        "Traitement demandé sur l'API Anthropic facturée, mais ANTHROPIC_API_KEY " +
+          "n'est pas configurée. Le traitement par défaut passe par l'abonnement " +
+          'Claude Max ; il n’y a rien à faire ici si c’est ce que vous vouliez.',
+      )
+    }
+    return new AnthropicProvider(key)
+  }
+
+  if (choice === 'claude-max') {
+    /*
+     * Explicit, so it fails rather than degrades.
+     *
+     * `remoteModelProvider()` turns a missing token into the synthetic provider,
+     * which is right for a deployment that was never configured and wrong for a
+     * run someone launched on Claude Max on purpose: silently extracting
+     * fabricated data under a label that says Claude Max is the one outcome
+     * this must not have.
+     */
+    if (!hasClaudeSubscription()) {
+      throw new Error(
+        'Traitement demandé sur Claude Max, mais CLAUDE_CODE_OAUTH_TOKEN est absente. ' +
+          'Générez un jeton avec `claude setup-token`, puis renseignez-le dans .env.local ' +
+          'ou dans les variables du projet chez votre hébergeur.',
+      )
+    }
+    return new ClaudeAgentProvider()
+  }
 
   const local = localModelConfig()
 
@@ -143,6 +196,10 @@ function build(choice: ProviderChoice): ModelProvider {
 
 function baseProvider(): ModelProvider {
   switch (remoteModelProvider()) {
+    case 'claude-max': {
+      return new ClaudeAgentProvider()
+    }
+
     case 'anthropic': {
       const key = process.env.ANTHROPIC_API_KEY
       if (!key) throw new Error('ANTHROPIC_API_KEY manquante.')
@@ -150,12 +207,25 @@ function baseProvider(): ModelProvider {
     }
 
     case 'replay': {
-      // With a key present and RECORD=1, unknown requests go to the real API and
-      // the answer is written down. Without it, a missing recording is a loud
-      // failure — see ReplayProvider.
+      /*
+       * With credentials present and RECORD=1, unknown requests go to a real
+       * model and the answer is written down. Without them, a missing recording
+       * is a loud failure — see ReplayProvider.
+       *
+       * The subscription is preferred for recording too: refreshing a cassette
+       * is exactly the kind of occasional, deliberate, one-person job the Max
+       * allowance is there for, and there is no reason for it to reach for a
+       * metered key when a paid-for one is configured.
+       */
       const key = process.env.ANTHROPIC_API_KEY
-      const recording = process.env.RECORD === '1' && key !== undefined
-      return new ReplayProvider(recording ? { recorder: new AnthropicProvider(key) } : {})
+      const recorder = !(process.env.RECORD === '1')
+        ? null
+        : hasClaudeSubscription()
+          ? new ClaudeAgentProvider()
+          : key !== undefined
+            ? new AnthropicProvider(key)
+            : null
+      return new ReplayProvider(recorder ? { recorder } : {})
     }
 
     case 'synthetic': {

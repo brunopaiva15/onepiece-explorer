@@ -142,11 +142,16 @@ async function main(): Promise<void> {
    * défaut par un autre chemin : il répond ce qu'une autre question a enregistré.
    */
   const provider = modelProvider()
-  if (provider.name !== 'anthropic' && provider.name !== 'local') {
+  if (
+    provider.name !== 'claude-max' &&
+    provider.name !== 'anthropic' &&
+    provider.name !== 'local'
+  ) {
     console.error(
       `Fournisseur « ${provider.name} » : il ne lit pas les passages, il compare des mots.\n` +
-        'Reconnaître une figure demande de la lire. Configurez ANTHROPIC_API_KEY, ' +
-        'ou LOCAL_AI_BASE_URL et LOCAL_AI_MODEL pour un modèle auto-hébergé.',
+        'Reconnaître une figure demande de la lire. Configurez CLAUDE_CODE_OAUTH_TOKEN ' +
+        '(`claude setup-token`), ou ANTHROPIC_API_KEY, ou LOCAL_AI_BASE_URL et ' +
+        'LOCAL_AI_MODEL pour un modèle auto-hébergé.',
     )
     process.exitCode = 1
     return

@@ -222,8 +222,29 @@ export default async function StatePage() {
       : "absente, l'import et l'affichage des pages échoueront, la lecture du graphe non",
   })
 
+  /*
+   * The one variable the import pipeline now depends on.
+   *
+   * A warning rather than a note, unlike the informational block below: without
+   * it the workshop still runs, but every chapter is extracted synthetically
+   * behind a banner — which is a working site that quietly stops doing the one
+   * thing it exists for.
+   */
+  checks.push({
+    label: 'CLAUDE_CODE_OAUTH_TOKEN',
+    state: presence('CLAUDE_CODE_OAUTH_TOKEN') ? 'ok' : 'warn',
+    detail: presence('CLAUDE_CODE_OAUTH_TOKEN')
+      ? 'définie, le traitement passe par l’abonnement Claude Max'
+      : presence('ANTHROPIC_API_KEY')
+        ? "absente, le traitement retombe sur l'API Anthropic facturée au token — générez un jeton avec `claude setup-token` pour utiliser l'abonnement"
+        : 'absente, extraction synthétique avec bannière — générez un jeton avec `claude setup-token`',
+  })
+
   for (const [name, note] of [
-    ['ANTHROPIC_API_KEY', "absente, extraction synthétique avec bannière"],
+    [
+      'ANTHROPIC_API_KEY',
+      'absente, et ce n’est pas un problème : le traitement passe par Claude Max',
+    ],
     ['ASSISTANT_ENABLED', 'absente, /admin/ask est éteint et rien ne se facture'],
     ['PUBLIC_LIBRARY_OWNER_ID', 'absente, les visiteurs lisent la seule bibliothèque de cette installation'],
   ] as const) {

@@ -186,7 +186,15 @@ export interface EmbedRequest {
 }
 
 export interface ModelProvider {
-  readonly name: 'anthropic' | 'local' | 'replay' | 'synthetic'
+  /**
+   * `claude-max` and `anthropic` are the same models reached two ways, and the
+   * distinction is the billing rather than the answer: a subscription token
+   * through the Claude Agent SDK, or a metered key through the Messages API.
+   * Recorded on every run because "why did this chapter cost nothing" and "why
+   * did this chapter cost four dollars" have the same answer, and it is this
+   * field.
+   */
+  readonly name: 'anthropic' | 'claude-max' | 'local' | 'replay' | 'synthetic'
 
   /**
    * Cost of a request before making it, from a real countTokens call rather
