@@ -90,11 +90,17 @@ export interface AgentResponse {
  * à l'appel suivant. Distinct de `quota` aussi, parce que l'allocation épuisée
  * n'est pas celle de Claude et qu'envoyer quelqu'un attendre la recharge de son
  * abonnement le ferait chercher au mauvais endroit.
+ *
+ * `runtime` est en amont de tout cela : Claude Code n'est pas installable là où
+ * on a demandé qu'il tourne. Ni la requête, ni le jeton, ni la facture — la
+ * machine. Aucun appel ne réussira sur cet hôte tant que rien n'a changé, ce
+ * qui en fait la panne à dire une fois plutôt que cent trente et une.
  */
 export type AgentErrorKind =
   | 'auth'
   | 'quota'
   | 'billing'
+  | 'runtime'
   | 'timeout'
   | 'sandbox'
   | 'empty'
@@ -330,6 +336,61 @@ function looksLikeAuth(text: string): boolean {
 }
 
 /**
+ * Claude Code absent de la machine qui devait le lancer.
+ *
+ * Le CLI n'est plus le mégaoctet de JavaScript que ce projet a supposé quand il
+ * a écrit son `outputFileTracingIncludes` : c'est un exécutable natif de trois
+ * cents mégaoctets, livré par un paquet **optionnel propre à la plateforme** —
+ * `@anthropic-ai/claude-agent-sdk-linux-x64` et ses sept frères — que le paquet
+ * du SDK ne contient pas. Embarquer le SDK sans eux produit exactement ce qui
+ * est arrivé : une installation qui se résout, un build qui passe, et un SDK
+ * qui ne trouve rien à lancer au premier appel.
+ *
+ * Aucune de ces phrases ne vient du CLI, et c'est ce qui rendait le diagnostic
+ * faux avant : c'est le SDK qui lève, avant d'avoir lancé quoi que ce soit,
+ * donc la sortie d'erreur est vide — et une sortie d'erreur vide était lue
+ * comme « le processus a disparu, retentez ». Un binaire absent est encore
+ * absent une seconde plus tard.
+ */
+const MISSING_CLI_SIGNALS = [
+  'native cli binary for',
+  'pathtoclaudecodeexecutable',
+  'cannot find module @anthropic-ai/claude-agent-sdk',
+]
+
+function looksLikeMissingCli(text: string): boolean {
+  const lowered = text.toLowerCase()
+  return MISSING_CLI_SIGNALS.some((signal) => lowered.includes(signal))
+}
+
+/**
+ * Où trouver Claude Code, dit à l'endroit où il manque.
+ *
+ * Sur une machine à soi c'est une réinstallation. En déploiement c'est deux
+ * choses, et il faut les deux : le binaire doit être tracé dans le bundle, et
+ * la fonction doit avoir le droit de peser ce qu'il pèse — trois cents
+ * mégaoctets contre une limite de deux cent cinquante.
+ */
+function whereClaudeCodeLives(): string {
+  if (isVercelRuntime()) {
+    return (
+      'En déploiement, il faut deux choses et les deux ensemble : que le binaire soit tracé ' +
+      'dans le bundle (outputFileTracingIncludes dans next.config.ts ne l’inclut que si ' +
+      'CLAUDE_AGENT_RUNTIME=inline est posée au moment du build, parce qu’il pèse trois cents ' +
+      'mégaoctets), et que la fonction ait le droit de dépasser 250 Mo ' +
+      '(VERCEL_SUPPORT_LARGE_FUNCTIONS=1, qui demande Fluid compute). Sans les deux, ' +
+      'CLAUDE_AGENT_RUNTIME=sandbox est la seule exécution possible ici — ou lancez le ' +
+      'balayage hors de l’hébergeur, par le bouton « Réparations (production) ».'
+    )
+  }
+
+  return (
+    'Réinstallez les dépendances sans --omit=optional : le paquet de votre plateforme est ' +
+    'une dépendance optionnelle du SDK, et `pnpm install` le pose.'
+  )
+}
+
+/**
  * L'échec du SDK, dit avec ce que le CLI en a dit.
  *
  * Trois sorties, dans l'ordre où elles changent ce que quelqu'un doit faire :
@@ -366,6 +427,16 @@ export function agentFailure(
     return new ClaudeAgentError('quota', `${label} : ${QUOTA_MESSAGE}`)
   }
 
+  if (looksLikeMissingCli(`${detail} ${said}`)) {
+    return new ClaudeAgentError(
+      'runtime',
+      `${label} : Claude Code n’est pas installé là où le SDK le cherche — ${detail}. ` +
+        'Le CLI est un binaire natif livré par un paquet optionnel propre à la plateforme ' +
+        '(@anthropic-ai/claude-agent-sdk-<os>-<arch>), et non par le paquet du SDK. ' +
+        `${whereClaudeCodeLives()} Rien n’a été enregistré pour cet appel.`,
+    )
+  }
+
   /*
    * Un CLI mort sans un mot est une panne, pas un verdict.
    *
@@ -377,6 +448,20 @@ export function agentFailure(
    * reprend le bac à sable, mémoire, durée de vie atteinte. Rien de tout cela
    * ne se reproduit sur un processus neuf, et c'est ce que dit `retryable`.
    */
+  /*
+   * Le conseil ne peut pas être celui qu'on est déjà en train de suivre.
+   *
+   * « Relancez avec CLAUDE_AGENT_RUNTIME=inline » était écrit sans regarder la
+   * dorsale en cours, et se lisait donc mot pour mot dans l'échec d'un appel
+   * *inline* — quelqu'un qui venait précisément de basculer dessus s'entendait
+   * dire de basculer dessus. Un conseil qui décrit l'état actuel n'est pas un
+   * conseil ; il fait douter de tout le reste du message.
+   */
+  const elsewhere =
+    agentRuntime() === 'inline'
+      ? ''
+      : ' Relancez avec CLAUDE_AGENT_RUNTIME=inline pour le voir démarrer localement.'
+
   return new ClaudeAgentError(
     'sdk',
     `${label} : le Claude Agent SDK a échoué${where ? ` ${where}` : ''} — ${detail}.` +
@@ -384,8 +469,7 @@ export function agentFailure(
         ? ` Sortie d’erreur du CLI : ${said}`
         : ' Le CLI n’a rien écrit sur sa sortie d’erreur : il a disparu plutôt ' +
           'qu’échoué, ce qui désigne la machine et non la requête. L’appel a été ' +
-          'retenté une fois. Relancez avec CLAUDE_AGENT_RUNTIME=inline pour le voir ' +
-          'démarrer localement.') +
+          `retenté une fois.${elsewhere}`) +
       ' Rien n’a été enregistré pour cet appel.',
     !said,
   )

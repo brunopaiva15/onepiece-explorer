@@ -180,23 +180,29 @@ export async function sweepQuestionAction(entityId: string): Promise<SweepStep> 
 /**
  * Cette panne emporte-t-elle aussi les questions qu'on n'a pas encore posées ?
  *
- * Trois genres seulement, et ce sont les trois qui décrivent l'accès plutôt que
- * la requête : un jeton que Claude refuse, une allocation épuisée, et un
+ * Quatre genres seulement, et ce sont les quatre qui décrivent l'accès plutôt
+ * que la requête : un jeton que Claude refuse, une allocation épuisée, un
  * hébergeur qui refuse de fournir la machine sur laquelle Claude devait
- * tourner. Tout le reste — le bac à sable repris, le CLI disparu, la réponse
+ * tourner, et un hôte où Claude Code n'est pas installable du tout. Tout le
+ * reste — le bac à sable repris, le CLI disparu, la réponse
  * hors schéma — est une panne de cet appel-là. Se tromper ici du côté « fatal »
  * perd le travail restant ; s'en tromper de l'autre côté coûte quelques appels
  * que la boucle arrête d'elle-même après trois échecs de suite. Le doute penche
  * donc vers « continuer ».
  *
- * `billing` a rejoint la liste par l'observation : une allocation Sandbox
- * épuisée est aussi définitive qu'un quota Claude, et la faire découvrir trois
- * fois de suite ne fait que répéter le même paragraphe à quelqu'un qui l'a
- * déjà lu.
+ * `billing` et `runtime` ont rejoint la liste par l'observation, et par la même
+ * observation faite deux fois : une allocation Sandbox épuisée puis un binaire
+ * Claude Code absent du déploiement sont aussi définitifs qu'un quota Claude.
+ * Les faire découvrir trois fois de suite ne fait que répéter le même
+ * paragraphe à quelqu'un qui l'a déjà lu.
  */
 function condemnsTheRest(error: unknown): boolean {
+  if (!(error instanceof ClaudeAgentError)) return false
+
   return (
-    error instanceof ClaudeAgentError &&
-    (error.kind === 'auth' || error.kind === 'quota' || error.kind === 'billing')
+    error.kind === 'auth' ||
+    error.kind === 'quota' ||
+    error.kind === 'billing' ||
+    error.kind === 'runtime'
   )
 }

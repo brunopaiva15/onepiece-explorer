@@ -1,5 +1,51 @@
 import type { NextConfig } from 'next'
 
+/**
+ * Le CLI que le SDK lance, et ce qu'il faut embarquer pour qu'il existe.
+ *
+ * Ce projet a longtemps cru que Claude Code était « plusieurs mégaoctets de
+ * JavaScript » à l'intérieur du paquet du SDK. Ce n'est plus vrai, et le
+ * démenti a coûté un balayage : le CLI est un **exécutable natif** de trois
+ * cents mégaoctets, livré par un paquet optionnel propre à la plateforme —
+ * `@anthropic-ai/claude-agent-sdk-linux-x64` et ses sept frères — que le paquet
+ * du SDK ne contient pas et que le traceur ne voit pas. Embarquer le SDK seul
+ * donnait une installation qui se résout, un build qui passe, et « Native CLI
+ * binary for linux-x64 not found » au premier appel.
+ *
+ * Alors pourquoi ne pas l'embarquer toujours ? Parce qu'une fonction Vercel
+ * plafonne à 250 Mo décompressés et que le binaire en pèse plus à lui seul :
+ * l'inclure sans y penser ferait échouer le *déploiement entier* — le site,
+ * pas la fonctionnalité — pour une dorsale que la plupart des installations
+ * n'utilisent pas. Il n'est donc embarqué que quand on a demandé `inline`, ce
+ * qui est exactement le moment où on en a besoin.
+ *
+ * L'autre moitié n'est pas ici et ne peut pas y être : au-delà de 250 Mo il
+ * faut aussi que le projet ait le droit de déployer une grosse fonction
+ * (`VERCEL_SUPPORT_LARGE_FUNCTIONS=1`, qui demande Fluid compute, et qui monte
+ * la limite à 5 Go). Une variable de projet chez l'hébergeur ; rien qu'un
+ * fichier de configuration puisse poser.
+ *
+ * Les deux dispositions sont listées parce que les deux existent : `.pnpm/`
+ * pour l'installation de ce dépôt, et le chemin à plat pour npm et yarn.
+ *
+ * Et les motifs s'arrêtent aux *fichiers* — `…/@anthropic-ai/&#42;/&#42;` et non
+ * `…/@anthropic-ai/&#42;&#42;`. Sous pnpm, le paquet de la plateforme apparaît une
+ * seconde fois comme lien symbolique dans le dossier du SDK ; un motif qui
+ * ramasse ce lien fait échouer le build entier sur « Is a directory (os error
+ * 21) », le traceur essayant de lire un dossier comme un fichier.
+ */
+function claudeCodeFiles(): string[] {
+  const sdk = ['./node_modules/@anthropic-ai/claude-agent-sdk/**']
+
+  if (process.env.CLAUDE_AGENT_RUNTIME?.trim() !== 'inline') return sdk
+
+  return [
+    ...sdk,
+    './node_modules/@anthropic-ai/claude-agent-sdk-*/*',
+    './node_modules/.pnpm/@anthropic-ai+claude-agent-sdk-*/node_modules/@anthropic-ai/*/*',
+  ]
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
@@ -42,18 +88,20 @@ const nextConfig: NextConfig = {
    * Ship the whole Agent SDK, not the files the tracer could see.
    *
    * File tracing follows imports. The SDK's imports are a thin wrapper; the CLI
-   * it actually runs — several megabytes of JavaScript plus its own assets — is
-   * reached by a path computed at runtime, which the tracer has no way to
-   * follow. Without this the package deploys as a stub that resolves cleanly,
-   * builds cleanly, and fails on the first chapter with a missing file.
+   * it actually runs is reached by a path computed at runtime, which the tracer
+   * has no way to follow. Without this the package deploys as a stub that
+   * resolves cleanly, builds cleanly, and fails on the first chapter with a
+   * missing file.
    *
    * This only matters for CLAUDE_AGENT_RUNTIME=inline. The sandbox runtime
    * installs its own copy inside the microVM and does not read this one — but
    * the two are meant to be interchangeable, and a build where only one of them
-   * works is a trap waiting for whoever flips the switch.
+   * works is a trap waiting for whoever flips the switch. Ce piège s'est
+   * refermé : voir `claudeCodeFiles`, qui dit ce qu'il manquait et pourquoi il
+   * n'est ajouté que sur demande.
    */
   outputFileTracingIncludes: {
-    '/**': ['./node_modules/@anthropic-ai/claude-agent-sdk/**'],
+    '/**': claudeCodeFiles(),
   },
 
   // Private assets are only ever served through an authenticated route handler.
