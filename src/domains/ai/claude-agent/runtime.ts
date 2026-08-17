@@ -369,9 +369,20 @@ export function agentFailure(
    * reprend le bac à sable, mémoire, durée de vie atteinte. Rien de tout cela
    * ne se reproduit sur un processus neuf, et c'est ce que dit `retryable`.
    */
+  /*
+   * Où il a échoué, toujours — pas seulement quand l'appelant y a pensé.
+   *
+   * « Native CLI binary for linux-x64 not found » ne veut pas dire la même
+   * chose selon la machine : dans le bac à sable, c'est l'installation npm de
+   * la microVM ; en inline, c'est le paquet optionnel absent du déploiement.
+   * Deux corrections opposées, et le message ne disait ni l'une ni l'autre —
+   * il a fallu relire le code pour savoir lequel des deux tournait.
+   */
+  const machine = where || `en mode ${agentRuntime()}`
+
   return new ClaudeAgentError(
     'sdk',
-    `${label} : le Claude Agent SDK a échoué${where ? ` ${where}` : ''} — ${detail}.` +
+    `${label} : le Claude Agent SDK a échoué ${machine} — ${detail}.` +
       (said
         ? ` Sortie d’erreur du CLI : ${said}`
         : ' Le CLI n’a rien écrit sur sa sortie d’erreur : il a disparu plutôt ' +

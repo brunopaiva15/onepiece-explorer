@@ -1,5 +1,6 @@
 import 'server-only'
 import { after } from 'next/server'
+import { syntheticByFallback } from '@/lib/env.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
 import type { ProviderChoice } from '@/domains/ai/index.ts'
 import { openChainWindow } from './chain.ts'
@@ -45,6 +46,36 @@ export async function startChapterRun(input: {
   chapterId: string
   provider: ProviderChoice
 }): Promise<StartRunOutcome> {
+  /*
+   * Refuse before spending a run on a provider nobody chose.
+   *
+   * With no credential configured, `remoteModelProvider()` answers `synthetic`
+   * — right for a deployment that was never set up, and catastrophic for one
+   * whose token has expired mid-import. The synthetic provider costs nothing,
+   * returns in milliseconds and rearranges the text it was given, so the run
+   * succeeds, the queue is empty, and nothing anywhere says the model was never
+   * asked. A whole lot marches through, chapter after chapter, publishing
+   * nothing under a green tick.
+   *
+   * Here rather than deeper down because this is the door every run comes
+   * through — the import, the queue, the button on a chapter — and because a
+   * refusal at the door is a sentence someone can act on, while the same
+   * discovery three steps later is a note under a tick nobody reads.
+   *
+   * `MODEL_PROVIDER=synthetic` is untouched: asked for, it is a legitimate
+   * choice and says so in the interface.
+   */
+  if (input.provider === 'auto' && syntheticByFallback()) {
+    return {
+      ok: false,
+      error:
+        'Aucun modèle configuré : ni CLAUDE_CODE_OAUTH_TOKEN (abonnement Claude Max) ' +
+        "ni ANTHROPIC_API_KEY. Le traitement aurait été fait par le fournisseur " +
+        'synthétique — il ne lit rien, ne coûte rien, et produit un chapitre vide ' +
+        'qui a l’air réussi. Renseignez un jeton chez votre hébergeur, puis relancez.',
+    }
+  }
+
   // A chapter run is the heaviest spend in the system; a script relaunching the
   // same one in a loop is the failure mode worth bounding.
   const allowance = await consume(input.userId, 'start_run')

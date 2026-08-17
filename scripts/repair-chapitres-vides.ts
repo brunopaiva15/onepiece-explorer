@@ -51,7 +51,9 @@ if (!url) {
 interface Row {
   id: string
   number: number
+  status: string
   auto_review: boolean
+  queued_for_run: boolean
   runs: number
 }
 
@@ -62,10 +64,32 @@ async function main(): Promise<void> {
     const empty = await sql<Row[]>`
       SELECT c.id,
              c.number,
+             c.status,
              c.auto_review,
+             c.queued_for_run,
              (SELECT count(*)::int FROM ingestion_runs r WHERE r.chapter_id = c.id) AS runs
         FROM chapters c
-       WHERE c.status = 'published'
+       /*
+        * A chapter that was processed and came back with nothing — whatever it
+        * has been left as since.
+        *
+        * The first version asked for status = 'published', which is where the
+        * bug left them and *not* where they stay: its own first run un-published
+        * them without returning them to the queue, so a second run matched
+        * nothing and the chapters sat as « importé » with no processing coming.
+        * Having a run is what separates these from a chapter freshly imported
+        * and deliberately not processed — that one has none, and sweeping it up
+        * would turn a decision not to spend into a spend.
+        */
+       WHERE c.status <> 'review'
+         AND EXISTS (
+           SELECT 1 FROM ingestion_runs r WHERE r.chapter_id = c.id
+         )
+         AND NOT c.queued_for_run
+         AND NOT EXISTS (
+           SELECT 1 FROM ingestion_runs r
+            WHERE r.chapter_id = c.id AND r.status IN ('pending', 'running')
+         )
          AND NOT EXISTS (
            SELECT 1 FROM review_items i WHERE i.chapter_id = c.id
          )
@@ -86,18 +110,18 @@ async function main(): Promise<void> {
     `
 
     if (empty.length === 0) {
-      console.log('Aucun chapitre publié sans contenu. Rien à faire.')
+      console.log('Aucun chapitre traité sans rien produire. Rien à faire.')
       return
     }
 
     console.log(
-      `${empty.length} chapitre(s) publié(s) sans la moindre proposition ni le ` +
+      `${empty.length} chapitre(s) traité(s) sans la moindre proposition ni le ` +
         `moindre fait :`,
     )
     for (const row of empty) {
       console.log(
-        `  · ${row.number} — ${row.runs} traitement(s), aucune carte, aucun fait` +
-          (row.auto_review ? ' · importé en lot automatique' : ''),
+        `  · ${row.number} — ${row.runs} traitement(s), état « ${row.status} »,` +
+          ` aucune carte, aucun fait`,
       )
     }
 
@@ -109,29 +133,38 @@ async function main(): Promise<void> {
     const ids = empty.map((row) => row.id)
 
     /*
-     * Remis en file seulement s'ils y avaient leur place.
+     * Remis dans la file, tous, et marqués comme se relisant seuls.
      *
-     * Un chapitre importé en lot automatique reprend la chaîne là où elle
-     * s'était trompée. Un chapitre importé seul redevient simplement « à
-     * traiter » : le remettre en file transformerait un choix de ne pas
-     * dépenser en dépense déclenchée par un script de réparation.
+     * La première version conditionnait la remise en file à `auto_review`, par
+     * prudence : ne pas transformer un choix de ne pas dépenser en dépense
+     * déclenchée par un script. La prudence visait le mauvais cas. Ces
+     * chapitres-là ont **déjà** été traités automatiquement — c'est la seule
+     * façon dont ils ont pu être publiés vides — et la colonne est fausse dès
+     * qu'ils ont été importés avant qu'elle existe, ou avec
+     * AUTO_REVIEW_NAMES_ONLY pour toute l'instance. Résultat : dépubliés, hors
+     * file, et plus rien pour les reprendre.
+     *
+     * Un chapitre importé et délibérément non traité n'entre pas ici : il n'a
+     * aucun traitement, et c'est la condition qui l'exclut plus haut.
      */
     const reset = await sql`
       UPDATE chapters
          SET status = 'uploaded',
              published_at = NULL,
-             queued_for_run = auto_review,
+             queued_for_run = true,
+             auto_review = true,
              updated_at = now()
        WHERE id = ANY(${ids})
-      RETURNING number, queued_for_run
+      RETURNING number
     `
 
-    const requeued = reset.filter((row) => row.queued_for_run === true).length
-
     console.log(
-      `\n${reset.length} chapitre(s) dépubliés et rendus à « importé ». ` +
-        `${requeued} remis dans la file : ouvrez n’importe quelle page de ` +
-        `l’atelier pour que la chaîne les reprenne.`,
+      `\n${reset.length} chapitre(s) rendus à « importé » et remis dans la file, ` +
+        `à se traiter et se publier seuls comme la première fois.`,
+    )
+    console.log(
+      'Ouvrez n’importe quelle page de l’atelier : le suivi en bas à droite ' +
+        'reprend la chaîne au plus petit numéro.',
     )
     console.log(
       'Le texte de chaque chapitre est intact — c’est lui que le nouveau ' +

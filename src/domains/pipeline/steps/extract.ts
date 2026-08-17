@@ -1037,6 +1037,38 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     proposals: decidedRefs,
   })
 
+  /*
+   * A chapter that yielded nothing at all is a failure, whoever caused it.
+   *
+   * Not a refusal — those are caught above and say so. This is the quiet one:
+   * the step returns, spends nothing, proposes nothing, quarantines nothing,
+   * re-applies nothing, and reports a green tick. Whatever produced it — a
+   * provider that answered an empty extraction, a session that ended without a
+   * final message, a replayed checkpoint from a first attempt that had already
+   * failed — the chapter has not been read, and every later step agrees without
+   * being able to say so: « aucune nouvelle entité à rapprocher », « aucune
+   * assertion à confronter », « aucune proposition en attente ».
+   *
+   * That chain of polite nothings is what a lot walked through: thirty-six
+   * chapters, each succeeding in two hundred milliseconds, each published as
+   * read. The cause deserves finding; the silence does not deserve keeping. A
+   * step that produced nothing from a text of several thousand characters is
+   * wrong, and saying so costs one run instead of a library.
+   *
+   * The three counters are the three ways a run can legitimately end with an
+   * empty queue: proposals to review, proposals already decided under the same
+   * fingerprint, or proposals whose evidence could not be verified. None of
+   * them is zero on a chapter that was actually read.
+   */
+  if (queued === 0 && reapplied === 0 && filtered.quarantined.length === 0) {
+    throw new Error(
+      `Aucune proposition, aucune décision réappliquée, aucune quarantaine : ` +
+        `l'extraction n'a rien tiré de ce chapitre. Ce n'est pas un chapitre vide, ` +
+        `c'est un appel qui n'a rien rendu — vérifiez le fournisseur de modèle et ` +
+        `relancez. Le texte importé est intact.`,
+    )
+  }
+
   const parts = [`${queued} propositions à revoir`]
   if (parallelPassages.length > 0) {
     // Worth a line: it changes what the model was shown, and therefore how the

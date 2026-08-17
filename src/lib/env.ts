@@ -246,6 +246,26 @@ export function remoteModelProvider(): 'claude-max' | 'anthropic' | 'replay' | '
 }
 
 /**
+ * Is the synthetic provider what we fell back to, rather than what was asked?
+ *
+ * The distinction is the whole point. Asked for — `MODEL_PROVIDER=synthetic` —
+ * it is a deliberate, honest choice: the interface says the extraction is
+ * generated and nothing pretends otherwise. Fallen back to, it is a deployment
+ * whose credentials are missing or expired, and the symptom is the worst kind:
+ * every run succeeds in two hundred milliseconds, spends nothing, extracts
+ * nothing, and reports a green tick. Thirty-six chapters went through that and
+ * the only visible trace was a review page with an empty queue.
+ *
+ * So callers that are about to spend real work can refuse, and say which
+ * credential is missing instead of producing a library of empty chapters.
+ */
+export function syntheticByFallback(): boolean {
+  if (process.env.MODEL_PROVIDER?.trim()) return false
+  if (hasLocalModel()) return false
+  return !hasClaudeSubscription() && !process.env.ANTHROPIC_API_KEY?.trim()
+}
+
+/**
  * What is recorded on a run, and shown in the interface.
  *
  * A local endpoint that takes only some tiers still reports 'local': its
