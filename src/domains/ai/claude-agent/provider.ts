@@ -154,7 +154,12 @@ export class ClaudeAgentProvider implements ModelProvider {
       ),
       schema: extractionSchema,
       content: [
-        { type: 'text', text: knownEntitiesList(request.knownEntities) },
+        // The total as well as the list: a truncation the model cannot see is
+        // one it reads as "this thing does not exist".
+        {
+          type: 'text',
+          text: knownEntitiesList(request.knownEntities, request.knownEntitiesTotal),
+        },
         { type: 'text', text: glossaryList(request.glossary) },
         ...(request.proposedSoFar && request.proposedSoFar.length > 0
           ? [{ type: 'text' as const, text: proposedSoFarList(request.proposedSoFar) }]
