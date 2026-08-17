@@ -448,6 +448,46 @@ export const PREDICATES = [
       'dit ni l’appartenance ni le commandement, qui ont leurs prédicats, et ' +
       'la fiche le range sous « Emprise » et non parmi les possessions.',
   },
+  /*
+   * Manger le fruit, et à qui le pouvoir revient.
+   *
+   * « Chopper ate the Hito Hito no Mi » est la phrase la plus ordinaire de cette
+   * œuvre et l'ontologie n'avait pas de quoi l'écrire. Le modèle s'en tirait
+   * comme il pouvait — `grants_power` du fruit vers le personnage — et la revue
+   * affichait « relation impossible en l'état » : « confère le pouvoir »
+   * n'accepte qu'un pouvoir en objet, et Tony Tony Chopper n'en est pas un. Le
+   * relecteur n'avait alors qu'à rejeter un fait que le chapitre dit en toutes
+   * lettres.
+   *
+   * Trois nœuds, et chacun garde son rôle :
+   *
+   *   Tony Tony Chopper --mange--> Hito Hito no Mi --confère le pouvoir--> …
+   *
+   * `grants_power` reste du fruit vers la capacité, parce que c'est ce qu'il
+   * veut dire — un fruit confère un pouvoir, il ne confère pas un personnage —
+   * et l'élargir au mangeur aurait mis deux affirmations différentes sous un
+   * seul prédicat : « ce fruit fait ceci » et « cette personne l'a mangé ».
+   * Manger a donc son verbe, et il dit plus que « possède » ou « utilise » :
+   * le fruit est consommé, une seule fois, et le pouvoir est à celui-là pour
+   * toujours. On peut poser un sabre ; on ne repose pas un fruit du démon.
+   *
+   * Le sujet est un personnage seul. Un équipage ne mange pas un fruit — l'un
+   * de ses membres le fait, et c'est de lui qu'on veut la fiche.
+   */
+  {
+    key: 'eats',
+    labelFr: 'mange',
+    directed: true,
+    symmetric: false,
+    subjectTypes: ['character'],
+    objectTypes: ['object'],
+    description:
+      'Un personnage mange un fruit du démon — ou, plus rarement, ce qu’un ' +
+      'chapitre montre d’avalé. Irréversible : le fruit disparaît et sa ' +
+      'capacité revient au mangeur. C’est ici que se dit « X a mangé le Y no ' +
+      'Mi » ; le pouvoir que le fruit donne se dit à part, du fruit vers la ' +
+      'capacité, avec « confère le pouvoir ».',
+  },
   {
     key: 'grants_power',
     labelFr: 'confère le pouvoir',
@@ -458,7 +498,9 @@ export const PREDICATES = [
     description:
       'Ce qu’un objet donne à qui s’en sert : un fruit du démon et la capacité ' +
       'qu’il confère. Le fruit est l’objet, la capacité est le pouvoir — sans ' +
-      'ce lien, rien ne relie les deux.',
+      'ce lien, rien ne relie les deux. Jamais vers un personnage : celui qui ' +
+      'a mangé le fruit se dit avec « mange », et la capacité qu’il en tire ' +
+      'avec « utilise ».',
   },
   /*
    * A gift has three terms; a relation joins two.

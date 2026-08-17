@@ -285,7 +285,13 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
       'travels_to:out',
       'leaves:out:place',
     ]),
-    section('avoir', 'Possessions et pouvoirs', ['owns:out', 'uses:out:object|power']),
+    // « a mangé · Hito Hito no Mi » en tête : de tout ce qu'un personnage
+    // détient, le fruit est le seul qu'il ne reposera pas.
+    section('avoir', 'Possessions et pouvoirs', [
+      'eats:out',
+      'owns:out',
+      'uses:out:object|power',
+    ]),
     section('savoirs', 'Ce qu’il ou elle connaît', [
       'knows:out:object|place|concept',
     ]),
@@ -395,6 +401,11 @@ const SECTIONS_BY_TYPE: Record<string, readonly SectionDef[]> = {
   ],
 
   object: [
+    // D'un fruit du démon, la première question est qui l'a mangé — et la
+    // réponse ne se range pas parmi les détenteurs : un fruit mangé n'a plus de
+    // détenteur, il a eu un mangeur. Un objet qui n'a pas été mangé n'affiche
+    // rien ici, une section vide ne s'affichant pas.
+    section('mange-par', 'Mangé par', ['eats:in']),
     section('detenteurs', 'Détenteurs', [
       'owns:in',
       'uses:in',
@@ -515,6 +526,7 @@ const ROLES: Record<string, readonly [outgoing: string, incoming: string]> = {
 
   owns: ['possède', 'propriétaire'],
   uses: ['utilise', 'utilisé par'],
+  eats: ['a mangé', 'mangé par'],
   gives: ['donne', 'donné par'],
   receives: ['reçoit', 'reçu par'],
   creates: ['a créé', 'créé par'],
