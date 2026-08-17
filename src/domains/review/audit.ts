@@ -679,6 +679,39 @@ function isWordChar(char: string): boolean {
 }
 
 /**
+ * Les scènes d'un chapitre que ces fragments désignent.
+ *
+ * La règle d'une correction écrite d'avance : elle sait ce qu'elle veut dire et
+ * ne sait pas contre quelles phrases elle va tomber. `repair:chronologie` en a
+ * fait les frais en production — « usopp » et « capitaine » désignaient quatre
+ * scènes du chapitre 41, dont « Usopp suppose qu'il deviendra le capitaine, mais
+ * Luffy lui rappelle qu'il occupe déjà ce rôle », qui est exactement ce que le
+ * chapitre dit. Les quatre ont reçu la même phrase : trois scènes justes
+ * perdues, trois doublons gagnés.
+ *
+ * D'où cette fonction, ici plutôt que dans le script : ce qu'elle rend est une
+ * *liste*, et c'est l'appelant qui refuse d'écrire quand elle n'en contient pas
+ * exactement une. Séparée ainsi, la règle se teste contre les vraies phrases de
+ * la bibliothèque sans base et sans écrire une ligne.
+ *
+ * Comparaison sur le texte normalisé — accents, apostrophes et ponctuation
+ * repliés —, donc « Bell-mère » attrape « Bell-mere » et « l'équipage »
+ * attrape « l equipage ».
+ */
+export function scenesMatching<T extends { summary: string }>(
+  scenes: readonly T[],
+  fragments: readonly string[],
+): T[] {
+  const needles = fragments.map((fragment) => normalizeText(fragment)).filter((n) => n.length > 0)
+  if (needles.length === 0) return []
+
+  return scenes.filter((scene) => {
+    const summary = normalizeText(scene.summary)
+    return needles.every((needle) => summary.includes(needle))
+  })
+}
+
+/**
  * Ce que la relecture d'un chapitre a répondu, ligne par ligne.
  *
  * Le modèle répond en texte, dans un format d'une ligne par reproche :
