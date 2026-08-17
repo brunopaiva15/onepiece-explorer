@@ -670,6 +670,17 @@ export async function readStoryWithModel(
   userId: string,
   workId: string,
   batch = 4,
+  /**
+   * Les chapitres à laisser de côté pour cette passe.
+   *
+   * Un chapitre en échec n'est pas marqué comme lu — c'est ce qui permet de le
+   * reprendre — mais il reste alors le premier de la liste, donc le paquet
+   * suivant le redemande, échoue pareil, et la relecture tourne en rond sans
+   * jamais atteindre le chapitre 8. La liste vient de l'appelant parce que c'est
+   * lui qui traverse la passe : ce qui a échoué *cette fois* est mis de côté
+   * jusqu'à la fin, et redevient à lire dès la prochaine.
+   */
+  skip: readonly number[] = [],
 ): Promise<RelectureReport> {
   const provider = modelProvider()
   if (provider.name === 'replay' || provider.name === 'synthetic') {
@@ -687,7 +698,10 @@ export async function readStoryWithModel(
     }
   }
 
-  const pending = await unreadChapters(userId, workId)
+  const setAside = new Set(skip)
+  const pending = (await unreadChapters(userId, workId)).filter(
+    (chapter) => !setAside.has(chapter),
+  )
   const selected = pending.slice(0, Math.max(1, batch))
 
   const report: RelectureReport = {
@@ -713,33 +727,30 @@ export async function readStoryWithModel(
       continue
     }
 
-    let answer
-    try {
-      answer = await provider.answer({
-        question: relectureQuestion(chapter),
-        context: [
-          ...material.scenes.map((scene) => ({
-            assertionId: scene.entityId,
-            chapter,
-            statement: `scène ${scene.entityId} : ${scene.summary}`,
-            excerpt: null,
-          })),
-          ...material.passages.map((passage, index) => ({
-            assertionId: `p${index + 1}`,
-            chapter,
-            statement: passage,
-            excerpt: null,
-          })),
-        ],
-        boundaryChapter: chapter,
-      })
-    } catch (error) {
-      report.failures.push({
-        chapter,
-        reason: error instanceof Error ? error.message.split('\n')[0]! : String(error),
-      })
+    const attempt = await askWithRetry(provider, {
+      question: relectureQuestion(chapter),
+      context: [
+        ...material.scenes.map((scene) => ({
+          assertionId: scene.entityId,
+          chapter,
+          statement: `scène ${scene.entityId} : ${scene.summary}`,
+          excerpt: null,
+        })),
+        ...material.passages.map((passage, index) => ({
+          assertionId: `p${index + 1}`,
+          chapter,
+          statement: passage,
+          excerpt: null,
+        })),
+      ],
+      boundaryChapter: chapter,
+    })
+
+    if ('reason' in attempt) {
+      report.failures.push({ chapter, reason: attempt.reason })
       continue
     }
+    const answer = attempt.answer
 
     report.costCents += answer.usage.costCents
 
@@ -802,6 +813,45 @@ export async function readStoryWithModel(
   }
 
   return report
+}
+
+/**
+ * L'appel, avec le droit d'échouer deux fois.
+ *
+ * « Claude Code process exited with code 1 » sur le chapitre 4, puis sur le 7,
+ * pendant que le 1, le 2 et le 3 passaient : ce sont des accidents de transport,
+ * pas des réponses. Les redemander est la bonne conduite, et trois tentatives
+ * espacées suffisent à traverser une minute chargée — le balayage d'identités a
+ * exactement la même boucle, née du même « Overloaded » à la trente-septième
+ * figure.
+ *
+ * Aucune distinction entre les sortes d'erreurs, sauf une. Le message d'une API
+ * se reformule, et une boucle qui n'aurait retenté que sur un mot précis
+ * recommencerait à mourir le jour où ce mot change ; une erreur non transitoire
+ * coûte deux attentes et finit là où elle aurait fini tout de suite. L'exception
+ * est le refus d'identifiant : un jeton révoqué le sera autant dans cinq
+ * secondes, et réessayer ne fait que retarder la seule phrase utile.
+ */
+async function askWithRetry(
+  provider: ReturnType<typeof modelProvider>,
+  request: Parameters<ReturnType<typeof modelProvider>['answer']>[0],
+): Promise<
+  { answer: Awaited<ReturnType<ReturnType<typeof modelProvider>['answer']>> } | { reason: string }
+> {
+  let last = 'appel impossible'
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return { answer: await provider.answer(request) }
+    } catch (error) {
+      last = error instanceof Error ? error.message.split('\n')[0]! : String(error)
+      const kind = (error as { kind?: string } | null)?.kind
+      if (kind === 'auth') return { reason: last }
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 4000))
+    }
+  }
+
+  return { reason: last }
 }
 
 /**

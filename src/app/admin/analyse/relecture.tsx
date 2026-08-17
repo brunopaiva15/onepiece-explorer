@@ -49,10 +49,21 @@ export function Relecture({
     setRunning(true)
 
     start(async () => {
+      /*
+       * Les chapitres que cette passe a ratés, mis de côté jusqu'à la fin.
+       *
+       * Un chapitre en échec n'est pas marqué comme lu — c'est ce qui permet d'y
+       * revenir — donc sans cette liste il reste le premier à lire, le paquet
+       * suivant le redemande, et la relecture tourne en rond sur le chapitre 4
+       * sans jamais atteindre le 8. Ils sont dits à la fin, et la prochaine
+       * relecture les reprend depuis le début.
+       */
+      const failed: number[] = []
+
       for (;;) {
         if (stop.current) break
 
-        const outcome = await relireAction(4)
+        const outcome = await relireAction(4, failed)
         if (!outcome.ok || !outcome.report) {
           setError(outcome.error ?? 'Relecture impossible.')
           break
@@ -66,6 +77,7 @@ export function Relecture({
         }))
 
         if (report.failures.length > 0) {
+          failed.push(...report.failures.map((failure) => failure.chapter))
           setNotes((current) => [
             ...current,
             ...report.failures.map(
@@ -80,9 +92,34 @@ export function Relecture({
           ])
         }
 
-        // Rien lu et rien en échec : il ne reste plus de chapitre à relire.
-        if (report.read === 0 && report.failures.length === 0) break
+        /*
+         * La page se rafraîchit entre deux paquets, et pas seulement à la fin.
+         *
+         * Deux raisons, dont la seconde est la vraie. Les compteurs du haut
+         * viennent du serveur : sans ça ils affichent « 1 chapitre relu » sous
+         * un panneau qui en annonce trois, et le lecteur ne sait plus lequel
+         * croire. Et les constats trouvés apparaissent au fur et à mesure —
+         * une relecture de cent cinquante chapitres dure, et rien n'oblige à
+         * attendre la fin pour lire ce qu'elle a déjà trouvé.
+         *
+         * Le coût est une lecture de page pour quatre appels de modèle, ce qui
+         * ne se mesure pas à côté.
+         */
+        router.refresh()
+
+        // Un paquet qui n'a rien lu du tout est la fin de la passe : soit il ne
+        // reste rien, soit ce qui reste vient d'échouer et est mis de côté.
+        if (report.read === 0) break
         if (report.remaining <= 0) break
+      }
+
+      if (failed.length > 0) {
+        setNotes((current) => [
+          ...current,
+          `${failed.length} chapitre(s) laissés de côté après échec : ` +
+            `${failed.slice(0, 12).join(', ')}${failed.length > 12 ? '…' : ''}. ` +
+            `Relancer la relecture les reprend.`,
+        ])
       }
 
       setRunning(false)

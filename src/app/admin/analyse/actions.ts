@@ -116,6 +116,9 @@ export interface RelectureActionResult {
  */
 const MAX_BATCH = 8
 
+/** Et combien de chapitres ratés une passe peut mettre de côté avant de renoncer. */
+const MAX_SKIPPED = 500
+
 /**
  * Relire un paquet de chapitres.
  *
@@ -124,7 +127,11 @@ const MAX_BATCH = 8
  * est un geste, et ce que la limite doit arrêter est une boucle, pas une
  * relecture qui avance.
  */
-export async function relireAction(batch = 4): Promise<RelectureActionResult> {
+export async function relireAction(
+  batch = 4,
+  /** Les chapitres que cette passe a déjà ratés. Voir `readStoryWithModel`. */
+  skip: number[] = [],
+): Promise<RelectureActionResult> {
   try {
     const session = await requireOwner()
 
@@ -139,7 +146,20 @@ export async function relireAction(batch = 4): Promise<RelectureActionResult> {
     }
 
     const size = Number.isFinite(batch) ? Math.min(MAX_BATCH, Math.max(1, Math.floor(batch))) : 4
-    const report = await readStoryWithModel(session.userId, session.workId, size)
+
+    /*
+     * Les arguments viennent du navigateur, y compris celui-ci.
+     *
+     * Il ne sert qu'à *retirer* des chapitres de la passe, donc le pire qu'une
+     * valeur inventée puisse faire est d'en sauter — pas d'en lire un qui ne
+     * serait pas à lire. Il est quand même filtré et borné : un tableau de
+     * cinquante mille entrées traverserait le réseau et finirait dans un `IN`.
+     */
+    const setAside = (Array.isArray(skip) ? skip : [])
+      .filter((chapter) => Number.isInteger(chapter) && chapter > 0)
+      .slice(0, MAX_SKIPPED)
+
+    const report = await readStoryWithModel(session.userId, session.workId, size, setAside)
 
     if (report.found > 0 || report.read > 0) revalidatePath('/admin/analyse')
 
