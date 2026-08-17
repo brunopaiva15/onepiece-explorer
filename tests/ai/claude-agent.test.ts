@@ -5,6 +5,7 @@ import {
   agentFailure,
   agentRuntime,
   ClaudeAgentError,
+  creationRefusal,
   interpret,
   isAuthFailure,
   stderrTail,
@@ -309,6 +310,70 @@ describe('a token Claude refuses', () => {
     // Un CLI qui n'arrive pas à démarrer dit pourquoi en dernier.
     expect(said.text()).toContain('la vraie raison')
     expect(said.text().length).toBeLessThanOrEqual(40)
+  })
+})
+
+/*
+ * Un hébergeur qui ne fournit pas la machine.
+ *
+ * Mesuré sur le balayage des mystères, qui s'est arrêté à trois questions sur
+ * cent trente et une : « Status code 402 is not ok », et un message qui
+ * répondait « vérifiez que Secure Backend Access (OIDC) est activé ». OIDC
+ * était activé et parfaitement en ordre — un 402 est une facture, et la seule
+ * chose que le refus avait à dire était dans son code, qui n'était pas lu.
+ */
+describe('a sandbox the platform will not create', () => {
+  it('reads a spent Sandbox allowance as a bill and not as a login', () => {
+    const failure = creationRefusal(new Error('Status code 402 is not ok'))
+
+    expect(failure.kind).toBe('billing')
+    expect(failure.message).toContain('402')
+    // Ce que la phrase ne doit surtout plus faire : envoyer relire une
+    // configuration d'authentification qui n'a rien à se reprocher.
+    expect(failure.message).not.toContain('Secure Backend Access')
+    expect(failure.message).toContain('CLAUDE_AGENT_RUNTIME=inline')
+  })
+
+  it('keeps the OIDC advice for the refusal that is actually about identity', () => {
+    const failure = creationRefusal(new Error('Status code 403 is not ok'))
+
+    expect(failure.kind).toBe('sandbox')
+    expect(failure.message).toContain('Secure Backend Access')
+    expect(failure.message).toContain('VERCEL_TOKEN')
+  })
+
+  it('reads the status off the error when the client carries one', () => {
+    const carried = Object.assign(new Error('request failed'), { status: 402 })
+
+    expect(creationRefusal(carried).kind).toBe('billing')
+  })
+
+  /*
+   * La reprise, qui coûtait le double pour apprendre la même chose.
+   *
+   * Tout ce qui portait le genre `sandbox` était retenté, refus compris : une
+   * allocation épuisée bâtissait une seconde machine pour se faire refuser une
+   * seconde fois. Un 4xx est une phrase — la plateforme a examiné la demande et
+   * l'a rejetée ; un 5xx est un accident, et lui seul vaut une machine neuve.
+   */
+  it('does not pay twice to hear the same refusal', () => {
+    expect(creationRefusal(new Error('Status code 402 is not ok')).retryable).toBe(false)
+    expect(creationRefusal(new Error('Status code 403 is not ok')).retryable).toBe(false)
+    expect(creationRefusal(new Error('Status code 404 is not ok')).retryable).toBe(false)
+  })
+
+  it('retries the platform that stumbled rather than answered', () => {
+    expect(creationRefusal(new Error('Status code 503 is not ok')).retryable).toBe(true)
+    expect(creationRefusal(new Error('socket hang up')).retryable).toBe(true)
+  })
+
+  it('does not read three digits of a path into a verdict', () => {
+    // « 402 » se lit dans un horodatage, une taille, un numéro de port. Seule la
+    // tournure du client compte, et rien d'autre.
+    const failure = creationRefusal(new Error('connect ECONNREFUSED 10.0.0.1:4020'))
+
+    expect(failure.kind).toBe('sandbox')
+    expect(failure.retryable).toBe(true)
   })
 })
 
