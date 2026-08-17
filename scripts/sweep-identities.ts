@@ -38,7 +38,15 @@
  * mot, un identifiant que le modèle a formé. Et la date vient du passage, jamais
  * de la citation.
  *
- * Deux limites, dites plutôt que tues :
+ * Trois limites, dites plutôt que tues :
+ *
+ *   Des personnes et des groupes seulement. Une révélation d'identité porte sur
+ *   quelqu'un ou sur une organisation, et le premier passage l'a appris à ses
+ *   frais : sans cette borne il a proposé 141 figures dont « Chapeau de paille »,
+ *   « Base de la Marine » et « Clé de la cage » — des objets dont le libellé est
+ *   le nom, un appel payé chacun pour se faire répondre non. Ce qu'elle laisse de
+ *   côté est réel et rare, et reste au geste manuel de la fiche. Voir
+ *   `domains/review/identity-candidates.ts`, qui porte la sélection et se teste.
  *
  *   La fenêtre. Quinze chapitres après la rencontre, parce qu'une révélation
  *   arrive d'ordinaire peu après et qu'une bibliothèque de mille chapitres se
@@ -48,6 +56,13 @@
  *   Il demande un modèle qui lise vraiment, et refuse de tourner sans. Les modes
  *   synthétique et replay répondent en comparant des mots ; ils proposeraient des
  *   fusions avec l'aplomb des vraies.
+ *
+ * Et il se perd figure par figure. Le premier passage est mort à la
+ * trente-septième d'un « Overloaded » de l'API, en emportant les trente-six
+ * appels déjà payés — et, en mode « appliquer », les cartes qu'il restait à
+ * écrire. Un appel a maintenant droit à trois tentatives espacées, un échec ne
+ * coûte que sa figure, et le compte rendu — dont le coût — sort même si le
+ * balayage est interrompu.
  *
  * Ré-exécutable : une figure déjà rejointe, ou déjà portée par une carte en
  * attente, n'est pas redemandée — donc une seconde passe ne repaye pas ce que la
@@ -60,6 +75,7 @@ import '../src/lib/load-env.ts'
 import { randomUUID } from 'node:crypto'
 import postgres from 'postgres'
 import { modelProvider } from '../src/domains/ai/index.ts'
+import { unnamedFigures, type UnnamedFigureRow } from '../src/domains/review/identity-candidates.ts'
 import {
   identityCard,
   revealedIdentity,
@@ -97,13 +113,7 @@ if (!url) {
 
 const sql = postgres(url, { max: 2, onnotice: () => {} })
 
-interface FigureRow {
-  entity_id: string
-  work_id: string
-  user_id: string
-  label: string
-  first_seen_chapter: number
-}
+type FigureRow = UnnamedFigureRow
 
 /*
  * Pas de `process.exit(0)` au bout, et c'est le seul détail de plomberie qui
@@ -142,7 +152,7 @@ async function main(): Promise<void> {
     return
   }
 
-  const figures = await unnamedFigures()
+  const figures = await unnamedFigures(sql)
   if (figures.length === 0) {
     console.log('Aucune figure sans nom en attente : rien à rattraper.')
     return
@@ -158,7 +168,27 @@ async function main(): Promise<void> {
 
   let proposed = 0
   let left = 0
+  let failed = 0
   let costCents = 0
+
+  /*
+   * Le compte rendu, même interrompu.
+   *
+   * Il était imprimé après la boucle, donc une interruption — la nôtre, un
+   * plafond de temps du workflow, un Ctrl-C — emportait le coût avec elle : on
+   * avait payé et on ne savait pas combien. Posé ici, il sort quoi qu'il arrive.
+   */
+  const report = (): void =>
+    console.log(
+      `\n${proposed} carte(s) proposée(s) · ${left} laissée(s)` +
+        (failed > 0 ? ` · ${failed} en échec` : '') +
+        ` · ${(costCents / 100).toFixed(2)} $` +
+        (dryRun ? ' — rien écrit' : ''),
+    )
+  process.on('SIGINT', () => {
+    report()
+    process.exit(130)
+  })
 
   for (const row of selected) {
     const figure: UnnamedFigure = {
@@ -181,7 +211,7 @@ async function main(): Promise<void> {
       continue
     }
 
-    const result = await provider.answer({
+    const result = await askWithRetry(provider, {
       question:
         `Une figure entre en scène au chapitre ${figure.firstSeenChapter} sans être ` +
         `nommée ; la bibliothèque l’appelle « ${figure.label} ». Les passages qui ` +
@@ -215,6 +245,21 @@ async function main(): Promise<void> {
       ],
       boundaryChapter: figure.firstSeenChapter + SWEEP_WINDOW,
     })
+
+    /*
+     * Un appel qui échoue ne coûte que sa figure.
+     *
+     * La première exécution est morte à la trente-septième d'un « Overloaded »
+     * de l'API, en emportant les trente-six appels déjà payés — et, en mode
+     * « appliquer », elle aurait aussi emporté les cartes qu'il restait à écrire.
+     * Un balayage qui se paye figure par figure doit se perdre figure par figure.
+     */
+    if (result === null) {
+      failed++
+      console.log('      appel impossible après plusieurs tentatives : passée.')
+      continue
+    }
+
     costCents += result.usage.costCents
 
     const finding = result.refusal
@@ -255,44 +300,42 @@ async function main(): Promise<void> {
     proposed++
   }
 
-  console.log(
-    `\n${proposed} carte(s) proposée(s) · ${left} laissée(s) · ` +
-      `${(costCents / 100).toFixed(2)} $` +
-      (dryRun ? ' — rien écrit' : ''),
-  )
+  report()
 }
 
 /**
- * Les figures encore sans nom, les plus anciennes d'abord.
+ * L'appel, avec le droit d'échouer deux fois.
  *
- * Sans vrai nom, non rejointes, et sans carte en attente : les trois conditions
- * qui font qu'une seconde passe ne repaye pas le travail de la première.
- * « Sans vrai nom » plutôt que « portant un placeholder », parce que c'est
- * l'absence de nom qui en fait une candidate — une épithète n'est pas un nom.
+ * « Overloaded » et les coupures de flux sont des accidents de transport, pas
+ * des réponses : les redemander est la bonne conduite, et trois tentatives
+ * espacées suffisent à traverser une minute chargée. Ce qui reste en échec après
+ * ça rend `null`, et l'appelant passe à la figure suivante — un balayage de cent
+ * appels ne doit pas être un pari à cent contre un.
+ *
+ * Aucune distinction entre les sortes d'erreurs, volontairement. Le message
+ * d'une API se reformule, et un balayage qui n'aurait retenté que sur le mot
+ * « Overloaded » aurait recommencé à mourir le jour où il devient « overloaded »
+ * ou « server_busy ». Une erreur non transitoire coûte deux attentes et finit
+ * exactement là où elle aurait fini tout de suite.
  */
-async function unnamedFigures(): Promise<FigureRow[]> {
-  return sql<FigureRow[]>`
-    SELECT en.id AS entity_id, en.work_id, en.user_id, en.first_seen_chapter,
-           (SELECT l.label FROM entity_labels l
-             WHERE l.entity_id = en.id
-             ORDER BY l.precedence DESC, l.revealed_in_chapter DESC
-             LIMIT 1) AS label
-      FROM entities en
-     WHERE en.review_status = 'accepted'
-       AND en.node_type NOT IN ('event', 'battle', 'voyage', 'mystery')
-       AND NOT EXISTS (SELECT 1 FROM entity_labels l
-                        WHERE l.entity_id = en.id AND l.kind = 'true_name')
-       AND NOT EXISTS (SELECT 1 FROM assertions a
-                        WHERE a.predicate = 'same_as'
-                          AND a.review_status = 'accepted'
-                          AND (a.subject_entity_id = en.id OR a.object_entity_id = en.id))
-       AND NOT EXISTS (SELECT 1 FROM review_items ri
-                        WHERE ri.status = 'proposed'
-                          AND ri.category = 'assertion'
-                          AND ri.payload->>'subject' = en.id::text)
-       AND EXISTS (SELECT 1 FROM entity_labels l WHERE l.entity_id = en.id)
-     ORDER BY en.first_seen_chapter, en.id
-  `
+async function askWithRetry(
+  provider: ReturnType<typeof modelProvider>,
+  request: Parameters<ReturnType<typeof modelProvider>['answer']>[0],
+): Promise<Awaited<ReturnType<ReturnType<typeof modelProvider>['answer']>> | null> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await provider.answer(request)
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message.split('\n')[0] : String(error)
+      if (attempt === 3) {
+        console.log(`      ${reason}`)
+        return null
+      }
+      console.log(`      tentative ${attempt} échouée, nouvelle dans ${attempt * 5} s`)
+      await new Promise((resolve) => setTimeout(resolve, attempt * 5000))
+    }
+  }
+  return null
 }
 
 /**
