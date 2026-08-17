@@ -14,6 +14,7 @@ import { nodeTypeLabel, predicateLabel } from '@/domains/knowledge/predicate-lab
 import { buildEntityProfile } from '@/domains/knowledge/profile.ts'
 import { CorrectFact } from './correct-fact.tsx'
 import { EntityProfile } from './entity-profile.tsx'
+import { IdentifyEntity } from './identify-entity.tsx'
 import { RenameEntity } from './rename-entity.tsx'
 import { RetypeEntity } from './retype-entity.tsx'
 
@@ -168,6 +169,21 @@ export default async function EntityPage({
               entityId={sheet.id}
               nodeType={sheet.nodeType}
               displayLabel={sheet.displayLabel}
+            />
+            {/*
+              * The last resort, and the reason it is here rather than on a
+              * fact: an identity is not a relation between two things, it is
+              * the statement that there are not two. The reveal chapter is
+              * meant to propose it and a human to answer it in the review
+              * centre; when nothing did — a reveal carried by the art, a
+              * chapter published before the prompt knew to ask — the reader
+              * knows and the application had no gesture to offer.
+              */}
+            <IdentifyEntity
+              entityId={sheet.id}
+              displayLabel={sheet.displayLabel}
+              nodeType={sheet.nodeType}
+              boundary={sheet.boundaryChapter}
             />
           </div>
         )}

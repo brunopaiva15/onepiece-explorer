@@ -46,6 +46,54 @@ describe('the entities the model is shown', () => {
   it('says so plainly when the graph is still empty', () => {
     expect(knownEntitiesList([])).toBe('Aucune entité déjà validée à ce stade.')
   })
+
+  /**
+   * The candidates for a revelation, where the model can find them.
+   *
+   * Asking for `same_as` when a chapter reveals who a figure was is worth
+   * nothing if the figure is one line among a thousand named characters — and
+   * unlike a name, a description is rescued by nothing downstream: the
+   * exact-twin check at publication matches labels, and the resolution step
+   * blocks on trigram similarity. So they come first, under a heading that says
+   * what they are for.
+   */
+  it('puts the still-unnamed first, under their own heading', () => {
+    const rendered = knownEntitiesList([
+      { id: 'b1', label: 'Monkey D. Luffy', nodeType: 'character', group: 'other' },
+      { id: 'b2', label: 'Silhouette au sommet', nodeType: 'character', group: 'unnamed' },
+      { id: 'b3', label: 'Qui a brûlé Ohara ?', nodeType: 'mystery', group: 'question' },
+    ])
+
+    expect(rendered).toMatch(/ENCORE SANS NOM/)
+    expect(rendered).toMatch(/same_as/)
+    expect(rendered).toMatch(/QUESTIONS ENCORE OUVERTES/)
+
+    // Order, not just presence: the group exists so the candidate is read before
+    // the cast, and a heading below a thousand lines is a heading nobody reaches.
+    expect(rendered.indexOf('Silhouette au sommet')).toBeLessThan(
+      rendered.indexOf('Monkey D. Luffy'),
+    )
+  })
+
+  /**
+   * A cut list says it was cut.
+   *
+   * The projection refuses to truncate the graph in silence for the same reason:
+   * a list quietly missing most of the cast looks exactly like a complete one.
+   * Here the wrong inference is specific and costly — « absent from the list »
+   * read as « does not exist » aims a relation at the nearest line there is.
+   */
+  it('says how many of how many when it shows a subset', () => {
+    const rendered = knownEntitiesList(ENTITIES, 900)
+    expect(rendered).toMatch(/tronquée/)
+    expect(rendered).toMatch(/2 lignes sur 900/)
+    expect(rendered).toMatch(/n’est donc pas une chose qui n’existe pas/)
+  })
+
+  it('says nothing about truncation when nothing was cut', () => {
+    const rendered = knownEntitiesList(ENTITIES, ENTITIES.length)
+    expect(rendered).not.toMatch(/tronquée/)
+  })
 })
 
 describe('the extraction prompt', () => {
@@ -127,6 +175,35 @@ describe('the extraction prompt', () => {
   it('carries a version that moved with the wording', () => {
     // Stored on every assertion the model proposes. Without a bump, a run
     // before this change and a run after it are indistinguishable in the record.
-    expect(PROMPT_VERSION).toBe('11')
+    expect(PROMPT_VERSION).toBe('13')
+  })
+
+  /**
+   * Ask for the identity, and not only for the prudence.
+   *
+   * The prompt said twice to be careful — an identity needs direct proof, two
+   * lookalikes are two entities — and never once said to do the thing. So the
+   * model never did: « Homme mystérieux debout sur l'eau » and Wapol entered the
+   * same chapter as two nodes and stayed two for the rest of the work, and
+   * nothing downstream could join them, because the resolution step blocks on
+   * trigram similarity between labels and a description resembles no name.
+   *
+   * Pinned here because the two halves have to travel together. Keeping only the
+   * prudence is the bug this fixed; keeping only the instruction would invite
+   * the merge the whole product exists to refuse.
+   */
+  it('asks for the identity when the chapter is the one that reveals it', () => {
+    const prompt = extractionSystem('(ontologie)', 'summary')
+
+    // The instruction, and the predicate it must name.
+    expect(prompt).toMatch(/QUAND CE CHAPITRE EST CELUI QUI LA RÉVÈLE/)
+    expect(prompt).toMatch(/same_as/)
+    // What it costs to stay silent, so the rule has a reason and not just a tone.
+    // `\s+` rather than a space: the prompt is a wrapped template literal, and
+    // a sentence worth pinning is longer than one of its lines.
+    expect(prompt).toMatch(/garde deux nœuds\s+pour une personne/)
+    // And the prudence it does not replace.
+    expect(prompt).toMatch(/créez DEUX entités distinctes/)
+    expect(prompt).toMatch(/maybe_same_as/)
   })
 })

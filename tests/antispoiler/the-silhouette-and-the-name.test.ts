@@ -52,12 +52,13 @@ const CHAPITRE_131 = [
 
 const CHAPITRE_96 = [
   'À Loguetown, Zoro aide une jeune sabreuse à retrouver ses lunettes après',
-  'qu’elle a vaincu deux pirates, tandis qu’Alvida rôde dans la même rue.',
+  'qu’elle a vaincu deux pirates, et lui trouve un air étrangement familier.',
 ].join(' ')
 
 const CHAPITRE_97 = [
   'À la station de la Marine, Smoker demande où se trouve Tashigi et envoie un',
-  'subordonné la chercher après avoir reçu un témoignage sur des pirates.',
+  'subordonné la chercher ; plus loin, Sanji découvre que la belle femme qu’il',
+  'observait est en réalité Alvida, transformée.',
 ].join(' ')
 
 let world: SeededWorld
@@ -107,18 +108,17 @@ beforeAll(async () => {
   )
 
   /*
-   * Et le cas que le script doit refuser, monté sur un vrai couple du tableau.
+   * La révélation qui tient dans un seul chapitre, montée sur un vrai couple.
    *
-   * « Belle femme observée par Sanji » entre en scène au 97 alors que la source
-   * du 96 écrit déjà « Alvida ». Le nœud n'a donc jamais été provisoire : le
-   * lecteur pouvait lire ce nom quand il a été créé, et les deux nœuds se
-   * doublent dès le 97. Les rejoindre par une identité datée du 96 laisserait
-   * la copie visible au chapitre où elle fait double emploi — c'est un doublon,
-   * qui se répare avec l'outil qui la retire, et le refus est ce qui sépare
-   * cette réparation-ci de celle-là.
+   * « Belle femme observée par Sanji » et Alvida entrent en scène au même
+   * chapitre 97, dont la source écrit déjà le nom : le lecteur rencontre la
+   * belle femme et apprend qui elle est dans les mêmes pages. C'est la forme la
+   * plus courante, et le script l'a d'abord refusée en la prenant pour un
+   * doublon. Elle ne l'est pas : la frontière n'a pas de grain plus fin que le
+   * chapitre, donc replier au 97 ne cache rien — au 96, aucun des deux n'existe.
    */
-  const alvida = await createEntity(world, 'character', 96)
-  await addLabel(world, alvida, 'Alvida', 'true_name', 96, 100)
+  const alvida = await createEntity(world, 'character', 97)
+  await addLabel(world, alvida, 'Alvida', 'true_name', 97, 100)
 
   doublon = await createEntity(world, 'character', 97)
   await addLabel(world, doublon, 'Belle femme observée par Sanji', 'placeholder', 97, 10)
@@ -226,32 +226,55 @@ describe('un nom qui circule sans nœud', () => {
   })
 })
 
-describe('ce que le script refuse', () => {
-  it('ne rejoint pas deux nœuds quand le nom était déjà lisible', async () => {
-    // « Alvida » est dans la source du 96 et ce nœud entre en scène au 97 : il
-    // n'a jamais été provisoire. C'est un doublon, et le réparer ici laisserait
-    // la copie visible au chapitre où elle fait double emploi.
-    const [row] = await raw<Array<{ n: string }>>`
-      SELECT count(*)::text AS n FROM assertions
+describe('une révélation qui tient dans un seul chapitre', () => {
+  it('rejoint quand même, daté de ce chapitre-là', async () => {
+    /*
+     * Le cas que le script refusait. « Belle femme observée par Sanji » et
+     * Alvida entrent en scène au 97, et la source du 97 écrit le nom : la
+     * rencontre et la révélation sont dans les mêmes pages. C'est la forme la
+     * plus courante — Wapol entre en scène au 131 et est nommé douze pages plus
+     * loin — et la refuser laissait deux nœuds pour le reste de l'œuvre.
+     */
+    const [row] = await raw<Array<{ knowledge_from_chapter: number }>>`
+      SELECT knowledge_from_chapter FROM assertions
        WHERE user_id = ${world.userId} AND predicate = 'same_as'
          AND (subject_entity_id = ${doublon} OR object_entity_id = ${doublon})`
-    expect(row?.n).toBe('0')
 
-    const [label] = await raw<Array<{ n: string }>>`
-      SELECT count(*)::text AS n FROM entity_labels WHERE entity_id = ${doublon}`
-    expect(label?.n).toBe('1')
+    expect(row).toBeDefined()
+    expect(row!.knowledge_from_chapter).toBe(97)
+  })
+
+  it('affiche Alvida au 97, et rien du tout au 96', async () => {
+    const after = await getEntitySheet(world.userId, 97, doublon)
+    expect(after?.displayLabel).toBe('Alvida')
+
+    // Au 96 le nœud n'existe pas encore : il n'y a rien à cacher, et c'est
+    // pourquoi replier au 97 ne coûte aucune frontière.
+    const before = await getEntitySheet(world.userId, 96, doublon)
+    expect(before).toBeNull()
   })
 
   it('ne se répète pas au second passage', async () => {
+    // Compté avant et après plutôt que comparé à un nombre écrit ici : le
+    // tableau du script grandira, et une assertion sur « 1 » se serait mise à
+    // échouer pour la seule raison qu'un couple de plus a été trouvé — ce qui
+    // n'est pas ce que ce test surveille.
+    const count = async (): Promise<string> => {
+      const [row] = await raw<Array<{ n: string }>>`
+        SELECT count(*)::text AS n FROM assertions
+         WHERE user_id = ${world.userId} AND predicate = 'same_as'`
+      return row?.n ?? '0'
+    }
+
+    const before = await count()
+    expect(Number(before)).toBeGreaterThan(0)
+
     await exec('pnpm', ['repair:noms'], {
       env: { ...process.env, TEST_DB: '1' },
       cwd: process.cwd(),
     })
 
-    const [joins] = await raw<Array<{ n: string }>>`
-      SELECT count(*)::text AS n FROM assertions
-       WHERE user_id = ${world.userId} AND predicate = 'same_as'`
-    expect(joins?.n).toBe('1')
+    expect(await count()).toBe(before)
 
     const [names] = await raw<Array<{ n: string }>>`
       SELECT count(*)::text AS n FROM entity_labels

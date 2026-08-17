@@ -7,6 +7,12 @@ import {
   entityCandidates,
   type EntityCandidate,
 } from '@/domains/knowledge/candidates.ts'
+import {
+  identifyEntities,
+  proposeIdentity,
+  type IdentifyProposal,
+  type IdentifyResult,
+} from '@/domains/knowledge/identify.ts'
 import type { LabelKind } from '@/domains/knowledge/label-kind.ts'
 import { renameEntityLabel, type RenameResult } from '@/domains/knowledge/rename.ts'
 import { retypeEntity, type RetypeResult } from '@/domains/knowledge/retype.ts'
@@ -26,6 +32,18 @@ export interface RenameActionResult {
 export interface RetypeActionResult {
   ok: boolean
   result?: RetypeResult
+  error?: string
+}
+
+export interface IdentifyProposalResult {
+  ok: boolean
+  proposal?: IdentifyProposal
+  error?: string
+}
+
+export interface IdentifyActionResult {
+  ok: boolean
+  result?: IdentifyResult
   error?: string
 }
 
@@ -128,6 +146,72 @@ export async function retypeEntityAction(input: {
       ok: false,
       error:
         error instanceof Error ? error.message : 'Changement de type impossible.',
+    }
+  }
+}
+
+/**
+ * What identifying these two would do, before it is done.
+ *
+ * A question, never a write — the same split as `retypeEntityAction`'s first
+ * call, and for a stronger reason: a merge changes what the fiche is *called*
+ * from a chapter onwards, and the date it is written at is the whole content of
+ * the operation. So the panel asks first, gets back the two labels, the chapter
+ * the sources support and the earliest one that would make sense, and only then
+ * offers a button that says what it will do.
+ */
+export async function identityProposalAction(input: {
+  entityId: string
+  otherId: string
+}): Promise<IdentifyProposalResult> {
+  try {
+    const session = await requireOwner()
+    const proposal = await proposeIdentity(session.userId, input)
+    return { ok: true, proposal }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Rapprochement impossible.',
+    }
+  }
+}
+
+/**
+ * Write the identity, at the chapter you confirmed.
+ *
+ * Both fiches move, and so does everything that reads the graph as components:
+ * the two pages become one reading, the graph draws one node from that chapter
+ * on, the search finds him under either name, the story thread names him under
+ * the better of the two. Revalidated together rather than one at a time, since
+ * a merge that shows on one page and not the other is a graph disagreeing with
+ * itself.
+ *
+ * `requireOwner()` again — an action is a POST endpoint whether or not a button
+ * was rendered, and the two ids are the only things taken from the browser. The
+ * domain re-reads both rows by owner before writing anything.
+ */
+export async function identifyEntitiesAction(input: {
+  entityId: string
+  otherId: string
+  chapter: number
+}): Promise<IdentifyActionResult> {
+  try {
+    const session = await requireOwner()
+    const result = await identifyEntities(session.userId, input)
+
+    revalidatePath(`/entite/${result.subjectId}`)
+    revalidatePath(`/entite/${result.objectId}`)
+    revalidatePath('/graph')
+    revalidatePath('/graph/table')
+    revalidatePath('/recherche')
+    revalidatePath('/histoire')
+    revalidatePath('/chronologie')
+
+    return { ok: true, result }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Rapprochement impossible.',
     }
   }
 }

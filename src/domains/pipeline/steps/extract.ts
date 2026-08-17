@@ -1,14 +1,17 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
-import { and, asc, desc, eq, lte, notInArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, lte, max, notInArray, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { pages, panels, textBlocks } from '@/db/schema/documents.ts'
 import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
 import {
+  assertions,
   entities,
   entityLabels,
   glossaryTerms,
+  mysteries,
   nodeTypes,
+  occurrences,
   predicates,
 } from '@/db/schema/knowledge.ts'
 import { chapters } from '@/db/schema/documents.ts'
@@ -391,7 +394,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
       .where(and(eq(textBlocks.chapterId, chapterId), eq(textBlocks.userId, userId)))
       .orderBy(asc(textBlocks.readingOrder))
 
-    const known = await knownEntitiesFor(db, {
+    const { entities: known, total: knownTotal } = await knownEntitiesWithin(db, {
       workId: chapter.workId,
       userId,
       chapterNumber,
@@ -452,7 +455,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         ),
       )
 
-    return { chapter, pageRows, panelRows, blockRows, known, glossary, types, preds, decisions }
+    return { chapter, pageRows, panelRows, blockRows, known, knownTotal, glossary, types, preds, decisions }
   })
 
   const table = buildRefTable({
@@ -492,7 +495,13 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
     }
   }
 
-  const knownEntities = dedupeById(world.known)
+  /*
+   * Already deduplicated and already ranked by the read above, which is why the
+   * second `dedupeById` that used to stand here is gone: it returned one row per
+   * entity a second time and dropped the `group` on the way, so the prompt got a
+   * flat list again and the ranking bought nothing.
+   */
+  const knownEntities = world.known
 
   /*
    * The other-language text, cut up the same way its counterpart was.
@@ -659,6 +668,7 @@ export async function runExtract(context: StepContext): Promise<StepResult> {
         source: context.sourceKind,
         ontology: renderOntology(world.types, world.preds),
         knownEntities,
+        knownEntitiesTotal: world.knownTotal,
         /*
          * What this chapter has already proposed, so a relation can name it.
          *
@@ -1181,11 +1191,89 @@ export function renderOntology(
  * Mysteries stay. A question is not mistakable for a character, and a chapter
  * answering one opened three hundred chapters earlier is the whole point of
  * keeping them — it is what `résout le mystère` is for.
+ *
+ * --------------------------------------------------------------------------
+ * And a third filter, which is a cap, added when the library outgrew the list.
+ *
+ * This returned *every* accepted entity visible at the chapter. At a hundred
+ * chapters that is a few hundred lines and nobody notices; at a thousand it is
+ * the cast of a thousand chapters, and the prompt block stops being a list of
+ * ids and becomes a haystack. The thing it costs is precise: the extraction was
+ * just asked to propose `same_as` when a chapter reveals who a figure was, and
+ * the figure it must find is a description written six chapters ago — one line
+ * among thousands, with no name to recognise it by. Asking for the identity and
+ * burying the candidate is asking for nothing.
+ *
+ * So the list is ordered before it is cut, in three parts, each with its own
+ * reason to be there:
+ *
+ *   `unnamed` — nodes still carrying only a provisional designation. These are
+ *   the candidates for a revelation, and the only group whose members cannot be
+ *   found any other way: a model looking for « la silhouette au sommet » has no
+ *   name to search for, and nothing downstream rescues a description. Most
+ *   recently seen first, because a silhouette from six chapters ago is a
+ *   candidate and one from four hundred is scenery.
+ *
+ *   `question` — mysteries still open. A chapter answering one opened three
+ *   hundred chapters earlier is why they are in this list at all, so they are
+ *   not ranked against the cast: an old question is not less answerable than a
+ *   recent one. Resolved ones are dropped, which is what makes the group small
+ *   enough to keep.
+ *
+ *   `other` — everyone else, ranked by when they were last on the page and then
+ *   by how connected they are. The recurring cast of the arc being read comes
+ *   first; a villager named once, four hundred chapters ago, comes last.
+ *
+ * What a cap costs, said plainly: an entity that does not make the list can be
+ * proposed a second time. That is a real cost and it is absorbed twice over,
+ * which is why the cap is acceptable here and would not be elsewhere.
+ * Publication refuses an exact twin — same normalised label, same type, same
+ * work — and attaches the chapter's facts to the row already in the graph,
+ * counted as `entitiesReused`. And the resolution step blocks on trigram
+ * similarity across *all* accepted entities, not across this list, so a near
+ * miss still raises a rapprochement. Neither of those rescues a description,
+ * which is exactly why `unnamed` is shown first and cut last.
  */
+
+/** Which part of the list a node belongs in, and why it is there. */
+export type KnownEntityGroup = 'unnamed' | 'question' | 'other'
+
+export interface KnownEntity {
+  id: string
+  label: string
+  nodeType: string
+  group: KnownEntityGroup
+}
+
+export interface KnownEntities {
+  entities: KnownEntity[]
+  /** Every entity visible at this chapter, cap or no cap. */
+  total: number
+}
+
+/**
+ * How many of each part reach the prompt.
+ *
+ * Chosen for what the prompt has to do rather than for a token budget: the
+ * block sits in the cacheable prefix, so its cost is paid once per chapter and
+ * not once per slice. `unnamed` is small because an unnamed node stops being a
+ * revelation candidate after a few chapters; `other` is the size of a
+ * long-running cast plus the arc being read.
+ */
+const SHOWN = { unnamed: 50, question: 150, other: 250 } as const
+
 export async function knownEntitiesFor(
   db: Parameters<Parameters<typeof withIngest>[0]>[0],
   scope: { workId: string; userId: string; chapterNumber: number },
 ): Promise<Array<{ id: string; label: string; nodeType: string }>> {
+  return (await knownEntitiesWithin(db, scope)).entities
+}
+
+/** The same read, with the counts the prompt needs to say what it is showing. */
+export async function knownEntitiesWithin(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  scope: { workId: string; userId: string; chapterNumber: number },
+): Promise<KnownEntities> {
   const rows = await db
     .select({
       id: entities.id,
@@ -1231,7 +1319,130 @@ export async function knownEntitiesFor(
      */
     .orderBy(desc(entityLabels.precedence), desc(entityLabels.revealedInChapter))
 
-  return dedupeById(rows)
+  const all = dedupeById(rows)
+  if (all.length === 0) return { entities: [], total: 0 }
+
+  const ranked = await rankKnown(db, scope, all)
+  return { entities: ranked, total: all.length }
+}
+
+/**
+ * The three parts, ordered and then cut.
+ *
+ * Read in one extra query rather than joined into the one above, because that
+ * one already carries a label join whose whole purpose is to pick one row per
+ * entity — adding two aggregates and a semi-join to it would make the ordering
+ * that chooses the *name* fight the ordering that chooses the *rank*. Two reads
+ * per chapter, on indexed columns, against a prompt block that is built once.
+ */
+async function rankKnown(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  scope: { workId: string; userId: string; chapterNumber: number },
+  all: Array<{ id: string; label: string; nodeType: string }>,
+): Promise<KnownEntity[]> {
+  const ids = all.map((entity) => entity.id)
+
+  const [named, open, seen, outgoing, incoming] = await Promise.all([
+    db
+      .selectDistinct({ entityId: entityLabels.entityId })
+      .from(entityLabels)
+      .where(
+        and(
+          inArray(entityLabels.entityId, ids),
+          eq(entityLabels.kind, 'true_name'),
+          lte(entityLabels.revealedInChapter, scope.chapterNumber),
+        ),
+      ),
+    db
+      .select({ entityId: mysteries.entityId })
+      .from(mysteries)
+      .where(and(inArray(mysteries.entityId, ids), eq(mysteries.state, 'open'))),
+    db
+      .select({ entityId: occurrences.entityId, last: max(occurrences.chapterNumber) })
+      .from(occurrences)
+      .where(
+        and(
+          inArray(occurrences.entityId, ids),
+          lte(occurrences.chapterNumber, scope.chapterNumber),
+        ),
+      )
+      .groupBy(occurrences.entityId),
+    db
+      .select({ entityId: assertions.subjectEntityId, n: sql<number>`count(*)::int` })
+      .from(assertions)
+      .where(
+        and(
+          inArray(assertions.subjectEntityId, ids),
+          eq(assertions.reviewStatus, 'accepted'),
+          lte(assertions.knowledgeFromChapter, scope.chapterNumber),
+        ),
+      )
+      .groupBy(assertions.subjectEntityId),
+    db
+      .select({ entityId: assertions.objectEntityId, n: sql<number>`count(*)::int` })
+      .from(assertions)
+      .where(
+        and(
+          inArray(assertions.objectEntityId, ids),
+          eq(assertions.reviewStatus, 'accepted'),
+          lte(assertions.knowledgeFromChapter, scope.chapterNumber),
+        ),
+      )
+      .groupBy(assertions.objectEntityId),
+  ])
+
+  const hasName = new Set(named.map((row) => row.entityId))
+  const openQuestion = new Set(open.map((row) => row.entityId))
+  const lastSeen = new Map(seen.map((row) => [row.entityId, Number(row.last ?? 0)]))
+
+  const degree = new Map<string, number>()
+  for (const row of [...outgoing, ...incoming]) {
+    if (row.entityId === null) continue
+    degree.set(row.entityId, (degree.get(row.entityId) ?? 0) + Number(row.n))
+  }
+
+  const groups: Record<KnownEntityGroup, KnownEntity[]> = {
+    unnamed: [],
+    question: [],
+    other: [],
+  }
+
+  for (const entity of all) {
+    const group: KnownEntityGroup = openQuestion.has(entity.id)
+      ? 'question'
+      : hasName.has(entity.id)
+        ? 'other'
+        : 'unnamed'
+    groups[group].push({ ...entity, group })
+  }
+
+  /*
+   * Recency first, and it means two different things on purpose.
+   *
+   * For a description it is « still worth revealing » — a silhouette last on the
+   * page six chapters ago is the one this chapter might name. For the cast it is
+   * « still in the story » — the arc being read before the island left behind.
+   * Degree breaks the tie in both, so a character everything connects through
+   * outranks a villager seen in the same chapter.
+   */
+  const byRecency = (a: KnownEntity, b: KnownEntity): number => {
+    const gap = (lastSeen.get(b.id) ?? 0) - (lastSeen.get(a.id) ?? 0)
+    return gap !== 0 ? gap : (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0)
+  }
+
+  groups.unnamed.sort(byRecency)
+  groups.other.sort(byRecency)
+  // Questions are not ranked against each other by recency: a mystery opened
+  // three hundred chapters ago is exactly as answerable as one opened last
+  // chapter, and that is why they are in this list. Degree alone, so a question
+  // the graph has already connected to comes first.
+  groups.question.sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))
+
+  return [
+    ...groups.unnamed.slice(0, SHOWN.unnamed),
+    ...groups.question.slice(0, SHOWN.question),
+    ...groups.other.slice(0, SHOWN.other),
+  ]
 }
 
 function dedupeById(

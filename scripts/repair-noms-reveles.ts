@@ -39,10 +39,19 @@
  *   couples et jamais des chapitres.
  *
  * Un couple dont la date est indatable est laissé tel quel, et dit pourquoi.
- * Un couple dont le nom apparaît **avant** l'entrée en scène du nœud provisoire
- * est refusé aussi : ce n'est pas une révélation mais un doublon — le lecteur
- * pouvait lire ce nom quand le nœud a été créé — et un doublon se répare
- * ailleurs, avec l'outil qui le retire du graphe.
+ *
+ * La date retenue est le **plus tard** de trois : l'apparition du nom dans les
+ * sources, et l'entrée en scène de chacun des deux nœuds. Une identité ne peut
+ * pas précéder l'un de ses bouts, sans quoi elle rapprocherait quelque chose que
+ * le lecteur n'a pas rencontré.
+ *
+ * Ce script a d'abord *refusé* les couples dont le nom était lisible dès
+ * l'entrée en scène du nœud provisoire, en les prenant pour des doublons.
+ * C'était faux et c'était le cas le plus courant : Wapol entre en scène au
+ * chapitre 131 sous la forme d'un homme debout sur l'eau, et est nommé douze
+ * pages plus loin — dans le même chapitre. La frontière n'a pas de grain plus
+ * fin que le chapitre, donc les deux nœuds sont connus ensemble et le repli au
+ * 131 ne cache rien : au 130 aucun des deux n'existe.
  *
  * Rien n'est supprimé, et une fusion se défait : la relation d'identité est un
  * fait comme un autre sur la fiche, que « ce fait est faux » retire.
@@ -209,27 +218,37 @@ async function reveal(
   }
 
   /*
-   * Une révélation vient après. Sinon, c'est un doublon.
+   * Le plus tard des trois, et jamais un refus.
    *
-   * Le nœud provisoire est daté du chapitre où le lecteur l'a rencontré sans
-   * nom. Si le nom était déjà lisible à ce chapitre-là, il n'a jamais été
-   * provisoire : deux nœuds ont été écrits pour une personne que la source
-   * nommait, et les rejoindre par un `same_as` daté laisserait le doublon
-   * visible sous ce chapitre. Ce cas se répare avec l'outil qui retire la
-   * copie, pas avec celui-ci.
+   * Une identité ne peut pas précéder l'un de ses deux bouts : datée avant
+   * l'entrée en scène du second nœud, elle rapprocherait quelque chose que le
+   * lecteur n'a pas encore rencontré, et l'union-find lirait une relation vers
+   * une entité que la politique de ligne cache encore.
+   *
+   * Ce script a d'abord *refusé* le cas où le nom est lisible dès l'entrée en
+   * scène du nœud provisoire, en le prenant pour un doublon. C'était faux, et
+   * c'était le cas le plus courant : Wapol entre en scène au chapitre 131 sous
+   * la forme d'un homme debout sur l'eau et est nommé douze pages plus loin,
+   * dans le même chapitre. La révélation tient dans un chapitre, ce qui est
+   * ordinaire — la frontière n'a pas de grain plus fin que le chapitre, donc
+   * les deux nœuds sont connus ensemble et le repli au 131 ne cache rien : au
+   * 130 aucun des deux n'existe.
+   *
+   * Rien n'est perdu du côté des vrais doublons non plus. Replier au plus tard
+   * des deux entrées laisse chaque nœud visible à tous les chapitres où il
+   * l'était, et si les deux se doublent vraiment, c'est une ligne de trop dans
+   * la composante — pas une révélation effacée.
    */
-  if (from <= provisional.firstSeen) {
-    console.log(
-      `  ! « ${provisional.label} » → « ${name} » : le nom est lisible dès le ${from}, ` +
-        `et le nœud entre en scène au ${provisional.firstSeen} — c’est un doublon, ` +
-        `pas une révélation. Non traité ici.`,
-    )
-    return
-  }
+  const chapter = Math.max(from, provisional.firstSeen, revealed?.firstSeen ?? 0)
+
+  const when =
+    chapter === provisional.firstSeen && chapter === from
+      ? `dans le chapitre ${chapter} lui-même`
+      : `à partir du ch. ${chapter}`
 
   console.log(
     `  → « ${provisional.label} » (ch. ${provisional.firstSeen}) est « ${name} » ` +
-      `à partir du ch. ${from} — ${entry.why}`,
+      `${when} — ${entry.why}`,
   )
 
   if (revealed === null) {
@@ -247,9 +266,9 @@ async function reveal(
       console.log(`      = « ${name} » déjà sur ce nœud`)
       return
     }
-    console.log(`      + « ${name} » comme vrai nom, révélé ch. ${from}`)
+    console.log(`      + « ${name} » comme vrai nom, révélé ch. ${chapter}`)
     if (dryRun) return
-    await addTrueName(sql, work, provisional.id, name, from)
+    await addTrueName(sql, work, provisional.id, name, chapter)
     bump('noms')
     return
   }
@@ -262,7 +281,7 @@ async function reveal(
     return
   }
 
-  if (revealed.revealedIn !== null && revealed.revealedIn !== from) {
+  if (revealed.revealedIn !== null && revealed.revealedIn !== chapter) {
     // Dit plutôt que corrigé : le libellé peut avoir été daté à la main, et la
     // date du texte n'est une meilleure réponse que lorsque personne n'a tranché.
     console.log(
@@ -276,9 +295,9 @@ async function reveal(
     return
   }
 
-  console.log(`      + identité datée ch. ${from}, les deux nœuds restent lisibles`)
+  console.log(`      + identité datée ch. ${chapter}, les deux nœuds restent lisibles`)
   if (dryRun) return
-  await join(sql, work, provisional.id, revealed.id, from)
+  await join(sql, work, provisional.id, revealed.id, chapter)
   bump('identités')
 }
 
