@@ -12,6 +12,7 @@ import {
   events,
 } from '@/db/schema/knowledge.ts'
 import { LABEL_PRECEDENCE } from '@/db/schema/enums.ts'
+import { renameEntityLabel } from '@/domains/knowledge/rename.ts'
 import {
   auditStorySnapshot,
   firstWrittenChapters,
@@ -486,7 +487,54 @@ export async function applyFinding(userId: string, findingId: string): Promise<A
     }
   }
 
-  const message = await withIngest(async (db) => {
+  /*
+   * Le raccourci d'un libellé passe par le renommage, et hors de la transaction
+   * des autres corrections.
+   *
+   * Hors, parce que `renameEntityLabel` ouvre la sienne et que le pool
+   * d'ingestion n'a qu'une connexion : une transaction imbriquée attendrait une
+   * connexion que la première détient, ce qui ne serait pas lent mais définitif
+   * (voir tests/db/ingest-nesting).
+   */
+  const message =
+    fix.action === 'raccourcir_libelle'
+      ? await shortenLabel(userId, findingId, fix)
+      : await writeFix(userId, findingId, fix)
+
+  if (message === null) {
+    return {
+      ok: false,
+      message: 'Rien à corriger : la ligne visée a déjà changé depuis le balayage.',
+    }
+  }
+
+  await withIngest(async (db) => {
+    await db
+      .update(auditFindings)
+      .set({ status: 'applied', decidedAt: new Date() })
+      .where(and(eq(auditFindings.id, findingId), eq(auditFindings.userId, userId)))
+  })
+
+  return { ok: true, message }
+}
+
+/**
+ * L'écriture d'une correction mécanique : une requête, journalisée.
+ *
+ * Extrait d'`applyFinding` quand une correction a cessé d'être une requête. Le
+ * raccourci d'un libellé passe par `renameEntityLabel`, qui ouvre sa propre
+ * transaction — donc il ne peut pas vivre dans celle-ci, et la lisibilité des
+ * deux moitiés y gagne : ici tout est un UPDATE, à côté rien ne l'est.
+ *
+ * Rend null quand la ligne visée n'existe plus ou a déjà changé : le balayage
+ * date, et l'appelant le dit plutôt que de prétendre avoir écrit.
+ */
+async function writeFix(
+  userId: string,
+  findingId: string,
+  fix: Exclude<AuditFix, { action: 'raccourcir_libelle' }>,
+): Promise<string | null> {
+  return withIngest(async (db) => {
     switch (fix.action) {
       case 'rejeter_entite': {
         const updated = await db
@@ -603,22 +651,53 @@ export async function applyFinding(userId: string, findingId: string): Promise<A
       }
     }
   })
+}
 
-  if (message === null) {
-    return {
-      ok: false,
-      message: 'Rien à corriger : la ligne visée a déjà changé depuis le balayage.',
-    }
-  }
-
-  await withIngest(async (db) => {
-    await db
-      .update(auditFindings)
-      .set({ status: 'applied', decidedAt: new Date() })
-      .where(and(eq(auditFindings.id, findingId), eq(auditFindings.userId, userId)))
+/**
+ * Un libellé qui raconte, ramené au nom qu'il contient.
+ *
+ * Par le renommage plutôt que par un UPDATE, parce qu'un nom n'est pas une
+ * colonne : il faut replier la ligne si l'entité porte déjà ce nom-là, garder
+ * l'ancienne formulation sous le rang d'affichage — la recherche la trouve
+ * encore, et c'est aussi ce qui fait qu'un prochain balayage ne repropose pas le
+ * constat —, réécrire les résumés qui l'épelaient, et enregistrer la forme
+ * retenue dans le glossaire pour que l'extraction des chapitres suivants la
+ * reçoive. Tout cela existe et se teste ; le refaire ici écrirait un nom sans
+ * son histoire.
+ *
+ * `renameEntityLabel` journalise déjà le renommage. La ligne écrite ici ne
+ * répète pas ce qu'il dit, elle rattache le geste au constat qui l'a proposé,
+ * comme toutes les autres corrections de cette page.
+ */
+async function shortenLabel(
+  userId: string,
+  findingId: string,
+  fix: Extract<AuditFix, { action: 'raccourcir_libelle' }>,
+): Promise<string> {
+  const result = await renameEntityLabel(userId, {
+    labelId: fix.labelId,
+    label: fix.label,
   })
 
-  return { ok: true, message }
+  await withIngest(async (db) => {
+    await db.insert(auditLog).values({
+      userId,
+      action: 'audit_label_shortened',
+      subjectKind: 'entity_label',
+      subjectId: fix.labelId,
+      detail: {
+        finding: findingId,
+        from: result.previousLabel,
+        to: result.label,
+        folded: result.folded,
+      },
+    })
+  })
+
+  return (
+    `Libellé raccourci en « ${result.label} ». L'ancienne formulation reste, ` +
+    `sans être affichée : la recherche la trouve encore.`
+  )
 }
 
 /**
