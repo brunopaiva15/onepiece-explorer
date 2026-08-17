@@ -48,7 +48,33 @@ function home(): Promise<string> {
   return scratchHome
 }
 
+/**
+ * Une seconde tentative, pour la panne qui n'a rien dit d'elle-même.
+ *
+ * `agentFailure` posait déjà `retryable` sur un CLI mort sans un mot, et le
+ * message qu'il rend affirmait « L'appel a été retenté une fois ». C'était vrai
+ * dans le bac à sable, qui lit ce drapeau, et faux ici : cette dorsale ne le
+ * lisait pas. Le balayage des mystères l'a établi sur un runner — quatre
+ * questions posées et refermées, la cinquième rencontrant un « exited with code
+ * 1 » muet, et cent vingt-six qui n'ont jamais été posées à cause d'elle. Le
+ * drapeau disait précisément que ce processus-là valait d'être relancé.
+ *
+ * Un seul rejeu, et seulement pour ce cas. Un jeton refusé, une allocation
+ * épuisée, un binaire absent, un schéma raté sont des réponses : les rejouer
+ * rendrait la même, plus lentement. Le processus fils est neuf à chaque appel,
+ * donc rien à démonter avant de recommencer — contrairement au bac à sable, qui
+ * doit d'abord lâcher sa machine.
+ */
 export async function runInline(request: AgentRequest): Promise<RawAgentResult | null> {
+  try {
+    return await attempt(request)
+  } catch (error: unknown) {
+    if (!(error instanceof ClaudeAgentError) || !error.retryable) throw error
+    return attempt(request)
+  }
+}
+
+async function attempt(request: AgentRequest): Promise<RawAgentResult | null> {
   const token = oauthToken()
   const cwd = await home()
   const payload = agentPayload(request)

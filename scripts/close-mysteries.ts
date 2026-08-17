@@ -60,7 +60,18 @@ import '../src/lib/load-env.ts'
 import { randomUUID } from 'node:crypto'
 import postgres from 'postgres'
 import { modelProvider } from '../src/domains/ai/index.ts'
+import { ClaudeAgentError } from '../src/domains/ai/claude-agent/runtime.ts'
 import { resolvingScene, scenesFor, type Scene } from '../src/domains/review/mystery-sweep.ts'
+
+/**
+ * Combien d'échecs d'affilée avant d'admettre que ce n'est pas la question.
+ *
+ * Trois, comme la page : une panne isolée se saute, une panne qui se répète est
+ * une panne du montage, et poursuivre cent trente fois contre elle ne fait que
+ * remplir un journal. Le compteur est remis à zéro par chaque succès, donc une
+ * question difficile de temps en temps n'arrête rien.
+ */
+const CONSECUTIVE_LIMIT = 3
 
 const dryRun = process.argv.includes('--dry-run')
 const limitFlag = process.argv.find((arg) => arg.startsWith('--limit='))
@@ -218,6 +229,9 @@ async function main(): Promise<void> {
   const boundaries = new Map<string, number>()
   let closed = 0
   let left = 0
+  let failed = 0
+  let consecutive = 0
+  let stopped = false
   let costCents = 0
 
   for (const question of selected) {
@@ -242,24 +256,58 @@ async function main(): Promise<void> {
       continue
     }
 
-    const result = await provider.answer({
-      question: question.question,
-      /*
-       * Des scènes, là où l'assistant passe des assertions. Le champ porte son
-       * nom parce que c'est ce que l'assistant y met ; ce que la fonction en
-       * fait est plus général — un identifiant, un chapitre, une phrase datée,
-       * et l'obligation de citer l'identifiant. Une scène est exactement cela,
-       * et c'est aussi ce qui répond à une question d'histoire : « Zoro achève
-       * Cabaji » est un événement, pas une relation.
-       */
-      context: offered.map((scene) => ({
-        assertionId: scene.entityId,
-        chapter: scene.chapter,
-        statement: scene.summary,
-        excerpt: null,
-      })),
-      boundaryChapter: boundary,
-    })
+    let result: Awaited<ReturnType<typeof provider.answer>>
+    try {
+      result = await provider.answer({
+        question: question.question,
+        /*
+         * Des scènes, là où l'assistant passe des assertions. Le champ porte son
+         * nom parce que c'est ce que l'assistant y met ; ce que la fonction en
+         * fait est plus général — un identifiant, un chapitre, une phrase datée,
+         * et l'obligation de citer l'identifiant. Une scène est exactement cela,
+         * et c'est aussi ce qui répond à une question d'histoire : « Zoro achève
+         * Cabaji » est un événement, pas une relation.
+         */
+        context: offered.map((scene) => ({
+          assertionId: scene.entityId,
+          chapter: scene.chapter,
+          statement: scene.summary,
+          excerpt: null,
+        })),
+        boundaryChapter: boundary,
+      })
+      consecutive = 0
+    } catch (error: unknown) {
+      failed++
+      consecutive++
+      console.log(`  · ch.${question.opened_in_chapter} — ${question.question}`)
+      console.log(`      échec : ${error instanceof Error ? error.message : String(error)}`)
+
+      if (condemnsTheRest(error)) {
+        console.log('')
+        console.error(
+          'Cette panne vaudra pour toutes les suivantes : le balayage s’arrête ici. ' +
+            'Les questions déjà refermées le restent ; relancez quand la cause est levée.',
+        )
+        stopped = true
+        break
+      }
+
+      if (consecutive >= CONSECUTIVE_LIMIT) {
+        console.log('')
+        console.error(
+          `${CONSECUTIVE_LIMIT} échecs de suite : le balayage s’arrête plutôt que de ` +
+            'poursuivre contre une panne qui ne passe pas. Les questions déjà refermées ' +
+            'le restent ; relancez pour reprendre les autres.',
+        )
+        stopped = true
+        break
+      }
+
+      console.log('      le balayage continue — elle reste ouverte et sera reposée.')
+      continue
+    }
+
     costCents += result.usage.costCents
 
     const verdict = result.refusal
@@ -296,9 +344,47 @@ async function main(): Promise<void> {
   console.log('')
   console.log(
     `${closed} refermée(s), ${left} laissée(s) ouverte(s)` +
+      (failed > 0 ? `, ${failed} en échec` : '') +
       (dryRun ? ' — essai à blanc : rien n’a été écrit.' : '.'),
   )
+  if (failed > 0) {
+    console.log(
+      'Les questions en échec n’ont rien changé : elles restent ouvertes et une ' +
+        'relance les reposera.',
+    )
+  }
   console.log(`Coût des appels : ${(costCents / 100).toFixed(2)} $.`)
+
+  // Un balayage qui s'est arrêté avant la fin, ou qui a laissé des questions
+  // sans réponse faute d'avoir pu demander, n'est pas un succès : le bouton des
+  // Actions doit le montrer en rouge plutôt qu'en vert.
+  if (stopped || failed > 0) process.exitCode = 1
+}
+
+/**
+ * Cette panne emporte-t-elle aussi les questions qu'on n'a pas encore posées ?
+ *
+ * La même règle que `/mysteres`, et pour la même raison — sauf qu'ici elle
+ * manquait. Le script n'avait aucun `try` autour de l'appel : la première panne,
+ * quelle qu'elle fût, emportait tout le reste. Mesuré sur un runner — quatre
+ * questions refermées, la cinquième rencontrant un CLI mort sans un mot, et
+ * cent vingt-six qui n'ont jamais été posées à cause d'elle, alors que l'erreur
+ * elle-même se déclarait `retryable`.
+ *
+ * Quatre genres condamnent la suite, et ce sont ceux qui décrivent l'accès
+ * plutôt que la requête : un jeton refusé, une allocation épuisée, un hébergeur
+ * qui ne fournit pas la machine, un hôte où Claude Code n'est pas installable.
+ * Le reste n'engage que la question rencontrée.
+ */
+function condemnsTheRest(error: unknown): boolean {
+  if (!(error instanceof ClaudeAgentError)) return false
+
+  return (
+    error.kind === 'auth' ||
+    error.kind === 'quota' ||
+    error.kind === 'billing' ||
+    error.kind === 'runtime'
+  )
 }
 
 main()
