@@ -314,6 +314,26 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Brogy',
     aliases: ['brogy', 'broggy'],
     rows: [
+      /*
+       * Le même cent millions que Dorry, et la même absence — sauf qu'ici un
+       * fichier a l'air de la combler.
+       *
+       * « Dorry & Brogy Bounty Poster.png » is in the gallery, under a
+       * canonical heading, captioned « Dorry and Brogy's first known wanted
+       * poster ». It matches on the name and then fails on the printing, twice
+       * over. The word « first » is in the caption and not in the file name,
+       * and ordinals are read from file names only — that rule is what keeps an
+       * eyecatcher off Luffy's thirty million, and it costs this row.
+       *
+       * Pinning it anyway would be the worse answer. The picture is an anime
+       * frame of the two posters overlapping, cropped so that no figure appears
+       * on it at all, and half of what it shows is Dorry: it fails the rule
+       * `file` is written under, which is that somebody opened the picture and
+       * read the number off it.
+       *
+       * So the row stays open, and « Brogy · 100 000 000 ฿ (ch. 118) » in the
+       * report is the refusal working rather than a poster going missing.
+       */
       { chapter: 118, amount: 100_000_000, edition: 1 },
       {
         chapter: 1130,
