@@ -54,6 +54,20 @@ name: Réparations (production)
 # switching to « appliquer » — it is the difference between a revelation and a
 # duplicate, and only the first belongs to this script.
 #
+# `chapitres-vides` is the only one that moves nothing between rows: it takes a
+# chapter *back*. A processing run that extracted nothing — the model refused, or
+# every proposal it made was quarantined for evidence nobody could verify — left
+# the same empty queue as a finished review, and the automatic pass read the
+# second as the first: no proposal left, therefore read to the end, therefore
+# published. Each publication released the next, so it did not stop at one
+# chapter. This un-publishes the ones already in the library and returns them to
+# the queue; the imported text is untouched, and it is what the new run reads.
+#
+# Its dry-run is the one worth reading twice: it prints every chapter it judges
+# empty, and "empty" means no review card in any state **and** no fact dated to
+# it. Both, because a chapter whose proposals were all re-applied from an earlier
+# decision has facts without having cards, and is legitimately published.
+#
 # `illustrations` is the only one that can touch the **bucket**. The others move
 # knowledge between rows; this one forgets pictures, and a picture is a row plus
 # two objects in the private bucket. So it reads three more secrets when they
@@ -139,6 +153,7 @@ on:
           - chapitres-1-42
           - chapitres-1-100
           - chapitre-1
+          - chapitres-vides
           - chronologie
           - details
           - noms
