@@ -27,6 +27,7 @@
     "repair:chapitre-1": "tsx --conditions=react-server scripts/repair-chapitre-1.ts",
     "repair:details": "tsx --conditions=react-server scripts/repair-details.ts",
     "repair:noms": "tsx --conditions=react-server scripts/repair-noms-reveles.ts",
+    "repair:chronologie": "tsx --conditions=react-server scripts/repair-chronologie.ts",
     "repair:identites": "tsx --conditions=react-server scripts/sweep-identities.ts",
     "repair:illustrations": "tsx --conditions=react-server scripts/repair-illustrations.ts",
     "repair:mysteres": "tsx --conditions=react-server scripts/close-mysteries.ts",

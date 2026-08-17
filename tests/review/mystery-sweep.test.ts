@@ -3,6 +3,7 @@ import {
   MAX_SCENES_PER_QUESTION,
   resolvingScene,
   scenesFor,
+  tellableResolution,
   type Scene,
 } from '@/domains/review/mystery-sweep.ts'
 
@@ -112,5 +113,29 @@ describe('choosing the scenes a question is weighed against', () => {
     // sweep reading the end of the story first would date resolutions late.
     expect(offered.at(-1)!.chapter).toBe(MAX_SCENES_PER_QUESTION)
     expect(dropped).toBe(25)
+  })
+})
+
+/**
+ * The half of the rule the button needed, and the script never did.
+ *
+ * A terminal prints to whoever ran the command; the page prints to a reader
+ * sitting at a chapter, and the sweep has just read four hundred chapters past
+ * them. Everything else on /mystères hides a resolution the reader has not
+ * reached — this is what stops the report of their own button from being the
+ * one place it leaks.
+ */
+describe('what the reader may be told about a resolution', () => {
+  it('names the chapter once they have read it', () => {
+    expect(tellableResolution(17, 59)).toBe(17)
+  })
+
+  it('names it on the very chapter they are on', () => {
+    expect(tellableResolution(59, 59)).toBe(59)
+  })
+
+  it('withholds a chapter they have not reached', () => {
+    // Written to the graph all the same — this is about the report, not the row.
+    expect(tellableResolution(412, 59)).toBeNull()
   })
 })

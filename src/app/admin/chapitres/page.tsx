@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getReaderSession } from '@/domains/auth/session.ts'
+import { Analyser } from './analyser.tsx'
 import { Reimport } from './reimport.tsx'
 import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts'
 import { PageTitle } from '@/app/ui/page-title.tsx'
@@ -60,9 +61,16 @@ export default async function ChaptersPage() {
       <PageTitle
         title="Chapitres"
         action={
-          <Link href="/admin/import" className="bouton bouton-primaire">
-            + Importer
-          </Link>
+          <span className="flex flex-wrap items-center gap-2">
+            {/* Deux gestes de portées différentes, côte à côte : l'un ajoute un
+                chapitre, l'autre demande si les chapitres déjà là se tiennent
+                entre eux. Le second n'est primaire qu'une fois le premier fait,
+                donc il reste discret. */}
+            <Analyser />
+            <Link href="/admin/import" className="bouton bouton-primaire">
+              + Importer
+            </Link>
+          </span>
         }
       />
 

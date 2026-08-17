@@ -429,6 +429,43 @@ empreinte des étapes : les étapes concernées se rejouent et se repaient. Fait
 le sur un chapitre avant de le faire sur cent, et comparez le coût par étape
 dans `/admin/reglages` avant et après.
 
+### Analyser toute l'histoire
+
+`/admin/chapitres` → **Analyser l'histoire**, qui mène à `/admin/analyse`.
+
+Le pipeline lit un chapitre à la fois, et c'est la bonne unité. Certains défauts
+n'existent pourtant qu'*entre* les chapitres : une attaque annoncée comme
+nouvelle trente chapitres après avoir été nommée, un nom affiché avant que la
+moindre source ne l'écrive, une révélation dont la flèche remonte le temps, la
+même scène écrite deux fois par deux passages du pipeline. Aucune relecture d'un
+seul chapitre ne peut les voir.
+
+Deux moitiés, et elles ne coûtent pas la même chose :
+
+- **Les règles**, gratuites et sans modèle. Elles pèsent toute la bibliothèque
+  d'un coup — quelques requêtes sur la base — et rendent des constats dont
+  chacun porte la correction qu'il propose, en toutes lettres. Relancez-les
+  après chaque import : un défaut qui n'existe qu'entre deux chapitres apparaît
+  quand le second arrive. Elles datent tout depuis le texte des sources, jamais
+  de mémoire, donc un nom qu'aucun chapitre n'écrit est laissé tranquille.
+- **La relecture**, un appel de modèle par chapitre. C'est la seule chose qui
+  voit une phrase simplement fausse — « Usopp devient capitaine de l'équipage »
+  est bien datée, bien reliée, et le chapitre dit le contraire. Elle avance par
+  paquets et retient ce qu'elle a lu (`audit_reads`), donc une interruption ne
+  coûte que le paquet en cours et une reprise ne repaye rien. Le coût s'affiche
+  pendant, pas seulement à la fin.
+
+Rien n'est corrigé sans un clic, et rien n'est supprimé : un doublon corrigé
+passe en « rejeté », sort du fil, et se rouvre en une requête. Ce qui demande un
+jugement — fusionner deux fiches, réécrire un fait — n'a pas de bouton ici et
+renvoie vers la fiche, qui montre ce que la décision coûte.
+
+Le pendant hors ligne est `pnpm repair:chronologie` (ou le workflow
+« Réparations », script `chronologie`) : la liste des défauts relevés à la main
+sur les chapitres 1 à 145, appliquée d'un coup. Lancez-le d'abord si votre
+bibliothèque est celle-là — il règle les quinze connus pour rien, et le balayage
+n'a plus qu'à chercher le reste.
+
 ---
 
 ## Sécurité

@@ -1,10 +1,18 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getViewerSession } from '@/domains/auth/session.ts'
+import { openQuestions, providerReads } from '@/domains/review/mystery-closing.ts'
 import { getTimeline, type TimelineEntry } from '@/domains/temporal/timeline.ts'
+import { VerifierLesMysteres } from './verifier.tsx'
 
 export const metadata: Metadata = { title: 'Mystères' }
 export const dynamic = 'force-dynamic'
+/**
+ * Le balayage tient dans cette limite parce qu'il est découpé : une question par
+ * action serveur, un appel de modèle chacune. Le tout dure des minutes, aucune
+ * invocation ne le fait.
+ */
+export const maxDuration = 300
 
 /**
  * The questions the story has opened, and the ones it has closed.
@@ -54,6 +62,25 @@ export default async function MysteriesPage({
     .filter((entry) => entry.resolvedInChapter !== null)
     .sort((a, b) => (b.resolvedInChapter ?? 0) - (a.resolvedInChapter ?? 0))
 
+  /*
+   * Le bouton n'existe que pour le propriétaire, et ce qu'il annonce est lu ici
+   * plutôt qu'au clic.
+   *
+   * Écrire dans le graphe est un geste de propriétaire — l'action le revérifie
+   * de son côté, ceci n'est que l'affichage. Le fournisseur aussi : un bouton
+   * qui dit à l'avance pourquoi il ne peut rien faire vaut mieux qu'un bouton
+   * qui échoue.
+   *
+   * Le décompte est celui de la table et non celui de la liste ci-dessus. Les
+   * deux diffèrent d'exactement les questions que l'histoire referme plus loin
+   * que le curseur : elles sont « Sans réponse » à l'écran, à raison, et il n'y
+   * a rien à leur demander. « Vérifier les 41 questions » quand le balayage en
+   * examinerait 12 serait une promesse fausse et douze fois trop chère.
+   */
+  const sweep = session.isOwner
+    ? { provider: providerReads(), questions: (await openQuestions(session.userId)).length }
+    : null
+
   return (
     <main id="contenu" className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="text-3xl font-semibold text-primary">Mystères</h1>
@@ -85,6 +112,14 @@ export default async function MysteriesPage({
             ))}
           </ul>
         </section>
+      )}
+
+      {sweep && (
+        <VerifierLesMysteres
+          boundaryChapter={session.boundaryChapter}
+          questions={sweep.questions}
+          blocked={sweep.provider.reads ? null : sweep.provider.explain}
+        />
       )}
 
       {closed.length > 0 && (
