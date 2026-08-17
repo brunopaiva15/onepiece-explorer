@@ -1,7 +1,10 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { requireOwner } from '@/domains/auth/session.ts'
+import { illustrateQuietly } from '@/domains/images/enrich.ts'
+import { postersQuietly } from '@/domains/images/posters.ts'
 import { importChapter } from '@/domains/ingestion/import.ts'
 import { IngestionRejection } from '@/domains/ingestion/limits.ts'
 import { MAX_SUMMARY_CHARS, type SummaryLanguage } from '@/domains/ingestion/passages.ts'
@@ -15,8 +18,10 @@ import {
   type FandomLanguage,
 } from '@/domains/ingestion/fandom.ts'
 import { importSummary } from '@/domains/ingestion/summary.ts'
+import { batchStatus, type BatchStatus } from '@/domains/pipeline/batch.ts'
 import { advanceQueue, clearQueue, queueForRun } from '@/domains/pipeline/queue.ts'
 import { startChapterRun } from '@/domains/pipeline/start.ts'
+import { enableAutoReview } from '@/domains/review/auto.ts'
 
 /**
  * Import a chapter from the browser.
@@ -474,18 +479,46 @@ export interface BatchActionResult {
   runId?: string
   /** The run refused to start; the chapters are stored regardless. */
   runError?: string
+  /** Echoed back: whether these chapters publish themselves. */
+  automatic?: boolean
   error?: { message: string; hint?: string }
+}
+
+export interface BatchOptions {
+  /**
+   * Process the whole lot without stopping at every chapter.
+   *
+   * What it changes is one thing, and it is not "review less": each chapter's
+   * run ends by accepting the proposals that need nobody, keeping back the ones
+   * that need a person — a name the model hesitated on, an identity question, a
+   * contradiction, a relation the ontology refuses — and opening the chapter
+   * when nothing is left. Opening a chapter is exactly the event the queue
+   * waits for, so a chapter with no open question releases the next one on its
+   * own and the lot walks itself to the end.
+   *
+   * A chapter that *does* have a question stops the chain there, on purpose.
+   * The next chapter's entity resolution compares against what is already in
+   * the graph, and the graph is missing precisely the entity the question is
+   * about; running it anyway is how one character becomes two, silently. So the
+   * queue waits, the import page says which chapter and why, and answering it
+   * starts everything again.
+   */
+  autoPublish?: boolean
 }
 
 /**
  * How much text one submission may carry.
  *
- * Twenty chapters at the per-chapter maximum would be 4.8 MB, past the 4.5 MB a
- * serverless host accepts for a whole request — and the symptom of crossing it
- * is not an error message, it is a submission that never arrives. Real chapter
- * summaries run to eight or ten thousand characters, so this ceiling is about
- * seven times a full batch of them: reachable only by pasting novels, and said
- * out loud when it is.
+ * A serverless host refuses a request past about 4.5 MB, and the symptom of
+ * crossing it is not an error message — it is a submission that never arrives.
+ * So the ceiling is on the whole batch rather than on each chapter: fifty
+ * chapters at the per-chapter maximum would be 12 MB, and nothing downstream
+ * would ever see it.
+ *
+ * 1.5 million characters is roughly 1.5 MB, comfortably inside the limit, and
+ * about three times a full batch of real summaries — those run to eight or ten
+ * thousand characters each. Reachable only by pasting novels, and said out loud
+ * when it is.
  */
 const MAX_BATCH_CHARS = 1_500_000
 
@@ -504,12 +537,20 @@ const MAX_BATCH_CHARS = 1_500_000
  * So: everything is imported, the first chapter runs now, and each of the rest
  * starts when the chapter before it is published.
  *
+ * With `autoPublish`, the publication that releases the next chapter is the run
+ * itself: it accepts what needs nobody, keeps back the questions that need a
+ * person, and opens the chapter when nothing is left proposed. The ordering
+ * above is untouched — chapters still run one at a time, in order, each against
+ * the graph the previous one wrote. What changes is who presses the button, and
+ * only for the chapters that have nothing to ask.
+ *
  * One chapter failing to import does not abort the others. They are independent
  * texts, and a batch that rolls back nine good chapters because the tenth was
  * too short would be answering a question nobody asked.
  */
 export async function importBatchAction(
   entries: BatchChapterInput[],
+  options: BatchOptions = {},
 ): Promise<BatchActionResult> {
   try {
     const session = await requireOwner()
@@ -639,6 +680,17 @@ export async function importBatchAction(
     let runError: string | undefined
 
     if (importedIds.length > 0) {
+      /*
+       * Before the queue, for the same reason the queue comes before the run.
+       *
+       * The flag is what the run reads to decide whether it publishes itself,
+       * and the first run starts inside this function. Setting it afterwards
+       * would leave the first chapter of every lot reviewing itself the manual
+       * way while the nineteen behind it did not — a difference nothing on
+       * screen would explain.
+       */
+      if (options.autoPublish) await enableAutoReview(session.userId, importedIds)
+
       await queueForRun(session.userId, importedIds)
       const advanced = await advanceQueue(session.userId)
       if (advanced.started) {
@@ -663,6 +715,7 @@ export async function importBatchAction(
       ok: outcomes.some((outcome) => outcome.ok),
       outcomes,
       queuedCount: outcomes.filter((outcome) => outcome.queued).length,
+      automatic: options.autoPublish === true,
       ...(runId ? { runId } : {}),
       ...(runError ? { runError } : {}),
     }
@@ -713,6 +766,106 @@ export async function advanceQueueAction(): Promise<{
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Démarrage impossible.',
+    }
+  }
+}
+
+export interface QueueTickResult extends BatchStatus {
+  ok: boolean
+  /** Set when this tick launched a chapter. */
+  started?: { runId: string; chapterNumber: number }
+  /** The queue refused to advance — the hourly ceiling, usually. */
+  error?: string
+}
+
+/**
+ * One step of the chain, called on a timer by the page that shows the queue.
+ *
+ * The queue advances on a publication, and a chapter that reviews itself
+ * publishes itself — so in principle nothing needs calling at all. In practice
+ * one thing does, and it is the platform rather than the design: the pipeline
+ * runs inside the invocation that started it, under that route's `maxDuration`.
+ * Chaining chapter after chapter inside one invocation would mean the ceiling
+ * lands in the middle of whichever chapter happens to be running when the five
+ * minutes are up, killing it with no chance to record a failure. One chapter
+ * per invocation is the shape that never does that, and a tick from the open
+ * page is what buys each chapter its own.
+ *
+ * Everything that decides *whether* to advance is on this side, because a
+ * client that has been left open for an hour must not be able to start a run by
+ * asking twice:
+ *
+ *   Nothing starts while something is running. The next chapter's resolution
+ *   compares against a graph the running one has not written to yet.
+ *
+ *   Nothing starts while a chapter of the batch is waiting on a person. That is
+ *   the case the ordering exists for — the entity the question is about is
+ *   exactly what the next chapter would be matched against.
+ *
+ *   The claim itself is a conditional update (`advanceQueue`), so two tabs
+ *   ticking together still take one chapter each at most, never the same one
+ *   twice.
+ */
+export async function queueTickAction(): Promise<QueueTickResult> {
+  try {
+    const session = await requireOwner()
+    const status = await batchStatus(session.userId)
+
+    if (status.queued === 0) {
+      /*
+       * The pictures, once, at the end of the lot.
+       *
+       * A manual publication illustrates on its way out; a chapter that
+       * publishes itself had nobody to do it, so a batch of twenty would open
+       * twenty chapters and leave every character faceless. Here rather than in
+       * the run because the sweep is over the whole library either way —
+       * running it per chapter would repeat the same work twenty times for the
+       * same result — and because it must not sit inside the invocation the
+       * next chapter's run is trying to fit into.
+       *
+       * On the tick that finds the queue empty and nothing waiting, which is
+       * the tick the watcher stops on: once per lot, not once per poll.
+       */
+      if (status.running === null && status.blocked === null) {
+        after(() => illustrateQuietly(session.userId))
+        after(() => postersQuietly(session.userId))
+      }
+      return { ok: true, ...status }
+    }
+    if (status.running !== null || status.blocked !== null) {
+      return { ok: true, ...status }
+    }
+
+    const advanced = await advanceQueue(session.userId)
+
+    if (advanced.error) {
+      return { ok: false, ...status, error: advanced.error }
+    }
+    if (!advanced.started) {
+      // Claimed by another tab between the read and the write. Nothing to
+      // report and nothing wrong: the next tick sees it as `running`.
+      return { ok: true, ...status }
+    }
+
+    revalidatePath('/admin/import')
+    revalidatePath('/admin/chapitres')
+
+    return {
+      ok: true,
+      ...(await batchStatus(session.userId)),
+      started: {
+        runId: advanced.started.runId,
+        chapterNumber: advanced.started.number,
+      },
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      queued: 0,
+      automatic: false,
+      running: null,
+      blocked: null,
+      error: error instanceof Error ? error.message : 'Opération impossible.',
     }
   }
 }

@@ -4,7 +4,7 @@ import { withIngest } from '@/db/boundary.ts'
 import { chapters, documents, pages } from '@/db/schema/documents.ts'
 import { ingestionRuns } from '@/db/schema/ingestion.ts'
 import { isProviderChoice, modelProvider, type ProviderChoice } from '@/domains/ai/index.ts'
-import { autoReview, autoReviewEnabled, autoReviewNote } from '@/domains/review/auto.ts'
+import { autoReview, autoReviewNote, autoReviewsChapter } from '@/domains/review/auto.ts'
 import { runnableSteps, stepsFor, type StepKey } from './registry.ts'
 import {
   inputHash,
@@ -182,17 +182,23 @@ export async function executeRun(
  * needs to be able to check afterwards is what was accepted without them.
  */
 async function runAutoPublish(context: StepContext): Promise<StepResult> {
-  if (!autoReviewEnabled()) {
+  if (!(await autoReviewsChapter(context.userId, context.chapterId))) {
     return {
       note:
         'Revue manuelle : chaque proposition attend une décision. ' +
-        'AUTO_REVIEW_NAMES_ONLY=1 pour ne garder que les questions de nom.',
+        'Un import par lot peut demander la publication automatique ; ' +
+        'AUTO_REVIEW_NAMES_ONLY=1 la met sur toute la bibliothèque.',
       status: 'skipped',
     }
   }
 
   const result = await autoReview(context.userId, context.runId)
-  if (result.accepted === 0 && result.heldForNaming === 0 && result.deferred === 0) {
+  if (
+    result.accepted === 0 &&
+    result.heldForNaming === 0 &&
+    result.deferred === 0 &&
+    result.chapterOpened === null
+  ) {
     return { note: 'Aucune proposition en attente.', status: 'skipped' }
   }
   return { note: autoReviewNote(result) }

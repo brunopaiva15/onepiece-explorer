@@ -1,9 +1,15 @@
 import 'server-only'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
-import { reviewItems } from '@/db/schema/ingestion.ts'
+import { chapters } from '@/db/schema/documents.ts'
+import { ingestionRuns, reviewItems } from '@/db/schema/ingestion.ts'
 import { mismatchOf, resolveNodeTypes } from './queue.ts'
-import { publishDecisions, type Decision, type PublishResult } from './publish.ts'
+import {
+  markChapterReviewed,
+  publishDecisions,
+  type Decision,
+  type PublishResult,
+} from './publish.ts'
 
 /**
  * Decide everything a name does not depend on, and leave the names.
@@ -24,12 +30,20 @@ import { publishDecisions, type Decision, type PublishResult } from './publish.t
  * assertion keeps its evidence, the boundary still dates it by revelation, and
  * a mistake is visible on the entity's own sheet and reversible from it.
  *
- * Off unless asked for, and asked for in configuration rather than in code. The
- * test suite encodes the opposite guarantee — a run produces proposals, not
- * canon — as blocking anti-spoiler scenarios, and a product default that made
- * twenty of them fail would not be a feature, it would be the guarantee quietly
- * withdrawn. `AUTO_REVIEW_NAMES_ONLY=1` is one line in an environment, states
- * exactly what it does, and is as easy to take back.
+ * Off unless asked for, and asked for per chapter or in configuration rather
+ * than in code. The test suite encodes the opposite guarantee — a run produces
+ * proposals, not canon — as blocking anti-spoiler scenarios, and a product
+ * default that made twenty of them fail would not be a feature, it would be the
+ * guarantee quietly withdrawn.
+ *
+ * Two ways to ask, and they mean different things. `AUTO_REVIEW_NAMES_ONLY=1`
+ * is the whole instance, one line in an environment, as easy to take back.
+ * `chapters.auto_review` is one import saying so: a batch of twenty asked to
+ * run to the end without stopping at every chapter, while the single chapter
+ * you paste tomorrow still arrives as a queue of proposals. The second is the
+ * one the batch form sets, because "catch up on a hundred chapters" and "read
+ * the one that came out this week" are not the same act and should not be the
+ * same setting.
  *
  * Two things this must get right, both about ordering rather than policy:
  *
@@ -57,6 +71,73 @@ export function autoReviewEnabled(): boolean {
   return process.env.AUTO_REVIEW_NAMES_ONLY === '1'
 }
 
+/**
+ * Whether this chapter reviews itself: the instance says so, or its import did.
+ *
+ * The environment flag is checked first and without a query, so an instance
+ * running in that mode costs nothing extra per run.
+ */
+export async function autoReviewsChapter(
+  userId: string,
+  chapterId: string,
+): Promise<boolean> {
+  if (autoReviewEnabled()) return true
+
+  return withIngest(async (db) => {
+    const [row] = await db
+      .select({ autoReview: chapters.autoReview })
+      .from(chapters)
+      .where(and(eq(chapters.id, chapterId), eq(chapters.userId, userId)))
+      .limit(1)
+    return row?.autoReview ?? false
+  })
+}
+
+/**
+ * The same question asked from a run.
+ *
+ * The review centre holds a run id and never a chapter id, and the answer has
+ * to be the chapter's: publishing an answer to the one held name must release
+ * the rest for a chapter imported automatically, and must release nothing for a
+ * chapter someone chose to read card by card.
+ */
+export async function autoReviewsRun(userId: string, runId: string): Promise<boolean> {
+  if (autoReviewEnabled()) return true
+
+  return withIngest(async (db) => {
+    const [row] = await db
+      .select({ autoReview: chapters.autoReview })
+      .from(ingestionRuns)
+      .innerJoin(chapters, eq(chapters.id, ingestionRuns.chapterId))
+      .where(and(eq(ingestionRuns.id, runId), eq(ingestionRuns.userId, userId)))
+      .limit(1)
+    return row?.autoReview ?? false
+  })
+}
+
+/**
+ * Mark chapters as reviewing themselves.
+ *
+ * Written at import, before anything is queued: the run reads the flag, and a
+ * run that started a moment before the flag was set would review the chapter
+ * the other way round with nothing to explain it.
+ */
+export async function enableAutoReview(
+  userId: string,
+  chapterIds: string[],
+): Promise<number> {
+  if (chapterIds.length === 0) return 0
+
+  return withIngest(async (db) => {
+    const updated = await db
+      .update(chapters)
+      .set({ autoReview: true, updatedAt: new Date() })
+      .where(and(eq(chapters.userId, userId), inArray(chapters.id, chapterIds)))
+      .returning({ id: chapters.id })
+    return updated.length
+  })
+}
+
 export interface AutoReviewResult {
   /** Proposals accepted without a human reading them. */
   accepted: number
@@ -71,6 +152,22 @@ export interface AutoReviewResult {
   /** Categories publication cannot apply, parked rather than accepted. */
   deferred: number
   published: PublishResult | null
+  /**
+   * The chapter this pass opened without publishing anything.
+   *
+   * A run can legitimately queue nothing at all: every proposal it made was
+   * already decided under the same fingerprint — a re-import, or a chapter
+   * whose content repeats one you have answered — so extraction re-applies the
+   * decisions and leaves an empty queue. Nothing to publish is not nothing to
+   * do: "no proposal left" is the exact condition for a chapter being read to
+   * the end, and without this the chapter stayed in review for ever and a lot
+   * chaining on publications stopped dead at it, with nothing on screen naming
+   * the reason.
+   *
+   * Null when a publication opened it instead — `published.chapterPublished`
+   * carries that one — or when it is not open.
+   */
+  chapterOpened: number | null
 }
 
 interface Pending {
@@ -114,9 +211,13 @@ export async function autoReview(
     heldByTypes: 0,
     deferred: 0,
     published: null,
+    chapterOpened: null,
   }
 
-  if (pending.length === 0) return result
+  if (pending.length === 0) {
+    result.chapterOpened = await markChapterReviewed(userId, runId)
+    return result
+  }
 
   /*
    * Relations the ontology cannot express as written.
@@ -243,9 +344,34 @@ export async function autoReview(
     result.accepted++
   }
 
-  if (decisions.length === 0) return result
+  /*
+   * Nothing to accept is still an answer about the chapter.
+   *
+   * Either everything left is held for a person — in which case the rule finds
+   * proposals outstanding and opens nothing, which is right — or what remained
+   * was deferred, and a chapter whose last cards were parked has been read to
+   * the end as surely as one whose cards were accepted.
+   */
+  if (decisions.length === 0) {
+    result.chapterOpened = await markChapterReviewed(userId, runId)
+    return result
+  }
 
   result.published = await publishDecisions(userId, runId, decisions)
+
+  /*
+   * The same sweep after publishing, for the run whose decisions all failed.
+   *
+   * `publishDecisions` opens the chapter itself when its own batch leaves
+   * nothing proposed. It cannot when every decision landed in `failures`: those
+   * items keep their `proposed` status, so the chapter is legitimately not
+   * open — and this call finds the same thing and writes nothing. It matters
+   * for the case in between, where a deferred item was the last card.
+   */
+  if (result.published.chapterPublished === null) {
+    result.chapterOpened = await markChapterReviewed(userId, runId)
+  }
+
   return result
 }
 
@@ -282,6 +408,8 @@ export function autoReviewNote(result: AutoReviewResult): string {
   }
   if (result.published?.chapterPublished !== null && result.published !== null) {
     parts.push(`chapitre ${result.published.chapterPublished} ouvert`)
+  } else if (result.chapterOpened !== null) {
+    parts.push(`chapitre ${result.chapterOpened} ouvert — rien ne restait à décider`)
   }
 
   return parts.join(' · ')

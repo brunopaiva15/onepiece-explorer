@@ -2,7 +2,7 @@ import 'server-only'
 import { and, eq, inArray, lte, ne, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
 import { chapters } from '@/db/schema/documents.ts'
-import { reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
+import { ingestionRuns, reviewDecisions, reviewItems } from '@/db/schema/ingestion.ts'
 import {
   assertions,
   auditLog,
@@ -1403,10 +1403,21 @@ export async function markChapterReviewed(
   runId: string,
 ): Promise<number | null> {
   return withIngest(async (db) => {
+    /*
+     * The chapter is read off the run, not off its proposals.
+     *
+     * This asked `review_items` which chapter the run was about, which answers
+     * for every run that queued something and answers *nothing* for the one
+     * case where the question matters most: a run whose extraction proposed
+     * only things already decided under the same fingerprint re-applies those
+     * decisions and queues no card at all. No row, no chapter id, no opening —
+     * a chapter that had asked nothing stayed in review for ever, and a lot
+     * chaining on openings stopped dead on it.
+     */
     const [run] = await db
-      .select({ chapterId: reviewItems.chapterId })
-      .from(reviewItems)
-      .where(and(eq(reviewItems.runId, runId), eq(reviewItems.userId, userId)))
+      .select({ chapterId: ingestionRuns.chapterId })
+      .from(ingestionRuns)
+      .where(and(eq(ingestionRuns.id, runId), eq(ingestionRuns.userId, userId)))
       .limit(1)
     if (!run) return null
     return openIfReviewed(db, userId, run.chapterId)

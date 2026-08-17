@@ -203,13 +203,18 @@ export async function fetchChapterSummaries(
 /**
  * How many chapters one range may ask for.
  *
- * Not a performance limit — the wiki answers a chapter in well under a second.
- * It is a limit on how much prose a person is agreeing to store without having
- * read it. Twenty chapters is a volume and a half, already more than anyone
- * proof-reads in one sitting; a field that accepted "1 to 1100" would turn a
- * typo into a library.
+ * Not a performance limit — the wiki answers a chapter in well under a second,
+ * and fifty at three in flight is under a minute.
+ *
+ * It used to be twenty, and the reasoning was that these are texts a person
+ * reads before agreeing to store them: past twenty, nobody does. That was true
+ * of the only mode there was. A lot imported to process and publish itself is
+ * a different act — catching up on five volumes, where the reading happens
+ * afterwards on the chapters that ask something. Fifty is five volumes and a
+ * round number of an afternoon's spend; a field that accepted "1 to 1100" would
+ * still turn a typo into a library.
  */
-export const MAX_RANGE_LENGTH = 20
+export const MAX_RANGE_LENGTH = 50
 
 /** How many chapters are in flight at once. Six requests each, so: politely. */
 const RANGE_CONCURRENCY = 3
@@ -254,8 +259,8 @@ export async function fetchChapterRange(
   if (length > MAX_RANGE_LENGTH) {
     throw new FandomError(
       `${length} chapitres d’un coup, au-delà des ${MAX_RANGE_LENGTH} autorisés. ` +
-        'Ce sont des textes que vous allez relire avant de les stocker : ' +
-        'au-delà, personne ne les relit.',
+        'Découpez l’intervalle : un lot reste quelque chose dont vous voyez le ' +
+        'contenu avant de le stocker.',
     )
   }
 

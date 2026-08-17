@@ -123,6 +123,18 @@ export const chapters = pgTable(
      * and propose the same character nine extra times. See migration 0021.
      */
     queuedForRun: boolean('queued_for_run').notNull().default(false),
+    /**
+     * Imported to be processed and published without a stop.
+     *
+     * A batch of twenty is twenty runs and, until now, twenty visits to the
+     * review centre — eighty-six cards each — before the next chapter would
+     * even start, because the queue only ever advanced on a publication and a
+     * publication was something only a human did. This column is the answer,
+     * and it is per-chapter rather than global on purpose: a chapter imported
+     * on its own keeps the manual path it was imported under, whatever a later
+     * batch asked for. See migration 0029.
+     */
+    autoReview: boolean('auto_review').notNull().default(false),
     pageCount: integer('page_count').notNull().default(0),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })

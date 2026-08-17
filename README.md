@@ -193,10 +193,10 @@ Le champ accepte une URL par confort, mais aucune requête n'en est construite �
 seuls ses chiffres sont lus, et les points d'entrée sont des constantes. Le texte
 récupéré reste modifiable avant l'import, et l'écrire soi-même reste possible.
 
-**Jusqu'à vingt chapitres d'un coup, traités un par un.** Un intervalle est
+**Jusqu'à cinquante chapitres d'un coup, traités un par un.** Un intervalle est
 récupéré en une fois et vous le relisez en une fois ; en revanche le premier
-chapitre seul démarre son traitement, et **chacun des suivants démarre à la
-publication du précédent**. Ce n'est pas de la prudence : le rapprochement des
+chapitre seul démarre son traitement, et **chacun des suivants démarre à
+l'ouverture du précédent**. Ce n'est pas de la prudence : le rapprochement des
 entités ne compare une proposition qu'à ce qui est déjà dans le graphe, et seule
 une publication y met quelque chose. Les noms identiques se rejoindraient de
 toute façon à la publication ; ce qu'un lot traité en parallèle perd, c'est tout
@@ -204,6 +204,18 @@ ce qui est plus faible qu'un nom exact — « l'homme au tablier de cuir » au
 chapitre 12 et « Kaelo Renn » au 13 deviendraient deux entités, et la question
 ne serait jamais posée. La file est visible sur `/admin/import`, avec de quoi la
 forcer ou l'abandonner ([ADR 0010](docs/adr/0010-a-batch-is-a-queue.md)).
+
+**Le lot peut se dérouler tout seul.** Une case, cochée par défaut, demande que
+chaque chapitre accepte ce qui ne demande personne, garde ce qui demande
+quelqu'un — un nom dont le modèle n'est pas sûr, une identité, une contradiction,
+une relation que l'ontologie refuse — et **s'ouvre quand il ne reste rien**, ce
+qui libère le suivant. Un chapitre qui pose une vraie question arrête la chaîne à
+cet endroit, et la page nomme lequel et pourquoi : y répondre relance tout.
+Gardez `/admin/import` ouvert pendant un lot — c'est de là que part le tic qui
+donne à chaque chapitre son propre traitement, et fermer la page met le lot en
+pause entre deux chapitres, jamais au milieu d'un. Décochée, chaque chapitre
+attend votre relecture complète, comme avant
+([ADR 0013](docs/adr/0013-a-lot-that-walks-itself.md)).
 
 Si vous avez le chapitre dans les deux langues, collez la seconde version au
 même endroit : elle est fournie au modèle **pour les noms seulement**. La mise
@@ -884,6 +896,8 @@ const graphe = await withBoundary(
   une image n'est jamais une source, et pourquoi elle attend son nom
 - [Un lot est une file](docs/adr/0010-a-batch-is-a-queue.md) — pourquoi dix
   chapitres s'importent ensemble et se traitent un par un
+- [Un lot qui se déroule tout seul](docs/adr/0013-a-lot-that-walks-itself.md) —
+  qui publie, et où la chaîne s'arrête exprès
 - [Une illustration porte sa période](docs/adr/0011-a-portrait-carries-the-period-it-shows.md)
   — pourquoi le visage d'après l'ellipse attend le chapitre 598
 - [Importer depuis votre machine](docs/importer-en-local.md) — la marche à

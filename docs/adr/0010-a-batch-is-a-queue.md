@@ -1,6 +1,9 @@
 # ADR 0010 — Un import en lot est une file, pas un lancement groupé
 
 **Statut :** accepté · **Date :** 2026-08-13 · **Prolonge :** l'ADR 0009.
+**Prolongé par :** l'[ADR 0013](0013-a-lot-that-walks-itself.md), qui répond à
+« qui publie » — le traitement peut le faire lui-même — et porte le lot de vingt
+à cinquante chapitres. L'ordre décidé ici est inchangé.
 
 ## Contexte
 

@@ -16,7 +16,7 @@ import {
 } from './actions.ts'
 
 /**
- * Ten chapters, fetched together and processed in order.
+ * A run of chapters, fetched together and processed in order.
  *
  * The screen is built around the one thing that would otherwise be invisible:
  * these chapters do not all run now. The first one does; the rest wait for the
@@ -25,8 +25,15 @@ import {
  * chapter later is a question only it can raise. Told once, plainly, next to the
  * button — not discovered later from a queue that seems stuck.
  *
- * What comes back from the wiki is shown as text you can still correct. Ten
- * chapters is more than anyone reads word by word, so the figures do the
+ * Who publishes is the second thing, and it is a choice on this screen. Left
+ * ticked, each chapter accepts what needs nobody, keeps back what needs a
+ * person, and opens itself when nothing is left — so the lot walks itself to
+ * the end and stops only where a real question is. Unticked, every chapter
+ * waits for a full read-through, which is the older behaviour and the right one
+ * for a handful of chapters you mean to study.
+ *
+ * What comes back from the wiki is shown as text you can still correct. Fifty
+ * chapters is far more than anyone reads word by word, so the figures do the
  * reading: characters, passages, whether the naming aid arrived. A chapter with
  * nothing behind it says so and is simply not submitted.
  */
@@ -68,6 +75,14 @@ export function BatchForm({ suggestedNumber }: { suggestedNumber: number }) {
   const [result, setResult] = useState<BatchActionResult | null>(null)
   const [fetching, startFetching] = useTransition()
   const [importing, startImporting] = useTransition()
+  /*
+   * On by default, because of what a lot is for.
+   *
+   * Nobody fetches twenty chapters at once to read eighty-six review cards
+   * twenty times over; they are catching up. Off is still one click away, and
+   * it is the right click for a run of chapters you intend to read closely.
+   */
+  const [autoPublish, setAutoPublish] = useState(true)
 
   const fromId = useId()
   const toId = useId()
@@ -118,6 +133,7 @@ export function BatchForm({ suggestedNumber }: { suggestedNumber: number }) {
             : {}),
           ...(entry.language ? { language: entry.language } : {}),
         })),
+        { autoPublish },
       )
       setResult(outcome)
       if (outcome.ok) setEntries(null)
@@ -136,7 +152,7 @@ export function BatchForm({ suggestedNumber }: { suggestedNumber: number }) {
         <p className="mt-1 max-w-2xl text-sm text-secondary">
           Jusqu’à {MAX_RANGE_LENGTH} d’un coup. Ils sont tous stockés&nbsp;; le
           premier est traité tout de suite et <strong>chacun des suivants démarre
-          à la publication du précédent</strong>. C’est ce qui permet au chapitre
+          à l’ouverture du précédent</strong>. C’est ce qui permet au chapitre
           13 de vous demander si « Kaelo Renn » est l’homme au tablier de cuir
           rencontré au 12. La question ne se pose qu’une fois, et seulement
           contre ce qui est déjà dans le graphe.
@@ -203,6 +219,38 @@ export function BatchForm({ suggestedNumber }: { suggestedNumber: number }) {
             ))}
           </ul>
 
+          {/*
+            * The one choice that decides how the rest of the afternoon goes.
+            *
+            * Next to the button rather than in the header, because it changes
+            * what the button does. What it does *not* change is stated in the
+            * same breath: the order is untouched, and the questions a model
+            * cannot answer still come back to you.
+            */}
+          <label className="mt-4 flex items-start gap-3 border-[3px] border-ink bg-surface-raised p-3">
+            <input
+              type="checkbox"
+              checked={autoPublish}
+              onChange={(event) => setAutoPublish(event.target.checked)}
+              className="mt-1 accent-[var(--accent)]"
+            />
+            <span className="text-sm text-secondary">
+              <strong className="text-primary">
+                Traiter et publier le lot tout seul.
+              </strong>{' '}
+              Chaque chapitre accepte ce qui ne demande personne, garde les
+              questions qui en demandent une — un nom dont le modèle n’est pas
+              sûr, une identité, une contradiction — et s’ouvre quand il ne
+              reste rien&nbsp;: le suivant démarre alors sans vous. Un chapitre
+              qui pose une question arrête la chaîne à cet endroit&nbsp;; cette
+              page vous dit lequel et pourquoi, et y répondre relance tout.
+              <span className="mt-1 block text-muted">
+                Décoché, chaque chapitre attend votre relecture complète, comme
+                avant.
+              </span>
+            </span>
+          </label>
+
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <button
               type="button"
@@ -218,7 +266,9 @@ export function BatchForm({ suggestedNumber }: { suggestedNumber: number }) {
               <p className="text-sm text-muted">
                 Le {selected[0]!.chapterNumber} est traité maintenant
                 {selected.length > 1 &&
-                  `, les ${selected.length - 1} autres à la publication du précédent`}
+                  (autoPublish
+                    ? `, puis les ${selected.length - 1} autres à la suite, sans intervention tant qu’aucun ne pose de question`
+                    : `, les ${selected.length - 1} autres à la publication du précédent`)}
                 .
               </p>
             )}
@@ -403,8 +453,13 @@ function BatchOutcome({ result }: { result: BatchActionResult }) {
       )}
 
       <p className="mt-3 text-sm text-muted">
-        Chaque chapitre en attente démarre à la publication du précédent. Rien
-        n’entre dans le graphe sans votre accord, comme pour un import unique.
+        {result.automatic
+          ? 'Chaque chapitre s’ouvre dès qu’il n’a plus rien à demander, et libère ' +
+            'le suivant. Gardez cette page ouverte : c’est elle qui donne à chaque ' +
+            'chapitre son propre traitement. Ce qui a besoin de vous vous est ' +
+            'rendu, chapitre par chapitre.'
+          : 'Chaque chapitre en attente démarre à la publication du précédent. Rien ' +
+            'n’entre dans le graphe sans votre accord, comme pour un import unique.'}
       </p>
     </div>
   )

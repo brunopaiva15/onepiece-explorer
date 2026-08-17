@@ -40,12 +40,13 @@ const LIMITS: Record<LimitedAction, Limit> = {
       'accidentelle dépenserait.',
   },
   start_run: {
-    max: 30,
+    max: 60,
     windowMinutes: 60,
     explain:
-      'Un traitement de chapitre est la dépense la plus lourde du système. Trente ' +
-      "par heure permet d'importer un tome d'affilée sans permettre à un script " +
-      'de traiter la même chose en boucle.',
+      'Un traitement de chapitre est la dépense la plus lourde du système. Soixante ' +
+      "par heure laisse un lot de cinquante s'enchaîner tout seul, avec de la marge " +
+      "pour les relances, sans permettre à un script de traiter la même chose en " +
+      'boucle.',
   },
   export: {
     max: 10,

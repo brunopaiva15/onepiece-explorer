@@ -41,6 +41,8 @@ export interface QueuedChapter {
   id: string
   number: number
   title: string | null
+  /** True when this chapter will publish itself and release the next one. */
+  autoReview: boolean
 }
 
 /**
@@ -66,7 +68,12 @@ export async function queueForRun(userId: string, chapterIds: string[]): Promise
 export async function queuedChapters(userId: string): Promise<QueuedChapter[]> {
   return withIngest(async (db) =>
     db
-      .select({ id: chapters.id, number: chapters.number, title: chapters.title })
+      .select({
+        id: chapters.id,
+        number: chapters.number,
+        title: chapters.title,
+        autoReview: chapters.autoReview,
+      })
       .from(chapters)
       .where(and(eq(chapters.userId, userId), eq(chapters.queuedForRun, true)))
       .orderBy(asc(chapters.number)),

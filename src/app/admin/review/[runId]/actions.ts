@@ -7,7 +7,7 @@ import { illustrateQuietly } from '@/domains/images/enrich.ts'
 import { postersQuietly } from '@/domains/images/posters.ts'
 import { advanceQueue } from '@/domains/pipeline/queue.ts'
 import { reopenItems } from '@/domains/review/reopen.ts'
-import { autoReview, autoReviewEnabled } from '@/domains/review/auto.ts'
+import { autoReview, autoReviewsRun } from '@/domains/review/auto.ts'
 import {
   markChapterReviewed,
   mergePublishResults,
@@ -54,11 +54,25 @@ export async function publishDecisionsAction(
      * them publishable, so the same pass runs again on the way out rather than
      * leaving them in a queue nothing will come back to.
      */
-    const swept = autoReviewEnabled() ? await autoReview(session.userId, runId) : null
+    const swept = (await autoReviewsRun(session.userId, runId))
+      ? await autoReview(session.userId, runId)
+      : null
 
     const result = swept?.published
       ? mergePublishResults(published, swept.published)
       : published
+
+    /*
+     * The sweep can open the chapter without publishing anything.
+     *
+     * It happens when the last cards left were ones publication cannot apply
+     * and the pass parked them: nothing was published, and yet nothing is
+     * proposed either, which is the definition of a chapter read to the end.
+     * Read here so that everything below — the pictures, and the next chapter
+     * of a lot — happens on that opening too, rather than only on the ones a
+     * publication caused.
+     */
+    const opened = result.chapterPublished ?? swept?.chapterOpened ?? null
 
     /*
      * A chapter that has just become readable, illustrated on the way out.
@@ -68,7 +82,7 @@ export async function publishDecisionsAction(
      * wait for it. Only when the chapter actually opened — publishing a batch
      * mid-review would run it several times over the same entities for nothing.
      */
-    if (result.chapterPublished !== null) {
+    if (opened !== null) {
       // No revalidation on the way out: /graph is force-dynamic, so the next
       // visit reads the pictures this just stored.
       after(() => illustrateQuietly(session.userId))
