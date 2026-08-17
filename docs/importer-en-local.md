@@ -104,7 +104,7 @@ DIRECT_URL=postgresql://postgres.abcdefgh:MOT_DE_PASSE@aws-0-eu-central-1.pooler
 | `SUPABASE_SERVICE_ROLE_KEY` | **indispensable** : c'est elle qui écrit dans le bucket |
 | `DATABASE_URL` | lectures (pooler, port 6543) |
 | `DIRECT_URL` | migrations, worker, pipeline (pooler mode session, port 5432) |
-| `ANTHROPIC_API_KEY` | extraction |
+| `CLAUDE_CODE_OAUTH_TOKEN` | extraction, via l'abonnement Claude Max (`claude setup-token`) |
 
 ### Le mot de passe de la base, et les trois caractères qui cassent tout
 

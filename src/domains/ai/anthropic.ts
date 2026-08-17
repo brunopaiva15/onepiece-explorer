@@ -14,10 +14,13 @@ import {
   extractionSystem,
   glossaryList,
   knownEntitiesList,
+  panelDescriptionList,
   parallelText,
+  proposedSoFarList,
   refList,
   resolutionSystem,
   summarySystem,
+  textBlockList,
   transcriptionSystem,
   untrusted,
 } from './prompts.ts'
@@ -231,18 +234,7 @@ export class AnthropicProvider implements ModelProvider {
 
     const settled = glossaryList(request.glossary)
 
-    /*
-     * A passage is labelled by its ref alone; a bubble says which panel it sits
-     * in. Telling a model reading prose that a paragraph is "hors case" would
-     * be describing a page layout that does not exist.
-     */
-    const blocks = request.textBlocks
-      .map((b) =>
-        request.source === 'summary'
-          ? `[${b.ref}] ${b.text}`
-          : `[${b.ref}${b.panelRef ? ` dans ${b.panelRef}` : ' hors case'}] ${b.text}`,
-      )
-      .join('\n\n')
+    const blocks = textBlockList(request.textBlocks, request.source)
 
     const result = await this.structured({
       tier: 'extract',
@@ -270,27 +262,14 @@ export class AnthropicProvider implements ModelProvider {
          * feature.
          */
         ...(request.proposedSoFar && request.proposedSoFar.length > 0
-          ? [
-              {
-                type: 'text' as const,
-                text: [
-                  'Entités déjà proposées pour ce chapitre, dans les passages précédents.',
-                  'Elles ne sont pas encore validées : ne les reproposez pas, mais',
-                  'servez-vous de leur identifiant tel quel pour écrire une relation',
-                  'qui les nomme.',
-                  ...request.proposedSoFar.map(
-                    (e) => `  - ${e.id} · ${e.nodeType} · « ${e.label} »`,
-                  ),
-                ].join('\n'),
-              },
-            ]
+          ? [{ type: 'text' as const, text: proposedSoFarList(request.proposedSoFar) }]
           : []),
         { type: 'text', text: refList(request.allowedRefs) },
         // Omitted rather than sent empty when there are no panels: the API
         // rejects an empty text block, and "Cases :" followed by nothing is
         // an invitation to describe cases that were never supplied.
         ...(request.descriptions.length > 0
-          ? [{ type: 'text' as const, text: describePanelsForPrompt(request.descriptions) }]
+          ? [{ type: 'text' as const, text: panelDescriptionList(request.descriptions) }]
           : []),
         {
           type: 'text',
@@ -624,25 +603,6 @@ function imageBlocks(images: ImageInput[]): ContentBlockParam[] {
   ])
 }
 
-function describePanelsForPrompt(descriptions: PanelDescription[]): string {
-  if (descriptions.length === 0) return 'Aucune description de case disponible.'
-  return [
-    'Descriptions des cases produites lors de ce traitement :',
-    ...descriptions.map((d) =>
-      [
-        `  [${d.panel_ref}] ${d.description}`,
-        d.setting ? `    lieu : ${d.setting}` : '',
-        d.characters_visible.length > 0
-          ? `    présents : ${d.characters_visible.join(' ; ')}`
-          : '',
-        d.actions.length > 0 ? `    actions : ${d.actions.join(' ; ')}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    ),
-  ].join('\n')
-}
-
 /**
  * Turn any request into something countTokens can price.
  *
@@ -665,7 +625,7 @@ function describeForEstimate(request: unknown): {
   if (r.allowedRefs) parts.push(refList(r.allowedRefs))
   if (r.ontology) parts.push(r.ontology)
   if (r.textBlocks) parts.push(r.textBlocks.map((b) => b.text).join('\n'))
-  if (r.descriptions) parts.push(describePanelsForPrompt(r.descriptions))
+  if (r.descriptions) parts.push(panelDescriptionList(r.descriptions))
   if (r.question) parts.push(r.question)
 
   return {

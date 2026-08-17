@@ -113,7 +113,7 @@ function checkVariables(): void {
     'DATABASE_URL',
     'DIRECT_URL',
   ]
-  const optional = ['SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY']
+  const optional = ['SUPABASE_SERVICE_ROLE_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']
 
   for (const name of required) {
     const value = process.env[name]
@@ -158,8 +158,10 @@ function checkVariables(): void {
             label: name,
             detail: 'absent',
             hint:
-              name === 'ANTHROPIC_API_KEY'
-                ? "Le pipeline basculera sur le fournisseur synthétique, avec bannière dans l'interface."
+              name === 'CLAUDE_CODE_OAUTH_TOKEN'
+                ? 'Générez un jeton avec `claude setup-token` pour traiter les chapitres ' +
+                  "sur votre abonnement Claude Max. Sans lui — et sans ANTHROPIC_API_KEY — le " +
+                  "pipeline bascule sur le fournisseur synthétique, avec bannière dans l'interface."
                 : 'Requis pour administrer le stockage Supabase.',
           },
     )
@@ -559,17 +561,105 @@ async function checkLocalModel(): Promise<boolean> {
   return true
 }
 
+/**
+ * Does the Claude Max subscription actually answer?
+ *
+ * A real call, unlike the Anthropic check below, because there is no free
+ * equivalent of `countTokens` here — and because the failure this catches is
+ * the one that costs a whole import to discover: a token generated months ago,
+ * revoked or expired, present in the environment and worth nothing. A one-word
+ * prompt is a rounding error against a monthly allowance.
+ *
+ * Only in the inline runtime. Under `sandbox` the same check would boot a
+ * virtual machine and install a package to send one word, which is a minute of
+ * a diagnostic's time and a bill for a question already half answered — the
+ * variables are reported and the first real import proves the rest.
+ *
+ * Returns true when it has said something conclusive.
+ */
+async function checkClaudeSubscription(token: string): Promise<boolean> {
+  const requested = process.env.CLAUDE_AGENT_RUNTIME?.trim() || 'auto'
+  const runtime = requested === 'auto' ? 'inline' : requested
+
+  if (runtime !== 'inline') {
+    record({
+      level: 'ok',
+      label: 'Abonnement Claude Max',
+      detail: `jeton présent, exécution en bac à sable (CLAUDE_AGENT_RUNTIME=${requested})`,
+      hint: 'Non vérifié ici : la vérification demanderait de démarrer une microVM. ' +
+        'CLAUDE_AGENT_RUNTIME=inline pnpm doctor teste le jeton pour de bon.',
+    })
+    return true
+  }
+
+  try {
+    const { query } = await import('@anthropic-ai/claude-agent-sdk')
+
+    /*
+     * The same posture as the pipeline's own calls, and for the same reasons:
+     * no tools, no settings read from disk, and an environment with no path to
+     * a metered key. A diagnostic that authenticated differently from the thing
+     * it diagnoses would answer the wrong question.
+     */
+    const env: Record<string, string> = {}
+    for (const [name, value] of Object.entries(process.env)) {
+      if (value !== undefined && !name.startsWith('ANTHROPIC_')) env[name] = value
+    }
+    env.CLAUDE_CODE_OAUTH_TOKEN = token
+
+    let answered = ''
+    for await (const event of query({
+      prompt: 'Répondez exactement : ok',
+      options: {
+        model: process.env.MODEL_CLASSIFY ?? 'claude-haiku-4-5',
+        systemPrompt: 'Vous répondez par un seul mot.',
+        maxTurns: 1,
+        tools: [],
+        mcpServers: {},
+        settingSources: [],
+        persistSession: false,
+        env,
+        stderr: () => {},
+      },
+    })) {
+      if (event.type === 'result' && 'result' in event) answered = String(event.result ?? '')
+    }
+
+    record({
+      level: 'ok',
+      label: 'Abonnement Claude Max joignable',
+      detail: `via le Claude Agent SDK, exécution en local — réponse « ${answered.trim().slice(0, 40)} »`,
+    })
+  } catch (error) {
+    record({
+      level: 'fail',
+      label: 'Abonnement Claude Max injoignable',
+      detail: message(error),
+      hint:
+        'Régénérez le jeton avec `claude setup-token`. Un jeton révoqué ou expiré ' +
+        'échoue exactement comme un jeton absent, et le traitement basculerait sur ' +
+        "l'extraction synthétique sans que rien ne le dise ailleurs.",
+    })
+  }
+
+  return true
+}
+
 async function checkModelProvider(): Promise<void> {
   const localHandlesEverything =
     (await checkLocalModel()) && !process.env.LOCAL_AI_TIERS?.trim()
 
   console.log('\n\x1b[1mFournisseur de modèle\x1b[0m')
 
+  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
   const key = process.env.ANTHROPIC_API_KEY
-  if (!key && localHandlesEverything) {
+
+  if (token && (await checkClaudeSubscription(token))) return
+
+  if (!token && !key && localHandlesEverything) {
     record({
       level: 'ok',
-      label: 'Aucune clé Anthropic',
+      label: 'Aucun fournisseur distant',
       detail: 'inutile : tous les paliers sont servis en local',
     })
     return
