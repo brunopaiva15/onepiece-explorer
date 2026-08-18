@@ -2,6 +2,8 @@ import 'server-only'
 import { z } from 'zod'
 import {
   answerSystem,
+  arbitrationCardList,
+  arbitrationSystem,
   descriptionSystem,
   extractionSystem,
   glossaryList,
@@ -15,9 +17,11 @@ import {
   textBlockList,
   transcriptionSystem,
   untrusted,
+  wikiPages,
 } from '../prompts.ts'
 import {
   answerSchema,
+  arbitrationSchema,
   clampExtraction,
   clampPanelDescriptions,
   extractionSchema,
@@ -26,6 +30,7 @@ import {
   summarySchema,
   transcriptionSchema,
   type Answer,
+  type Arbitration,
   type Extraction,
   type PanelDescription,
   type Resolution,
@@ -36,6 +41,7 @@ import {
   modelFor,
   reasoningFor,
   type AnswerRequest,
+  type ArbitrateRequest,
   type DescribeRequest,
   type EmbedRequest,
   type ExtractRequest,
@@ -265,6 +271,19 @@ export class ClaudeAgentProvider implements ModelProvider {
       content: [
         { type: 'text', text: `Contexte autorisé :\n${context}` },
         { type: 'text', text: untrusted('question-utilisateur', request.question) },
+      ],
+    })
+  }
+
+  async arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>> {
+    return this.structured({
+      label: `Arbitrage des propositions du chapitre ${request.chapterNumber}`,
+      tier: 'extract',
+      system: arbitrationSystem(request.chapterNumber),
+      schema: arbitrationSchema,
+      content: [
+        { type: 'text', text: wikiPages(request.pages) },
+        { type: 'text', text: arbitrationCardList(request.cards) },
       ],
     })
   }

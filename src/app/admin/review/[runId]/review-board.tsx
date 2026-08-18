@@ -6,6 +6,7 @@ import Link from 'next/link'
 // that pre-accepted at one threshold while the batch accepted at another would
 // show the reviewer a rule the product does not run.
 import { AUTO_ACCEPT_CONFIDENCE, confidentEnough } from '@/domains/review/confidence.ts'
+import type { ArbitrationRecord } from '@/domains/review/arbitration.ts'
 import type { DuplicateInfo } from '@/domains/review/duplicates.ts'
 import type { Echo } from '@/domains/review/echoes.ts'
 import type { EvidenceView, ReviewItemView, ReviewQueue } from '@/domains/review/queue.ts'
@@ -1247,6 +1248,7 @@ function ProposalCard({
                 Revue explicite obligatoire
               </p>
             )}
+            {item.arbitration && <ArbitrationNotice record={item.arbitration} />}
             {item.mergeSuggestion && (
               <MergeNotice
                 suggestion={item.mergeSuggestion}
@@ -1667,6 +1669,49 @@ function TypeMismatchNotice({
  * question the reviewer has to answer is whether those two sentences are one
  * scene, and they cannot answer it without reading both.
  */
+/**
+ * L'avis de la seconde lecture, sur la carte qui vous revient.
+ *
+ * C'est ici que la passe d'arbitrage rend le plus : la carte encore en file
+ * porte le verdict qu'un modèle aurait rendu, la phrase du wiki qui le motive,
+ * et — quand il n'a pas été appliqué — pourquoi. Lire une phrase sourcée puis
+ * cliquer, c'est le travail que cette fonctionnalité existe pour remplacer ;
+ * aller chercher la page soi-même, c'était le travail d'avant.
+ *
+ * Trois teintes pour trois situations qui ne demandent pas la même attention.
+ * Une abstention est grise : le modèle n'a rien à dire, la carte est
+ * exactement ce qu'elle était. Un avis retenu est jaune, comme tout ce que
+ * cette page marque « à vous de trancher ». Une décision appliquée est bleue :
+ * elle est déjà prise, et ce bloc dit sur quoi.
+ */
+function ArbitrationNotice({ record }: { record: ArbitrationRecord }) {
+  const abstained = record.verdict === 'undecided'
+  const tone = abstained
+    ? 'bg-[var(--halftone)] text-ink'
+    : record.applied
+      ? 'bg-[var(--sea-deep)] text-white'
+      : 'bg-[var(--epi-hypothetical)] text-ink'
+
+  const title = abstained
+    ? 'Arbitrage : rien à trancher sur la page'
+    : record.applied
+      ? `Arbitrage : ${record.verdict === 'accept' ? 'acceptée' : 'rejetée'} sur la page du wiki`
+      : `Arbitrage : ${record.verdict === 'accept' ? 'accepterait' : 'rejetterait'} — à vous de trancher`
+
+  return (
+    <div className={`mb-3 border-[3px] border-ink px-2 py-1.5 ${tone}`}>
+      <p className="font-display text-sm uppercase">{title}</p>
+      {record.reason && <p className="mt-1 text-sm">{record.reason}</p>}
+      {record.quote && (
+        <p className="mt-1 border-l-2 border-current pl-2 text-sm italic">
+          « {record.quote} »
+        </p>
+      )}
+      {record.held && <p className="mt-1 text-sm">{record.held}</p>}
+    </div>
+  )
+}
+
 function EchoNotice({ echo }: { echo: Echo }) {
   return (
     <div className="mb-3 border-[3px] border-ink bg-[var(--epi-hypothetical)] px-2 py-1.5 text-ink">

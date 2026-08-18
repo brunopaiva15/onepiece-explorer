@@ -16,6 +16,7 @@ import {
   recordStep,
 } from './runs.ts'
 import type { StepContext, StepResult } from './steps/context.ts'
+import { runArbitrate } from './steps/arbitrate.ts'
 import { runConflicts } from './steps/conflicts.ts'
 import { runDescribe } from './steps/describe.ts'
 import { runEmbed } from './steps/embed.ts'
@@ -304,6 +305,9 @@ async function runStep(key: StepKey, context: StepContext): Promise<StepResult> 
 
     case 'embed':
       return runEmbed(context)
+
+    case 'arbitrate':
+      return runArbitrate(context)
 
     case 'auto_publish':
       return runAutoPublish(context)

@@ -756,6 +756,132 @@ ${noOutsideKnowledge('summary')}
 }
 
 /**
+ * The second reading, and what it is allowed to conclude.
+ *
+ * This is the only prompt in the file whose reader is not the work: it is
+ * handed the chapter's wiki page and a list of review cards, and asked which of
+ * them the page settles. Three things about it are load-bearing and none is
+ * politeness.
+ *
+ * The page is a *reference*, never a source. A verdict changes a card's status
+ * and never its evidence, so an accepted proposal still carries the excerpt of
+ * the imported text it was anchored to. Saying so in the prompt matters anyway:
+ * a model told « voici la page » without being told what it is for will start
+ * proposing facts the page contains and the chapter's own text does not.
+ *
+ * The page talks about more than the chapter. Trivia, references to later
+ * arcs, a character list that names someone the chapter deliberately does not
+ * name — a wiki page is written by people who have read the end. A sentence
+ * about chapter 400 establishes nothing about chapter 42, and a model that
+ * takes one for an answer produces a spoiler with a citation, which is the one
+ * failure this whole product is built to prevent.
+ *
+ * And « undecided » has to stay free. It is not a failure mode, it is the
+ * hand-off — the reader kept exactly the cards a page cannot settle, which is
+ * what they asked to be kept. A prompt that treats abstention as a shortfall
+ * buys its own automation with wrong answers.
+ */
+export function arbitrationSystem(chapterNumber: number): string {
+  return `
+Vous arbitrez des propositions en attente de relecture pour le chapitre
+${chapterNumber}. Chaque proposition a été extraite du texte du chapitre par un
+autre modèle ; votre travail est de dire, pour chacune, si la page du wiki qui
+vous est fournie permet de la trancher.
+
+Trois réponses possibles, et la troisième est une vraie réponse :
+
+  « accept » — la page dit la même chose, explicitement.
+  « reject » — la page dit le contraire, explicitement.
+  « undecided » — la page ne permet pas de trancher. Laissez la carte à
+  l'humain, c'est exactement à ça qu'il sert.
+
+Dans le doute : « undecided ». Une carte laissée coûte un clic ; une carte
+tranchée à tort entre dans le graphe et y reste, avec l'air d'avoir été
+vérifiée.
+
+CITER, MOT POUR MOT
+
+Un « accept » ou un « reject » doit s'appuyer sur une phrase de la page,
+recopiée caractère pour caractère dans « quote », dans la langue de la page.
+Ne reformulez pas, ne traduisez pas, ne raccourcissez pas au milieu. Une
+citation introuvable dans la page fait annuler le verdict : la carte repart à
+l'humain, et votre appel n'aura servi à rien.
+
+« undecided » ne demande aucune citation. Laissez « quote » vide.
+
+CE QUE LA PAGE N'ÉTABLIT PAS
+
+La page est écrite par des gens qui ont lu la suite. Une phrase qui parle d'un
+chapitre postérieur, d'un arc ultérieur, ou qui nomme quelqu'un que ce
+chapitre-ci ne nomme pas, n'établit rien sur ce chapitre. Ne vous en servez
+jamais pour accepter une révélation, une identité ou un nom.
+
+La page n'est pas une source de faits nouveaux. Vous ne proposez rien, vous ne
+corrigez rien, vous n'ajoutez aucune preuve : vous tranchez des cartes qui
+existent déjà, telles qu'elles sont écrites.
+
+QUESTIONS DE NOM
+
+Quand la carte demande la forme française d'un nom, « accept » veut dire : la
+page française écrit ce nom exactement comme la proposition l'écrit. Une graphie
+voisine n'est pas la même graphie — c'est ainsi qu'un personnage devient deux
+entités. Sinon : « undecided ».
+
+Écrivez « reason » en français, en une phrase, pour quelqu'un qui lira la carte
+sans avoir la page sous les yeux. Elle est affichée telle quelle.
+
+${ANTI_INJECTION}
+`.trim()
+}
+
+/**
+ * The cards to arbitrate, rendered as a list a person could read.
+ *
+ * Shared by every provider that implements `arbitrate`, for the reason the
+ * other list helpers in this file are shared: three providers rendering the
+ * same request three ways is three prompts to keep in agreement, and the one
+ * that drifts is discovered as a difference in results months later.
+ */
+export function arbitrationCardList(
+  cards: Array<{
+    id: string
+    category: string
+    statement: string
+    question: string
+    evidence: string[]
+  }>,
+): string {
+  if (cards.length === 0) return 'Aucune carte à arbitrer.'
+
+  return [
+    'Cartes à arbitrer :',
+    ...cards.map((card) =>
+      [
+        `  [${card.id}] ${card.category} — ${card.statement}`,
+        `      question : ${card.question}`,
+        ...card.evidence.map((excerpt) => `      preuve citée : « ${excerpt} »`),
+      ].join('\n'),
+    ),
+  ].join('\n\n')
+}
+
+/** The wiki page, rendered for the prompt as the data it is. */
+export function wikiPages(
+  pages: Array<{ language: string; page: string; url: string; text: string }>,
+): string {
+  if (pages.length === 0) return 'Aucune page de wiki disponible pour ce chapitre.'
+
+  return pages
+    .map((page) =>
+      untrusted(
+        `wiki-${page.language}`,
+        [`Page : ${page.page} (${page.url})`, '', page.text].join('\n'),
+      ),
+    )
+    .join('\n\n')
+}
+
+/**
  * The whitelist of refs, rendered for the prompt.
  *
  * Listed rather than schema-enumerated: a JSON Schema large enough to enumerate

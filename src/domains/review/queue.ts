@@ -10,6 +10,7 @@ import {
   OCCURRENCE_TYPES,
   type TypeMismatch,
 } from '@/domains/knowledge/ontology.ts'
+import type { ArbitrationRecord } from '@/domains/review/arbitration.ts'
 import { groupDuplicates, type DuplicateInfo } from '@/domains/review/duplicates.ts'
 import { findEcho, type Echo } from '@/domains/review/echoes.ts'
 import { storage } from '@/domains/storage/index.ts'
@@ -52,6 +53,15 @@ export interface ReviewItemView {
   status: string
   payload: unknown
   fingerprint: string
+  /**
+   * Ce qu'un second modèle a répondu sur cette carte, page du wiki en main.
+   *
+   * Null tant que personne n'a arbitré — ce qui est le cas de toute carte
+   * écrite avant que la passe existe, et de toute carte d'un traitement dont le
+   * fournisseur ne lit pas. Sur une carte encore en file, c'est un avis et sa
+   * citation ; sur une carte décidée, c'est la raison qui l'a décidée.
+   */
+  arbitration: ArbitrationRecord | null
   evidence: EvidenceView[]
   /** For resolution items: the existing entity's current display label. */
   relatedLabel: string | null
@@ -231,6 +241,7 @@ export async function getReviewQueue(
         status: reviewItems.status,
         payload: reviewItems.payload,
         fingerprint: reviewItems.proposalFingerprint,
+        arbitration: reviewItems.arbitration,
       })
       .from(reviewItems)
       .where(
@@ -342,6 +353,7 @@ export async function getReviewQueue(
       status: row.status,
       payload: row.payload,
       fingerprint: row.fingerprint,
+      arbitration: arbitrationOf(row.arbitration),
       evidence: evidenceRefsOf(row.payload).map(
         (ref): EvidenceView => ({
           kind: ref.kind,
@@ -710,7 +722,16 @@ function declaredByLocalId(
  * decision, which is the point: a relation and its subject are proposed
  * together and reviewed together.
  */
-async function resolveNames(
+/**
+ * Exported for the arbitration pass, which shows the same cards to a model.
+ *
+ * « 9fdd1160-… capture 5da604bb-… » is unreadable for a person and no better
+ * for a model asked whether a wiki page says that. One resolver rather than two
+ * so the card a model is shown and the card the reviewer is shown name their
+ * ends the same way — a disagreement there would be invisible and would make
+ * the verdicts unauditable.
+ */
+export async function resolveNames(
   rows: Array<{ payload: unknown }>,
   proposals: Array<{ category: string; payload: unknown }>,
 ): Promise<Map<string, string>> {
@@ -863,6 +884,31 @@ function evidenceRefsOf(payload: unknown): EvidenceRef[] {
   }
 
   return []
+}
+
+/**
+ * Ce que la colonne `arbitration` porte, relu plutôt que casté.
+ *
+ * Un `jsonb` revient en `unknown`, et la ligne peut avoir été écrite par une
+ * version antérieure de la passe. Un cast rendrait un objet dont un champ
+ * manque, et la carte afficherait « undefined » à la place d'un verdict ; ici
+ * une ligne qui n'a pas la forme attendue est traitée comme ce qu'elle est —
+ * pas d'arbitrage.
+ */
+function arbitrationOf(value: unknown): ArbitrationRecord | null {
+  if (value === null || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+
+  const verdict = record.verdict
+  if (verdict !== 'accept' && verdict !== 'reject' && verdict !== 'undecided') return null
+
+  return {
+    verdict,
+    quote: typeof record.quote === 'string' ? record.quote : '',
+    reason: typeof record.reason === 'string' ? record.reason : '',
+    applied: record.applied === true,
+    held: typeof record.held === 'string' ? record.held : null,
+  }
 }
 
 /** The existing entity a resolution proposal is about, if this is one. */

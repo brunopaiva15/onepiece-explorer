@@ -5,6 +5,7 @@ import { getReaderSession } from '@/domains/auth/session.ts'
 import { quarantineSummary } from '@/domains/pipeline/quarantine.ts'
 import { autoAcceptThreshold } from '@/domains/review/auto.ts'
 import { getReviewQueue } from '@/domains/review/queue.ts'
+import { ArbitratePanel } from './arbitrate-panel.tsx'
 import { ReopenPanel } from './reopen-panel.tsx'
 import { ReviewBoard } from './review-board.tsx'
 
@@ -93,6 +94,8 @@ export default async function ReviewPage({
         * pipeline stopped following.
         */}
       <ReviewBoard queue={serialisable(queue)} autoAcceptAt={autoAcceptThreshold()} />
+
+      <ArbitratePanel runId={runId} pending={queue.counts.pending} />
 
       {reopenable.length > 0 && (
         <ReopenPanel runId={runId} items={serialisable(reopenable)} />

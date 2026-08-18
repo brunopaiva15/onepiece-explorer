@@ -2,6 +2,8 @@ import 'server-only'
 import { z } from 'zod'
 import {
   answerSystem,
+  arbitrationCardList,
+  arbitrationSystem,
   descriptionSystem,
   extractionSystem,
   glossaryList,
@@ -12,9 +14,11 @@ import {
   summarySystem,
   transcriptionSystem,
   untrusted,
+  wikiPages,
 } from './prompts.ts'
 import {
   answerSchema,
+  arbitrationSchema,
   clampExtraction,
   clampPanelDescriptions,
   extractionSchema,
@@ -23,6 +27,7 @@ import {
   summarySchema,
   transcriptionSchema,
   type Answer,
+  type Arbitration,
   type Extraction,
   type PanelDescription,
   type Resolution,
@@ -32,6 +37,7 @@ import {
 import {
   emptyUsage,
   type AnswerRequest,
+  type ArbitrateRequest,
   type DescribeRequest,
   type EmbedRequest,
   type ExtractRequest,
@@ -311,6 +317,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
             `Vous ne disposez que de ceci :\n${context || '  (aucun élément)'}\n\n` +
             `Question : ${request.question}`,
         },
+      ],
+    })
+  }
+
+  async arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>> {
+    return this.structured({
+      system: arbitrationSystem(request.chapterNumber),
+      schema: arbitrationSchema,
+      name: 'arbitration',
+      maxTokens: 16_000,
+      content: [
+        { type: 'text', text: wikiPages(request.pages) },
+        { type: 'text', text: arbitrationCardList(request.cards) },
       ],
     })
   }

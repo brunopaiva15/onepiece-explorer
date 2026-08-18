@@ -17,6 +17,7 @@
 import type { SourceKind } from './prompts.ts'
 import type {
   Answer,
+  Arbitration,
   Extraction,
   PanelDescription,
   Resolution,
@@ -185,6 +186,49 @@ export interface EmbedRequest {
   texts: string[]
 }
 
+/**
+ * The review cards of one chapter, weighed against its wiki page.
+ *
+ * The one request in this file whose material is not the imported work. It
+ * carries the chapter's Fandom page — English and French, whole — and the cards
+ * a review left standing, and asks which of them the page settles. What comes
+ * back changes the status of proposals that already exist; it can never add a
+ * fact, a citation or an entity, which is why a page fetched from the web can
+ * be shown to a model here without becoming a source.
+ *
+ * Toolless like every other call. The pages are fetched by `domains/ingestion/
+ * fandom.ts` from endpoints that are constants, keyed on a chapter number, and
+ * handed over as data inside an untrusted envelope — the model is never given
+ * the means to go and look.
+ */
+export interface ArbitrateRequest {
+  chapterNumber: number
+  /** The wiki page per language. Reference material, never citable evidence. */
+  pages: Array<{ language: string; page: string; url: string; text: string }>
+  cards: ArbitrationCard[]
+}
+
+/**
+ * One proposal, rendered for a reader who has not seen the review centre.
+ *
+ * Flattened deliberately: the model gets a sentence, the question the card
+ * actually asks, and the excerpts the proposal cites — not a payload. A JSON
+ * blob invites the model to answer about its fields, and the fields are not
+ * what is being asked. `domains/review/arbitration.ts` builds these, and it is
+ * where the wording lives.
+ */
+export interface ArbitrationCard {
+  /** Short and local to the request — `c1` — never a database id. */
+  id: string
+  category: string
+  /** What the proposal claims, in one line. */
+  statement: string
+  /** Why nobody has decided it yet: the name, the score, the identity. */
+  question: string
+  /** The chapter excerpts it is anchored to, as the proposal cites them. */
+  evidence: string[]
+}
+
 export interface ModelProvider {
   /**
    * `claude-max` and `anthropic` are the same models reached two ways, and the
@@ -209,6 +253,19 @@ export interface ModelProvider {
   resolve(request: ResolveRequest): Promise<ProviderResult<Resolution>>
   summarize(request: SummarizeRequest): Promise<ProviderResult<Summary>>
   answer(request: AnswerRequest): Promise<ProviderResult<Answer>>
+  /**
+   * Settle what a review left standing, from the chapter's wiki page.
+   *
+   * On the extraction tier rather than the escalation one, and the choice is
+   * about wall-clock as much as money: this runs once per chapter over a
+   * library of more than a thousand, inside an invocation that is killed at
+   * five minutes, and a pass that reasons at length about eighty-six cards
+   * would not finish. What it decides is also the least dangerous judgement in
+   * this file — a wrong verdict accepts or refuses a proposal a person can
+   * reopen, where a wrong rapprochement soldes two characters into one for ever
+   * — so `resolve` keeps the expensive tier and this one does not.
+   */
+  arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>>
   embed(request: EmbedRequest): Promise<ProviderResult<number[][]>>
 }
 

@@ -119,6 +119,14 @@ export const reviewItems = pgTable(
       .notNull()
       .default(false),
     confidence: real('confidence').notNull().default(0),
+    /**
+     * What a second model answered about this card, from the wiki page.
+     *
+     * Null means nobody arbitrated it, which is the truth for every card
+     * written before the pass existed. See `domains/review/arbitration.ts` for
+     * the shape and migration 0031 for why it is stored rather than recomputed.
+     */
+    arbitration: jsonb('arbitration'),
     status: reviewStatusEnum('status').notNull().default('proposed'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

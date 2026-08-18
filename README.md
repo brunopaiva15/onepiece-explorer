@@ -217,6 +217,24 @@ proprement **entre deux chapitres** et n'importe quelle page de l'atelier la
 reprend. Décochée, chaque chapitre attend votre relecture complète, comme avant
 ([ADR 0013](docs/adr/0013-a-lot-that-walks-itself.md)).
 
+**Et ce qui reste passe devant un second modèle, la page du wiki en main.**
+Avant la publication automatique, chaque proposition encore en file est relue
+par un autre modèle à qui l'on donne **la page entière du chapitre sur le One
+Piece Fandom, en anglais et en français**. Il accepte ou rejette ce qu'une phrase
+de la page tranche — citée mot pour mot, sinon le verdict est annulé et la carte
+vous revient — et laisse tout le reste en file, avec son avis et sa citation
+affichés sur la carte. Ce qui vous arrive est donc ce qu'une page ne tranche
+pas, ce qui est exactement la liste qu'on voulait garder.
+
+Deux choses qu'il ne fait pas, et elles sont voulues. Il ne décide **jamais** un
+rapprochement d'identité ni une contradiction : l'avis s'affiche, le clic reste
+le vôtre. Et la page n'est jamais une source — un verdict change le statut d'une
+proposition, jamais sa preuve : ce qui entre dans le graphe reste ancré au texte
+du chapitre, comme tout le reste. Le bouton « Arbitrer les propositions
+restantes » du centre de revue déclenche la même passe à la main, sur une file
+déjà ouverte
+([ADR 0014](docs/adr/0014-a-second-reading-before-yours.md)).
+
 Si vous avez le chapitre dans les deux langues, collez la seconde version au
 même endroit : elle est fournie au modèle **pour les noms seulement**. La mise
 en regard contient la réponse que ni l'un ni l'autre texte ne donne seul, donc
@@ -898,6 +916,9 @@ const graphe = await withBoundary(
   chapitres s'importent ensemble et se traitent un par un
 - [Un lot qui se déroule tout seul](docs/adr/0013-a-lot-that-walks-itself.md) —
   qui publie, et où la chaîne s'arrête exprès
+- [Une seconde lecture avant la vôtre](docs/adr/0014-a-second-reading-before-yours.md)
+  — un autre modèle tranche sur la page du wiki, et vous laisse ce qu'elle ne
+  tranche pas
 - [Une illustration porte sa période](docs/adr/0011-a-portrait-carries-the-period-it-shows.md)
   — pourquoi le visage d'après l'ellipse attend le chapitre 598
 - [Importer depuis votre machine](docs/importer-en-local.md) — la marche à

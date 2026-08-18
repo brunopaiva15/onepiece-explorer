@@ -10,6 +10,8 @@ import type {
 import type { z } from 'zod'
 import {
   answerSystem,
+  arbitrationCardList,
+  arbitrationSystem,
   descriptionSystem,
   extractionSystem,
   glossaryList,
@@ -23,9 +25,11 @@ import {
   textBlockList,
   transcriptionSystem,
   untrusted,
+  wikiPages,
 } from './prompts.ts'
 import {
   answerSchema,
+  arbitrationSchema,
   clampExtraction,
   extractionSchema,
   panelDescriptionsSchema,
@@ -33,6 +37,7 @@ import {
   summarySchema,
   transcriptionSchema,
   type Answer,
+  type Arbitration,
   type Extraction,
   type PanelDescription,
   type Resolution,
@@ -45,6 +50,7 @@ import {
   modelFor,
   reasoningFor,
   type AnswerRequest,
+  type ArbitrateRequest,
   type DescribeRequest,
   type EmbedRequest,
   type ExtractRequest,
@@ -362,6 +368,31 @@ export class AnthropicProvider implements ModelProvider {
       content: [
         { type: 'text', text: `Contexte autorisé :\n${context}` },
         { type: 'text', text: untrusted('question-utilisateur', request.question) },
+      ],
+    })
+  }
+
+  async arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>> {
+    /*
+     * The page first, the cards after, and that order is the cacheable one.
+     *
+     * A chapter's cards are arbitrated in slices when there are many of them,
+     * and every slice carries the same page — several thousand tokens of it. Put
+     * ahead of the cards it is a stable prefix the second slice reads from cache
+     * instead of paying for again.
+     */
+    return this.structured({
+      tier: 'extract',
+      system: cacheable(arbitrationSystem(request.chapterNumber)),
+      schema: arbitrationSchema,
+      maxTokens: 16_000,
+      content: [
+        {
+          type: 'text',
+          text: wikiPages(request.pages),
+          cache_control: { type: 'ephemeral', ttl: CACHE_TTL },
+        },
+        { type: 'text', text: arbitrationCardList(request.cards) },
       ],
     })
   }
