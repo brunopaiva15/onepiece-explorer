@@ -54,6 +54,37 @@ import {
   type Usage,
 } from './provider.ts'
 
+/**
+ * A model you host yourself, behind an OpenAI-compatible endpoint.
+ *
+ * Written for LM Studio serving a vision-capable Qwen on a private VM, but it
+ * assumes nothing beyond `/v1/chat/completions` with `response_format:
+ * {type: "json_schema"}` and `/v1/embeddings`. Any server speaking that dialect
+ * works — llama.cpp, vLLM, Ollama's compatible layer.
+ *
+ * Three things carry over from the Anthropic provider unchanged, because they
+ * are properties of this product rather than of a vendor:
+ *
+ *   No tools, ever. The pages are untrusted input, and a model that could
+ *   follow a URL found in a document would turn an upload into a server-side
+ *   request forgery. There is no `tools` key anywhere below.
+ *
+ *   Strict schemas. Every answer is constrained server-side by the JSON schema
+ *   *and* re-validated here with Zod. The first is the model's contract, the
+ *   second is what this process will actually believe — a server that ignored
+ *   `response_format` would be caught by the second, loudly.
+ *
+ *   Evidence anchoring is not here at all, and that is the point: it lives in
+ *   `anchoring.ts`, downstream of every provider. Swapping the model cannot
+ *   loosen it. A weaker model does not hallucinate into the graph; it fills the
+ *   quarantine, which is visible and countable.
+ *
+ * What does *not* carry over: prompt caching (irrelevant when the weights are
+ * on your own GPU), batching, and cost. `costCents` is zero throughout — the
+ * bill for these calls is electricity, and reporting an invented figure would
+ * corrupt the one dashboard meant to be trusted against a measured estimate.
+ */
+
 /** LM Studio's default. Overridden by LOCAL_AI_BASE_URL. */
 export const DEFAULT_LOCAL_BASE_URL = 'http://127.0.0.1:1234/v1'
 
@@ -62,9 +93,24 @@ export interface LocalModelConfig {
   model: string
   embedModel: string | null
   apiKey: string | null
+  /** Optional Cloudflare Access service-token credentials for a protected endpoint. */
   cloudflareAccessClientId: string | null
   cloudflareAccessClientSecret: string | null
+  /**
+   * Reasoning budget. 'none' by default: these calls fill a schema from
+   * material already in the prompt, and tokens spent deliberating are tokens
+   * spent on GPU time that produces no field of the answer.
+   */
   reasoningEffort: string
+  /**
+   * Délai maximal d'un appel, en millisecondes.
+   *
+   * Sans lui, un serveur qui accepte la connexion puis se fige — modèle en
+   * cours de chargement, GPU saturé, processus suspendu — retient le pipeline
+   * pour toujours : `fetch` n'a aucun timeout par défaut. Dix minutes par
+   * défaut, parce qu'un petit modèle sur CPU est légitimement lent ; réglable
+   * par LOCAL_AI_TIMEOUT_MS pour du matériel plus lent encore.
+   */
   timeoutMs: number
 }
 
@@ -180,18 +226,19 @@ function localExtractionDiscipline(limits: LocalExtractionLimits): string {
   ].join('\n')
 }
 
-/**
- * A self-hosted model behind an OpenAI-compatible endpoint.
- *
- * No tools are ever sent. Every structured answer is constrained server-side
- * and then parsed again with Zod; evidence anchoring remains downstream and is
- * provider-independent.
- */
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly name = 'local' as const
 
   constructor(private readonly config: LocalModelConfig) {}
 
+  /**
+   * No countTokens endpoint, and no bill to estimate.
+   *
+   * The figure shown before a run exists to stop anyone discovering a price
+   * from an invoice. Self-hosted, there is no invoice — so this reports the
+   * size of the work and a cost of zero rather than inventing a number that
+   * would then be compared against a real one.
+   */
   async estimate(
     _tier: ModelTier,
     request: unknown,
@@ -239,6 +286,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
       ],
     })
 
+    // Clamped here as well as in the step: a provider must not be the reason a
+    // budget is exceeded, whichever caller it is speaking to.
     return { ...result, value: clampPanelDescriptions(result.value?.panels ?? []) }
   }
 
@@ -407,6 +456,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
   }
 
+  /**
+   * One structured call, constrained twice.
+   *
+   * `response_format` is the server's contract with the model; `schema.parse`
+   * is this process's contract with the server. Keeping both means a server
+   * that silently ignored the first is caught by the second instead of feeding
+   * loosely-shaped data into the pipeline.
+   */
   private async structured<S extends z.ZodType>(options: {
     system: string
     schema: S
@@ -423,6 +480,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
       model: this.config.model,
       messages,
       max_tokens: options.maxTokens,
+      // Tokens spent deliberating are GPU seconds that produce no field of the
+      // answer: everything these calls need is already in the prompt.
       reasoning_effort: this.config.reasoningEffort,
       response_format: {
         type: 'json_schema',
@@ -432,6 +491,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           schema: jsonSchemaOf(options.schema),
         },
       },
+      // No `tools`. See the class comment: the pages are untrusted input.
     })) as ChatResponse
 
     const choice = body.choices?.[0]
@@ -492,6 +552,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
       outputTokens: body.usage?.completion_tokens ?? 0,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
+      // Zero, and not a placeholder: these tokens cost electricity, not money,
+      // and a fabricated figure would poison the cost dashboard.
       costCents: 0,
       modelId: this.config.model,
     }
@@ -514,6 +576,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
+        // Sans borne, un serveur qui accepte puis se fige retient le pipeline
+        // pour toujours ; l'étape sait retenter un appel, pas ressusciter un
+        // appel qui ne rend jamais la main.
         signal: AbortSignal.timeout(this.config.timeoutMs),
       })
     } catch (error: unknown) {
@@ -524,6 +589,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
             'LOCAL_AI_TIMEOUT_MS ajuste ce délai si le matériel est simplement lent.',
         )
       }
+      /*
+       * The endpoint is bound to localhost on the machine that hosts the model.
+       * A refused connection here almost always means this process is running
+       * somewhere else — which is worth saying, because "fetch failed" sends
+       * people to check the model instead of checking where they are.
+       */
       const detail = error instanceof Error ? error.message : String(error)
       throw new Error(
         `Serveur de modèle injoignable à ${url} : ${detail}. ` +
@@ -558,6 +629,13 @@ function describeForPrompt(descriptions: PanelDescription[]): string {
   ].join('\n')
 }
 
+/**
+ * The schema as the server wants it.
+ *
+ * `$schema` is stripped: it is metadata about the document, not a constraint,
+ * and a strict validator that does not expect it rejects the whole request for
+ * a key that says nothing about the answer.
+ */
 function jsonSchemaOf(schema: z.ZodType): Record<string, unknown> {
   const json = z.toJSONSchema(schema, { io: 'output' }) as Record<string, unknown>
   const { $schema: _ignored, ...rest } = json
