@@ -98,10 +98,11 @@ describe('local extraction ceilings', () => {
     }
 
     expect(payload.max_tokens).toBe(8_000)
-    expect(payload.response_format.json_schema.schema.properties.entities.maxItems).toBe(12)
-    expect(payload.response_format.json_schema.schema.properties.assertions.maxItems).toBe(20)
-    expect(payload.response_format.json_schema.schema.properties.events.maxItems).toBe(8)
-    expect(payload.response_format.json_schema.schema.properties.mysteries.maxItems).toBe(3)
+    const properties = payload.response_format.json_schema.schema.properties
+    expect(properties.entities?.maxItems).toBe(12)
+    expect(properties.assertions?.maxItems).toBe(20)
+    expect(properties.events?.maxItems).toBe(8)
+    expect(properties.mysteries?.maxItems).toBe(3)
 
     const userText = payload.messages[1]?.content
       .map((part) => part.text ?? '')
