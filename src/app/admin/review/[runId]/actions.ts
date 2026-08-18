@@ -2,12 +2,22 @@
 
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
+import { and, eq } from 'drizzle-orm'
+import { withIngest } from '@/db/boundary.ts'
+import { chapters } from '@/db/schema/documents.ts'
+import { ingestionRuns } from '@/db/schema/ingestion.ts'
+import {
+  isProviderChoice,
+  modelProvider,
+  type ProviderChoice,
+} from '@/domains/ai/index.ts'
 import { requireOwner } from '@/domains/auth/session.ts'
 import { illustrateQuietly } from '@/domains/images/enrich.ts'
 import { postersQuietly } from '@/domains/images/posters.ts'
 import { advanceQueue } from '@/domains/pipeline/queue.ts'
 import { reopenItems } from '@/domains/review/reopen.ts'
-import { autoReview, autoReviewsRun } from '@/domains/review/auto.ts'
+import { arbitrateNote, arbitrateRun } from '@/domains/review/arbitrate.ts'
+import { autoReview, autoReviewNote, autoReviewsRun } from '@/domains/review/auto.ts'
 import {
   markChapterReviewed,
   mergePublishResults,
@@ -126,6 +136,110 @@ export async function publishDecisionsAction(
       ok: false,
       error: error instanceof Error ? error.message : 'Publication impossible.',
     }
+  }
+}
+
+/**
+ * Faire relire la file par un second modèle, page du wiki en main.
+ *
+ * Le même arbitrage que le pipeline exécute, déclenché à la main — pour un
+ * traitement lancé avant que la passe existe, ou dont le fournisseur ne lisait
+ * pas ce jour-là. Aucune logique ici : elle est dans `arbitrateRun`, et deux
+ * copies d'une règle qui décide à votre place seraient une de trop.
+ *
+ * Le fournisseur est celui que ce traitement a choisi, pas celui configuré
+ * aujourd'hui : arbitrer un chapitre traité sur Claude Max avec le modèle
+ * auto-hébergé de cette semaine donnerait des verdicts que rien sur la page
+ * n'expliquerait.
+ *
+ * Comme après une publication : ce que l'arbitrage libère est repris par la
+ * passe automatique du chapitre — un nom tranché rend publiables les relations
+ * qui l'attendaient — et un chapitre qui s'ouvre enchaîne le suivant du lot.
+ */
+export async function arbitrateRunAction(
+  runId: string,
+): Promise<{ ok: boolean; note?: string; error?: string }> {
+  try {
+    const session = await requireOwner()
+
+    const run = await runProviderAndChapter(session.userId, runId)
+    if (!run) return { ok: false, error: 'Traitement introuvable.' }
+
+    const provider = modelProvider(run.provider)
+    if (provider.name === 'synthetic' || provider.name === 'replay') {
+      return {
+        ok: false,
+        error:
+          `Fournisseur « ${provider.name} » : il compare des mots, il ne lit pas ` +
+          'la page du wiki. Rien n’a été demandé.',
+      }
+    }
+
+    const outcome = await arbitrateRun({
+      userId: session.userId,
+      runId,
+      chapterNumber: run.chapterNumber,
+      provider,
+    })
+
+    if (outcome.skipped !== null) {
+      revalidatePath(`/admin/review/${runId}`)
+      return { ok: true, note: outcome.skipped }
+    }
+
+    const swept = (await autoReviewsRun(session.userId, runId))
+      ? await autoReview(session.userId, runId)
+      : null
+
+    const opened = outcome.published?.chapterPublished ?? swept?.chapterOpened ?? null
+    if (opened !== null) {
+      after(() => illustrateQuietly(session.userId))
+      after(() => postersQuietly(session.userId))
+      after(() => advanceQueue(session.userId))
+    }
+
+    revalidatePath(`/admin/review/${runId}`)
+    revalidatePath('/admin/chapitres')
+    revalidatePath('/graph')
+
+    return {
+      ok: true,
+      note:
+        arbitrateNote(outcome) +
+        (swept ? ` · ${autoReviewNote(swept)}` : '') +
+        (opened === null ? '' : ` · chapitre ${opened} ouvert`),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Arbitrage impossible.',
+    }
+  }
+}
+
+/** Le fournisseur choisi au lancement, et le numéro du chapitre relu. */
+async function runProviderAndChapter(
+  userId: string,
+  runId: string,
+): Promise<{ provider: ProviderChoice; chapterNumber: number } | null> {
+  const row = await withIngest(async (db) => {
+    const [found] = await db
+      .select({ provider: ingestionRuns.provider, chapterNumber: chapters.number })
+      .from(ingestionRuns)
+      .innerJoin(chapters, eq(chapters.id, ingestionRuns.chapterId))
+      .where(and(eq(ingestionRuns.id, runId), eq(ingestionRuns.userId, userId)))
+      .limit(1)
+    return found ?? null
+  })
+
+  if (!row) return null
+
+  // Une ligne écrite avant que le choix soit enregistré porte un nom de
+  // fournisseur résolu ('anthropic', 'local'…) plutôt qu'un choix : « auto »
+  // est ce avec quoi ces traitements ont été lancés.
+  return {
+    provider: isProviderChoice(row.provider) ? row.provider : 'auto',
+    chapterNumber: row.chapterNumber,
   }
 }
 

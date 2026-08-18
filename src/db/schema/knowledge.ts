@@ -470,6 +470,13 @@ export const auditFindings = pgTable(
  * maintenant plusieurs lectures payantes, et elles ne portent pas sur la même
  * sorte de chose — un chapitre, une identité acceptée, une question ouverte.
  *
+ * `audit_reads` reste en base et n'est plus lue par personne. La retirer est
+ * une migration de nettoyage, à faire quand tous les déploiements auront
+ * basculé : une migration s'applique avant que le code neuf ne serve, et
+ * supprimer la table pendant cette fenêtre casserait l'ancien. Ses lignes ont
+ * été reprises ici par la 0031, avec une empreinte vide — le coût déjà payé
+ * est conservé, et la première passe les tient pour périmées.
+ *
  * Ce qui décide qu'il faut repayer est ici et nulle part ailleurs : l'empreinte
  * de ce qui a été donné au modèle, et la version de la consigne. Rien n'a bougé
  * et la consigne est la même : on saute. Voir `domains/review/analyses.ts`, qui

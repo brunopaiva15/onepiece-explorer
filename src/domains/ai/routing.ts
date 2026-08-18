@@ -1,6 +1,7 @@
 import 'server-only'
 import type {
   AnswerRequest,
+  ArbitrateRequest,
   DescribeRequest,
   EmbedRequest,
   ExtractRequest,
@@ -11,7 +12,15 @@ import type {
   SummarizeRequest,
   TranscribeRequest,
 } from './provider.ts'
-import type { Answer, Extraction, PanelDescription, Resolution, Summary, Transcription } from './schemas.ts'
+import type {
+  Answer,
+  Arbitration,
+  Extraction,
+  PanelDescription,
+  Resolution,
+  Summary,
+  Transcription,
+} from './schemas.ts'
 
 /**
  * Different models for different steps, chosen per tier.
@@ -53,7 +62,14 @@ export const ROUTED_TIERS: readonly RoutedTier[] = [
  * a tier here will not compile.
  */
 export const TIER_OF: Record<
-  'transcribe' | 'describePanels' | 'extract' | 'resolve' | 'summarize' | 'answer' | 'embed',
+  | 'transcribe'
+  | 'describePanels'
+  | 'extract'
+  | 'resolve'
+  | 'summarize'
+  | 'answer'
+  | 'arbitrate'
+  | 'embed',
   RoutedTier
 > = {
   transcribe: 'extract',
@@ -63,6 +79,9 @@ export const TIER_OF: Record<
   resolve: 'escalate',
   summarize: 'extract',
   answer: 'extract',
+  // See `ModelProvider.arbitrate`: the extraction tier, for wall-clock as much
+  // as for money.
+  arbitrate: 'extract',
   embed: 'embed',
 }
 
@@ -107,6 +126,10 @@ export class RoutingProvider implements ModelProvider {
 
   answer(request: AnswerRequest): Promise<ProviderResult<Answer>> {
     return this.for('answer').answer(request)
+  }
+
+  arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>> {
+    return this.for('arbitrate').arbitrate(request)
   }
 
   embed(request: EmbedRequest): Promise<ProviderResult<number[][]>> {

@@ -6,6 +6,7 @@ import {
   emptyUsage,
   modelFor,
   type AnswerRequest,
+  type ArbitrateRequest,
   type DescribeRequest,
   type EmbedRequest,
   type ExtractRequest,
@@ -18,6 +19,7 @@ import {
 } from './provider.ts'
 import type {
   Answer,
+  Arbitration,
   Extraction,
   PanelDescription,
   Resolution,
@@ -94,6 +96,10 @@ export class ReplayProvider implements ModelProvider {
 
   answer(request: AnswerRequest): Promise<ProviderResult<Answer>> {
     return this.replay('answer', request, (p) => p.answer(request))
+  }
+
+  arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>> {
+    return this.replay('arbitrate', request, (p) => p.arbitrate(request))
   }
 
   embed(request: EmbedRequest): Promise<ProviderResult<number[][]>> {

@@ -2,6 +2,8 @@ import 'server-only'
 import { z } from 'zod'
 import {
   answerSystem,
+  arbitrationCardList,
+  arbitrationSystem,
   descriptionSystem,
   extractionSystem,
   glossaryList,
@@ -12,17 +14,23 @@ import {
   summarySystem,
   transcriptionSystem,
   untrusted,
+  wikiPages,
 } from './prompts.ts'
 import {
   answerSchema,
+  arbitrationSchema,
+  candidateAssertionSchema,
+  candidateEntitySchema,
+  candidateEventSchema,
+  candidateMysterySchema,
   clampExtraction,
   clampPanelDescriptions,
-  extractionSchema,
   panelDescriptionsSchema,
   resolutionSchema,
   summarySchema,
   transcriptionSchema,
   type Answer,
+  type Arbitration,
   type Extraction,
   type PanelDescription,
   type Resolution,
@@ -32,6 +40,7 @@ import {
 import {
   emptyUsage,
   type AnswerRequest,
+  type ArbitrateRequest,
   type DescribeRequest,
   type EmbedRequest,
   type ExtractRequest,
@@ -84,6 +93,9 @@ export interface LocalModelConfig {
   model: string
   embedModel: string | null
   apiKey: string | null
+  /** Optional Cloudflare Access service-token credentials for a protected endpoint. */
+  cloudflareAccessClientId: string | null
+  cloudflareAccessClientSecret: string | null
   /**
    * Reasoning budget. 'none' by default: these calls fill a schema from
    * material already in the prompt, and tokens spent deliberating are tokens
@@ -107,11 +119,24 @@ export function localModelConfig(): LocalModelConfig | null {
   const model = process.env.LOCAL_AI_MODEL?.trim()
   if (!baseUrl || !model) return null
 
+  const cloudflareAccessClientId =
+    process.env.CLOUDFLARE_ACCESS_CLIENT_ID?.trim() || null
+  const cloudflareAccessClientSecret =
+    process.env.CLOUDFLARE_ACCESS_CLIENT_SECRET?.trim() || null
+
+  if (Boolean(cloudflareAccessClientId) !== Boolean(cloudflareAccessClientSecret)) {
+    throw new Error(
+      'CLOUDFLARE_ACCESS_CLIENT_ID et CLOUDFLARE_ACCESS_CLIENT_SECRET doivent être configurés ensemble.',
+    )
+  }
+
   return {
     baseUrl: baseUrl.replace(/\/+$/, ''),
     model,
     embedModel: process.env.LOCAL_AI_EMBED_MODEL?.trim() || null,
     apiKey: process.env.LOCAL_AI_API_KEY?.trim() || null,
+    cloudflareAccessClientId,
+    cloudflareAccessClientSecret,
     reasoningEffort: process.env.LOCAL_AI_REASONING_EFFORT?.trim() || 'none',
     timeoutMs: Number(process.env.LOCAL_AI_TIMEOUT_MS) || 600_000,
   }
@@ -133,6 +158,72 @@ interface ChatResponse {
   }>
   usage?: { prompt_tokens?: number; completion_tokens?: number }
   error?: { message?: string } | string
+}
+
+/**
+ * Output ceilings used only by the self-hosted OpenAI-compatible provider.
+ *
+ * llama.cpp/LM Studio constrained decoding can treat an array's `maxItems` as
+ * a strong hint to keep filling it. The generic extraction schema deliberately
+ * has generous emergency ceilings (40/80/20/10), which made Qwen spend sixteen
+ * thousand output tokens filling `entities` and `assertions` on a five-passage
+ * chapter before it ever reached the later arrays. The pipeline then split and
+ * retried a perfectly small chapter, multiplying one short inference into
+ * minutes of work.
+ *
+ * These ceilings scale with the material in the current slice. They are still
+ * deliberately generous, but a five-passage summary no longer advertises the
+ * capacity of a twenty-panel manga slice. The canonical schemas and downstream
+ * validation remain unchanged, so this only changes what the local model is
+ * allowed to emit in one call.
+ */
+export interface LocalExtractionLimits {
+  units: number
+  entities: number
+  assertions: number
+  events: number
+  mysteries: number
+  maxTokens: number
+}
+
+export function localExtractionLimitsForUnits(rawUnits: number): LocalExtractionLimits {
+  const units = Math.max(1, Math.floor(rawUnits))
+
+  return {
+    units,
+    entities: Math.min(40, 8 + Math.ceil(units * 0.8)),
+    assertions: Math.min(80, 10 + units * 2),
+    events: Math.min(20, 4 + Math.ceil(units * 0.8)),
+    mysteries: Math.min(10, 2 + Math.ceil(units * 0.2)),
+    maxTokens: Math.min(14_000, Math.max(8_000, 6_000 + units * 400)),
+  }
+}
+
+function extractionUnits(request: ExtractRequest): number {
+  if (request.source === 'summary') return request.textBlocks.length
+  return request.descriptions.length > 0 ? request.descriptions.length : request.textBlocks.length
+}
+
+function localExtractionSchema(limits: LocalExtractionLimits) {
+  return z.object({
+    entities: z.array(candidateEntitySchema).max(limits.entities),
+    assertions: z.array(candidateAssertionSchema).max(limits.assertions),
+    events: z.array(candidateEventSchema).max(limits.events),
+    mysteries: z.array(candidateMysterySchema).max(limits.mysteries),
+  })
+}
+
+function localExtractionDiscipline(limits: LocalExtractionLimits): string {
+  return [
+    'LIMITES DE SORTIE POUR CE MODÈLE AUTO-HÉBERGÉ.',
+    'Les maxima ci-dessous sont des garde-fous, JAMAIS des objectifs à remplir.',
+    'Arrêtez chaque tableau dès que les éléments réellement présents dans cette tranche ont été extraits.',
+    'Ne créez pas une entité pour reformuler un fait, une action, un état ou la conclusion d’une scène :',
+    'un nœud « concept » est une notion durable du monde, pas un événement nominalisé.',
+    `Cette tranche contient ${limits.units} unité(s) de matière. Plafonds : ` +
+      `${limits.entities} entités, ${limits.assertions} relations, ` +
+      `${limits.events} événements, ${limits.mysteries} mystères.`,
+  ].join('\n')
 }
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -202,6 +293,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async extract(request: ExtractRequest): Promise<ProviderResult<Extraction>> {
     const known = knownEntitiesList(request.knownEntities, request.knownEntitiesTotal)
+    const limits = localExtractionLimitsForUnits(extractionUnits(request))
+    const schema = localExtractionSchema(limits)
 
     const blocks = request.textBlocks
       .map((b) =>
@@ -211,16 +304,23 @@ export class OpenAICompatibleProvider implements ModelProvider {
       )
       .join('\n\n')
 
+    console.log(
+      `[local-ai] extraction ${limits.units} unité(s) : plafonds ` +
+        `${limits.entities}/${limits.assertions}/${limits.events}/${limits.mysteries}, ` +
+        `${limits.maxTokens} tokens de sortie`,
+    )
+
     const result = await this.structured({
       system: extractionSystem(
         request.ontology,
         request.source,
         request.parallel !== undefined,
       ),
-      schema: extractionSchema,
+      schema,
       name: 'extraction',
-      maxTokens: 16_000,
+      maxTokens: limits.maxTokens,
       content: [
+        { type: 'text', text: localExtractionDiscipline(limits) },
         { type: 'text', text: known },
         { type: 'text', text: glossaryList(request.glossary) },
         { type: 'text', text: refList(request.allowedRefs) },
@@ -311,6 +411,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
             `Vous ne disposez que de ceci :\n${context || '  (aucun élément)'}\n\n` +
             `Question : ${request.question}`,
         },
+      ],
+    })
+  }
+
+  async arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>> {
+    return this.structured({
+      system: arbitrationSystem(request.chapterNumber),
+      schema: arbitrationSchema,
+      name: 'arbitration',
+      maxTokens: 16_000,
+      content: [
+        { type: 'text', text: wikiPages(request.pages) },
+        { type: 'text', text: arbitrationCardList(request.cards) },
       ],
     })
   }
@@ -450,6 +563,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const url = `${this.config.baseUrl}${path}`
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (this.config.apiKey) headers.Authorization = `Bearer ${this.config.apiKey}`
+    if (this.config.cloudflareAccessClientId) {
+      headers['CF-Access-Client-Id'] = this.config.cloudflareAccessClientId
+    }
+    if (this.config.cloudflareAccessClientSecret) {
+      headers['CF-Access-Client-Secret'] = this.config.cloudflareAccessClientSecret
+    }
 
     let response: Response
     try {

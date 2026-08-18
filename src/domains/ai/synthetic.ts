@@ -3,6 +3,7 @@ import { normalizeText } from '../knowledge/normalize.ts'
 import {
   emptyUsage,
   type AnswerRequest,
+  type ArbitrateRequest,
   type DescribeRequest,
   type EmbedRequest,
   type ExtractRequest,
@@ -15,6 +16,7 @@ import {
 } from './provider.ts'
 import type {
   Answer,
+  Arbitration,
   CandidateAssertion,
   CandidateEntity,
   Extraction,
@@ -248,6 +250,33 @@ export class SyntheticProvider implements ModelProvider {
           assertion_id: h.entry.assertionId,
           chapter: h.entry.chapter,
           excerpt: h.entry.excerpt ?? h.entry.statement,
+        })),
+      },
+      usage: emptyUsage('synthetic'),
+    }
+  }
+
+  async arbitrate(request: ArbitrateRequest): Promise<ProviderResult<Arbitration>> {
+    /*
+     * Every card left to the reader, and that is the honest answer here.
+     *
+     * Arbitration is a judgement about whether a page of prose says the same
+     * thing as a proposal. This provider matches words; it cannot read, and a
+     * word-overlap score dressed as « la page le confirme » would accept
+     * proposals into the graph on the strength of a shared noun. Abstaining is
+     * a first-class outcome of this pass — the reader decides — so a provider
+     * that cannot judge returns exactly what a model that could not decide
+     * would return, and costs nothing.
+     */
+    return {
+      value: {
+        verdicts: request.cards.map((card) => ({
+          card: card.id,
+          verdict: 'undecided' as const,
+          quote: '',
+          reason:
+            'Aucun modèle configuré : ce mode compare des mots, il ne lit pas la ' +
+            'page. La carte vous revient.',
         })),
       },
       usage: emptyUsage('synthetic'),

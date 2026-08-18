@@ -301,6 +301,119 @@ export async function fetchChapterRange(
   })
 }
 
+/**
+ * The chapter's whole wiki page, in both languages, for a reader that is not
+ * the graph.
+ *
+ * `fetchChapterSummaries` above takes two sections and nothing else, and that
+ * narrowness is deliberate: what it returns becomes **citable**, so every
+ * paragraph of it has to be about this chapter and nothing later. This one is
+ * the opposite errand. It is read by the arbitration pass — a second model
+ * asked to settle the review cards a chapter left standing — and there the
+ * whole page is the point: the character list, the short summary, the notes,
+ * the trivia. « Comment le wiki français écrit-il ce nom » is answered by the
+ * infobox as often as by the retelling.
+ *
+ * Nothing fetched here is ever citable, and that is enforced elsewhere rather
+ * than promised here: an arbitration verdict changes a card's status and never
+ * its evidence, so a proposal keeps the chapter excerpt it was anchored to.
+ * What the page can do is settle a question; what it cannot do is become a
+ * source.
+ *
+ * The chapter number is still the only input, and the endpoints are still the
+ * constants at the top of this file. That property is the whole of ADR 0009 and
+ * a second entry point is exactly where it would be lost.
+ *
+ * A missing language is an outcome, not an error — the French wiki lags by
+ * hundreds of chapters — and so is a missing page in both: arbitration without
+ * a page has nothing to arbitrate *from*, which is a step that skips with a
+ * reason rather than a run that fails.
+ */
+export interface FandomPage {
+  language: FandomLanguage
+  page: string
+  url: string
+  /** The rendered article, headings kept, tables and navigation dropped. */
+  text: string
+  /** True when the page was longer than `MAX_PAGE_CHARS` and was cut. */
+  truncated: boolean
+}
+
+export interface FandomPages {
+  chapterNumber: number
+  pages: FandomPage[]
+  problems: Array<{ language: FandomLanguage; reason: string }>
+}
+
+/**
+ * How much of a page is kept.
+ *
+ * A chapter page runs to a few thousand words; this is several times that, so
+ * it cuts nothing in ordinary use. It exists for the pathological page — a
+ * cover story with fifty sections of trivia — because what reads this pays per
+ * token and a run must not discover its own ceiling from an invoice.
+ *
+ * Cut rather than refused, and the cut is reported: a verdict is only ever
+ * accepted on a sentence found *in the text we hold*, so a truncated tail can
+ * cost a decision and can never produce a wrong one.
+ */
+export const MAX_PAGE_CHARS = 60_000
+
+export async function fetchChapterPages(
+  chapterNumber: number,
+  fetcher: Fetcher = defaultFetcher,
+): Promise<FandomPages> {
+  const pages: FandomPage[] = []
+  const problems: FandomPages['problems'] = []
+
+  for (const language of ['fr', 'en'] as const) {
+    try {
+      pages.push(await fetchWholePage(language, chapterNumber, fetcher))
+    } catch (error) {
+      problems.push({
+        language,
+        reason: error instanceof Error ? error.message : 'Erreur inconnue.',
+      })
+    }
+  }
+
+  return { chapterNumber, pages, problems }
+}
+
+async function fetchWholePage(
+  language: FandomLanguage,
+  chapterNumber: number,
+  fetcher: Fetcher,
+): Promise<FandomPage> {
+  const endpoint = ENDPOINTS[language]
+  const page = endpoint.page(chapterNumber)
+
+  const body = await call(fetcher, endpoint.api, {
+    action: 'parse',
+    page,
+    prop: 'text',
+    format: 'json',
+  })
+
+  const html = readPath(body, ['parse', 'text', '*'])
+  if (typeof html !== 'string' || html.trim().length === 0) {
+    throw new FandomError(`La page « ${page} » est vide.`)
+  }
+
+  const whole = htmlToParagraphs(html, { headings: true })
+  if (whole.length === 0) {
+    throw new FandomError(`La page « ${page} » ne contient aucun paragraphe.`)
+  }
+
+  return {
+    language,
+    page,
+    url: endpoint.url(chapterNumber),
+    text: whole.slice(0, MAX_PAGE_CHARS),
+    truncated: whole.length > MAX_PAGE_CHARS,
+  }
+}
+
 async function fetchOne(
   language: FandomLanguage,
   chapterNumber: number,
@@ -495,13 +608,32 @@ function sectionIndex(
  * continues. Arlong declares that for every village to stay alive… » as one
  * passage, and the two bullets after it as two more. The lookahead cuts each
  * bullet where the eye cuts it.
+ *
+ * Headings are dropped by default and that is right for one section: the caller
+ * asked for « Long Summary » and knows what it asked for, and a heading kept
+ * would become a passage — a citable unit whose text is « Long Summary ».
+ * `headings: true` is for the caller that reads a *whole* page and is not
+ * building passages from it: without them, forty paragraphs of retelling,
+ * character list and trivia arrive as one undifferentiated wall, and the reader
+ * — a model, here — cannot tell the chapter's own story from the wiki's notes
+ * about it.
  */
-export function htmlToParagraphs(html: string): string {
+export function htmlToParagraphs(
+  html: string,
+  options: { headings?: boolean } = {},
+): string {
   const cleaned = html
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<(script|style|table|figure|aside)[\s\S]*?<\/\1>/gi, '')
     .replace(/<sup\b[^>]*class="[^"]*reference[^"]*"[\s\S]*?<\/sup>/gi, '')
     .replace(/<span\b[^>]*class="[^"]*mw-editsection[^"]*"[\s\S]*?<\/span>/gi, '')
+    .replace(
+      /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi,
+      options.headings ? '<p>## $2</p>' : '',
+    )
+    // Whatever the pass above could not match as a pair — an unclosed heading,
+    // or one whose closing tag carries a different level — still has to go, or
+    // it would arrive inside the paragraph that follows it.
     .replace(/<h[1-6][\s\S]*?<\/h[1-6]>/gi, '')
 
   const blocks = [

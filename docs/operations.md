@@ -513,7 +513,9 @@ Deux moitiés, et elles ne coûtent pas la même chose :
   - *Vérifier les mystères* — pour chaque question, la première scène qui y
     répond vraiment, comparée à ce que le graphe affiche.
 
-  Chacune avance par paquets et retient ce qu'elle a lu (`audit_passes`), avec
+  Chacune avance par paquets et retient ce qu'elle a lu (`audit_passes`, qui
+  remplace `audit_reads` — celle-ci reste en base, vide de tout lecteur, en
+  attendant une migration de nettoyage), avec
   l'empreinte de ce qui a été donné au modèle et la version de la consigne :
   une interruption ne coûte que le paquet en cours, une reprise ne repaye rien,
   et rien n'est relu tant que ni le sujet ni la consigne n'ont changé. Le coût

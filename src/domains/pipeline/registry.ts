@@ -41,6 +41,7 @@ export type StepKey =
   | 'detect_conflicts'
   | 'summarize_chapter'
   | 'embed'
+  | 'arbitrate'
   | 'auto_publish'
 
 export interface StepDefinition {
@@ -150,6 +151,20 @@ export const STEPS: readonly StepDefinition[] = [
       'Vecteurs pour la recherche sémantique. Sans fournisseur d’embeddings configuré, '
       + 'l’étape se déclare ignorée : la recherche plein texte, approchante et par graphe '
       + 'fonctionne sans elle.',
+    usesModel: true,
+    implemented: true,
+    appliesTo: BOTH,
+  },
+  {
+    key: 'arbitrate',
+    label: 'Arbitrage sur le wiki',
+    detail:
+      'Un second modèle relit chaque proposition en tenant la page du chapitre sur le One Piece '
+      + 'Fandom, entière, en anglais et en français. Il accepte ou rejette ce qu’une phrase de la '
+      + 'page tranche — citée mot pour mot, sinon le verdict est annulé — et laisse le reste en '
+      + 'file avec son avis. Les rapprochements et les contradictions ne sont jamais décidés ici : '
+      + 'l’avis s’affiche sur la carte, le clic reste au lecteur. Ignorée sans modèle qui lise '
+      + 'vraiment (modes synthétique et rejoué).',
     usesModel: true,
     implemented: true,
     appliesTo: BOTH,

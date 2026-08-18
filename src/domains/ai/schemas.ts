@@ -430,3 +430,47 @@ export const answerSchema = z.object({
 })
 
 export type Answer = z.infer<typeof answerSchema>
+
+/**
+ * A second model's verdict on the cards a chapter left in review.
+ *
+ * Four outcomes and the fourth is the one that must stay cheap to give.
+ * `undecided` is not a failure — it is the whole reason a person is still in
+ * this loop, and a schema that made it awkward to return would buy its
+ * automation with wrong answers. Nothing here nudges the model towards a
+ * verdict: `undecided` needs no quote, no reason and no field, and the prompt
+ * says so.
+ *
+ * `quote` is what makes the other three checkable. A verdict is applied only if
+ * its sentence is found **verbatim** in the wiki page the model was given — the
+ * same discipline the anchoring filter applies to extraction, and the identity
+ * sweep to its citations, for the same reason: a model handed a page will
+ * occasionally quote a forty-first sentence that is not in it, in the right
+ * register, with the right names. The check is in `domains/review/arbitration.ts`
+ * and it runs on every reply, whatever the model claims about itself.
+ *
+ * Nothing here can create a fact. A verdict decides an existing proposal — it
+ * cannot rewrite its evidence, its wording or its ends — so the worst a wrong
+ * one does is accept or refuse a card, which is a thing a person can undo from
+ * the review centre and which the audit log names.
+ */
+export const arbitrationSchema = z.object({
+  verdicts: z
+    .array(
+      z.object({
+        /** The short id of the card, exactly as it was listed. */
+        card: z.string().max(20),
+        verdict: z.enum(['accept', 'reject', 'undecided']),
+        /**
+         * The sentence of the wiki page that settles it, copied character for
+         * character. Empty for `undecided`.
+         */
+        quote: z.string().max(600),
+        /** One sentence, in French, on why. Shown on the card. */
+        reason: z.string().max(400),
+      }),
+    )
+    .max(200),
+})
+
+export type Arbitration = z.infer<typeof arbitrationSchema>
