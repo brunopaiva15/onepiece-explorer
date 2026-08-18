@@ -5,7 +5,6 @@ import {
   jsonb,
   numeric,
   pgTable,
-  primaryKey,
   real,
   text,
   timestamp,
@@ -447,6 +446,10 @@ export const auditFindings = pgTable(
     fix: jsonb('fix'),
     /** Ce qui fait que ce constat est le même d'un balayage à l'autre. */
     fingerprint: text('fingerprint').notNull(),
+    /** Quelle analyse l'a produit : ce qui borne le nettoyage d'une passe. */
+    analysis: text('analysis').notNull().default('regles'),
+    /** Le sujet exact examiné. Null pour les règles, qui repassent sur tout. */
+    subject: text('subject'),
     status: text('status').notNull().default('open'),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -456,26 +459,61 @@ export const auditFindings = pgTable(
   (t) => [
     unique('audit_findings_unique').on(t.userId, t.workId, t.fingerprint),
     index('audit_findings_open_idx').on(t.userId, t.workId, t.status, t.chapter),
+    index('audit_findings_analysis_idx').on(t.userId, t.workId, t.analysis, t.subject),
   ],
 )
 
-/** Les chapitres déjà relus par le modèle : ce qui rend la relecture reprenable. */
-export const auditReads = pgTable(
-  'audit_reads',
+/**
+ * Ce que chaque analyse a déjà lu, sujet par sujet.
+ *
+ * Remplace `audit_reads`, dont la clé était un numéro de chapitre : il y a
+ * maintenant plusieurs lectures payantes, et elles ne portent pas sur la même
+ * sorte de chose — un chapitre, une identité acceptée, une question ouverte.
+ *
+ * `audit_reads` reste en base et n'est plus lue par personne. La retirer est
+ * une migration de nettoyage, à faire quand tous les déploiements auront
+ * basculé : une migration s'applique avant que le code neuf ne serve, et
+ * supprimer la table pendant cette fenêtre casserait l'ancien. Ses lignes ont
+ * été reprises ici par la 0031, avec une empreinte vide — le coût déjà payé
+ * est conservé, et la première passe les tient pour périmées.
+ *
+ * Ce qui décide qu'il faut repayer est ici et nulle part ailleurs : l'empreinte
+ * de ce qui a été donné au modèle, et la version de la consigne. Rien n'a bougé
+ * et la consigne est la même : on saute. Voir `domains/review/analyses.ts`, qui
+ * porte la règle et se teste sans base.
+ *
+ * Refusée au rôle du lecteur comme les deux tables de la 0029 : un sujet lu est
+ * le numéro d'un chapitre ou l'identifiant d'une révélation.
+ */
+export const auditPasses = pgTable(
+  'audit_passes',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull(),
     workId: uuid('work_id')
       .notNull()
       .references(() => works.id, { onDelete: 'cascade' }),
-    chapter: integer('chapter').notNull(),
+    analysis: text('analysis').notNull(),
+    /** `chapter`, `identity` ou `mystery` : ce qui distingue 113 de 113. */
+    subjectKind: text('subject_kind').notNull(),
+    subject: text('subject').notNull(),
+    /** Condensé de la matière donnée au modèle : ce qui rend la reprise gratuite. */
+    inputFingerprint: text('input_fingerprint').notNull(),
+    promptVersion: text('prompt_version').notNull(),
     modelId: text('model_id'),
     costCents: numeric('cost_cents', { precision: 14, scale: 6, mode: 'number' })
       .notNull()
       .default(0),
     findings: integer('findings').notNull().default(0),
+    /** Un échec est retenu comme échec, jamais comme une absence de lecture. */
+    ok: boolean('ok').notNull().default(true),
+    failure: text('failure'),
     readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.workId, t.chapter] })],
+  (t) => [
+    unique('audit_passes_unique').on(t.userId, t.workId, t.analysis, t.subject),
+    index('audit_passes_analysis_idx').on(t.userId, t.workId, t.analysis, t.ok),
+  ],
 )
 
 /**

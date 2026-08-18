@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { FindingRow } from '@/domains/review/audit-run.ts'
+import type { AuditFix } from '@/domains/review/audit.ts'
 import { applyFindingAction, ignoreFindingAction } from './actions.ts'
 
 /**
@@ -21,7 +22,16 @@ import { applyFindingAction, ignoreFindingAction } from './actions.ts'
  * correction mécanique n'ont pas le bouton du tout : elles renvoient vers la
  * fiche, où le geste existe et montre ce qu'il coûte.
  */
-export function FindingsBoard({ title, findings }: { title: string; findings: FindingRow[] }) {
+export function FindingsBoard({
+  title,
+  origin,
+  findings,
+}: {
+  title: string
+  /** L'analyse d'où viennent ces constats, dite au-dessus de la liste. */
+  origin: string
+  findings: FindingRow[]
+}) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [done, setDone] = useState<Record<string, string>>({})
@@ -77,6 +87,7 @@ export function FindingsBoard({ title, findings }: { title: string; findings: Fi
       <h2 className="panneau-titre flex flex-wrap items-center justify-between gap-3">
         <span>
           {title} <span className="tabular text-sm">({remaining.length})</span>
+          <span className="cartouche ml-2 normal-case">{origin}</span>
         </span>
         {fixable.length > 1 && (
           <button
@@ -108,6 +119,17 @@ export function FindingsBoard({ title, findings }: { title: string; findings: Fi
                     {finding.detail}
                   </p>
                 )}
+
+                {/* Ce que le bouton écrira, en toutes lettres et avant de le
+                    cliquer. « 27 entités seront modifiées » est un nombre qu'il
+                    faut croire ; une phrase qui nomme l'écriture est
+                    vérifiable, et c'est la seule forme sous laquelle un bouton
+                    a le droit d'écrire dans le graphe. */}
+                <p className="mt-1 text-xs text-muted">
+                  {finding.fix
+                    ? `Ce que le bouton écrit : ${WILL_WRITE[finding.fix.action]}`
+                    : 'Aucune correction mécanique : ce constat dit où regarder, et le geste se prend sur la fiche.'}
+                </p>
 
                 <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted">
                   {finding.source === 'modele' ? (
@@ -168,6 +190,18 @@ export function FindingsBoard({ title, findings }: { title: string; findings: Fi
                       sur la fiche
                     </span>
                   )}
+                  {finding.fix && (
+                    <span
+                      className="cartouche"
+                      title={
+                        NEEDS_REVIEW.has(finding.fix.action)
+                          ? 'Le bouton dépose une proposition ; rien n’est affirmé sans votre accord'
+                          : 'Une écriture dont toutes les valeurs sont connues d’avance'
+                      }
+                    >
+                      {NEEDS_REVIEW.has(finding.fix.action) ? 'revue humaine' : 'mécanique'}
+                    </span>
+                  )}
                   <button
                     type="button"
                     disabled={pending}
@@ -185,3 +219,33 @@ export function FindingsBoard({ title, findings }: { title: string; findings: Fi
     </section>
   )
 }
+
+/**
+ * Ce que chaque correction écrit, dite avant d'être cliquée.
+ *
+ * Une phrase par action et jamais un décompte : ce qui rend un bouton
+ * acceptable ici est qu'un humain puisse lire l'écriture en entier avant de le
+ * presser. Les valeurs exactes — quel nœud, quel chapitre — sont déjà dans le
+ * détail du constat, qui les nomme.
+ */
+const WILL_WRITE: Record<AuditFix['action'], string> = {
+  rejeter_entite: 'la fiche passe en « rejetée » et sort du fil. Rien n’est supprimé.',
+  redater_nom: 'la date de révélation du nom change.',
+  promouvoir_nom: 'le rang d’affichage du nom change ; la nature du nom, non.',
+  retirer_identite: 'l’identité passe en « rejetée ». Les deux fiches redeviennent deux choses.',
+  avancer_entree: 'le chapitre d’entrée en scène change.',
+  raccourcir_libelle:
+    'le libellé est renommé ; l’ancienne formulation reste, sans être affichée.',
+  reecrire_scene: 'la phrase de la scène est remplacée.',
+  proposer_identite:
+    'une carte est déposée dans le centre de revue, avec sa citation. Aucune identité n’est publiée.',
+  publier_resolution:
+    'une relation « résout le mystère » verrouillée est écrite, puis l’état de la question est recalculé depuis ses relations acceptées.',
+  retirer_resolution:
+    'la relation passe en « rejetée », puis l’état de la question est recalculé depuis celles qui restent.',
+  recalculer_mystere:
+    'l’état et la date de la question sont refaits depuis ses relations acceptées. Aucune relation n’est écrite ni retirée.',
+}
+
+/** Les corrections qui ne font que proposer : elles attendent un humain. */
+const NEEDS_REVIEW = new Set<AuditFix['action']>(['proposer_identite'])

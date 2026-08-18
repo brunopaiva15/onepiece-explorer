@@ -497,12 +497,29 @@ Deux moitiés, et elles ne coûtent pas la même chose :
   après chaque import : un défaut qui n'existe qu'entre deux chapitres apparaît
   quand le second arrive. Elles datent tout depuis le texte des sources, jamais
   de mémoire, donc un nom qu'aucun chapitre n'écrit est laissé tranquille.
-- **La relecture**, un appel de modèle par chapitre. C'est la seule chose qui
-  voit une phrase simplement fausse — « Usopp devient capitaine de l'équipage »
-  est bien datée, bien reliée, et le chapitre dit le contraire. Elle avance par
-  paquets et retient ce qu'elle a lu (`audit_reads`), donc une interruption ne
-  coûte que le paquet en cours et une reprise ne repaye rien. Le coût s'affiche
-  pendant, pas seulement à la fin.
+- **Les lectures**, un appel de modèle par sujet, réparties en trois panneaux
+  qui ne partent jamais du bouton gratuit :
+
+  - *Vérifier les scènes* — ce qui voit une phrase simplement fausse
+    (« Usopp devient capitaine de l'équipage » est bien datée, bien reliée, et
+    le chapitre dit le contraire), départage deux scènes trop proches pour que
+    la règle gratuite ose les replier, et soupçonne une scène de venir d'une
+    couverture quand le chapitre a été importé en résumé.
+  - *Vérifier les identités* — chaque `same_as` accepté est relu contre les
+    passages de son chapitre et classé : la même chose, un groupe et un membre,
+    une fusion, un déguisement, un leurre, une question et sa réponse. Puis
+    l'inverse : les révélations que le texte fait et que le graphe ignore, qui
+    deviennent des cartes du centre de revue — jamais des faits.
+  - *Vérifier les mystères* — pour chaque question, la première scène qui y
+    répond vraiment, comparée à ce que le graphe affiche.
+
+  Chacune avance par paquets et retient ce qu'elle a lu (`audit_passes`, qui
+  remplace `audit_reads` — celle-ci reste en base, vide de tout lecteur, en
+  attendant une migration de nettoyage), avec
+  l'empreinte de ce qui a été donné au modèle et la version de la consigne :
+  une interruption ne coûte que le paquet en cours, une reprise ne repaye rien,
+  et rien n'est relu tant que ni le sujet ni la consigne n'ont changé. Le coût
+  s'affiche pendant, pas seulement à la fin.
 
 Rien n'est corrigé sans un clic, et rien n'est supprimé : un doublon corrigé
 passe en « rejeté », sort du fil, et se rouvre en une requête. Ce qui demande un
