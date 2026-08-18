@@ -90,6 +90,9 @@ export interface LocalModelConfig {
   model: string
   embedModel: string | null
   apiKey: string | null
+  /** Optional Cloudflare Access service-token credentials for a protected endpoint. */
+  cloudflareAccessClientId: string | null
+  cloudflareAccessClientSecret: string | null
   /**
    * Reasoning budget. 'none' by default: these calls fill a schema from
    * material already in the prompt, and tokens spent deliberating are tokens
@@ -113,11 +116,24 @@ export function localModelConfig(): LocalModelConfig | null {
   const model = process.env.LOCAL_AI_MODEL?.trim()
   if (!baseUrl || !model) return null
 
+  const cloudflareAccessClientId =
+    process.env.CLOUDFLARE_ACCESS_CLIENT_ID?.trim() || null
+  const cloudflareAccessClientSecret =
+    process.env.CLOUDFLARE_ACCESS_CLIENT_SECRET?.trim() || null
+
+  if (Boolean(cloudflareAccessClientId) !== Boolean(cloudflareAccessClientSecret)) {
+    throw new Error(
+      'CLOUDFLARE_ACCESS_CLIENT_ID et CLOUDFLARE_ACCESS_CLIENT_SECRET doivent être configurés ensemble.',
+    )
+  }
+
   return {
     baseUrl: baseUrl.replace(/\/+$/, ''),
     model,
     embedModel: process.env.LOCAL_AI_EMBED_MODEL?.trim() || null,
     apiKey: process.env.LOCAL_AI_API_KEY?.trim() || null,
+    cloudflareAccessClientId,
+    cloudflareAccessClientSecret,
     reasoningEffort: process.env.LOCAL_AI_REASONING_EFFORT?.trim() || 'none',
     timeoutMs: Number(process.env.LOCAL_AI_TIMEOUT_MS) || 600_000,
   }
@@ -469,6 +485,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const url = `${this.config.baseUrl}${path}`
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (this.config.apiKey) headers.Authorization = `Bearer ${this.config.apiKey}`
+    if (this.config.cloudflareAccessClientId) {
+      headers['CF-Access-Client-Id'] = this.config.cloudflareAccessClientId
+    }
+    if (this.config.cloudflareAccessClientSecret) {
+      headers['CF-Access-Client-Secret'] = this.config.cloudflareAccessClientSecret
+    }
 
     let response: Response
     try {
