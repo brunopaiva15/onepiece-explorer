@@ -1,6 +1,13 @@
 import 'server-only'
 import { sql, type SQL } from 'drizzle-orm'
 import { withBoundary } from '@/db/boundary.ts'
+import {
+  labelNames,
+  PONEGLYPH_WORDS,
+  poneglyphCountsAtChapter,
+  poneglyphsKnownAt,
+  type PoneglyphView,
+} from './poneglyphs.ts'
 import { identityComponents } from './projection.ts'
 
 /**
@@ -287,4 +294,119 @@ export async function openQuestionsAtChapter(
   }
 
   return questions
+}
+
+/** A node of the library, named as the reader knows it. */
+export interface GraphNode {
+  entityId: string
+  label: string
+}
+
+/** A stone of the manifest, plus the way into the graph the library offers. */
+export interface KnownPoneglyph extends PoneglyphView {
+  /**
+   * The place in this library the stone's known location points at, when the
+   * reader has met it.
+   *
+   * A convenience and not an identity claim: the card says « Tombeau des Rois »
+   * because chapter 202 does, and this is a link to the library's own node of
+   * that name so the reader can go and read what else it holds. Null far more
+   * often than not — an island the story never named has no node, and a library
+   * that stops before the chapter that names one has not got there yet.
+   */
+  place: GraphNode | null
+}
+
+/** Everything the front door needs to say about the stones at one chapter. */
+export interface PoneglyphWatch {
+  /** Known stones, in the order the reader learned of them. */
+  stones: KnownPoneglyph[]
+  /** The library's own node for « ponéglyphe », when the reader has met it. */
+  node: GraphNode | null
+  /** How many road poneglyphs exist, once a chapter has said so. */
+  roads: number | null
+  /** How many poneglyphs exist in all, once a chapter has said so. */
+  total: number | null
+}
+
+/**
+ * Les ponéglyphes que le lecteur connaît, et ce qu'il en sait.
+ *
+ * The dating is not this function's work and that is the point of it being
+ * short: `poneglyphsKnownAt` has already removed every claim the reader has not
+ * read, so what is left to do here is one lookup — which of the places those
+ * stones stand in does this library actually hold, under a name the reader has
+ * been told.
+ *
+ * Two consequences worth stating. Before chapter 193 there is no query at all:
+ * the work has not used the word, so the front page has no section and the
+ * database is not asked. And the lookup runs inside the boundary, so a place the
+ * reader has not reached cannot become a link — a card can name where a stone
+ * stands and still have nowhere to send them, which is the honest shape of a
+ * library that has not imported that island yet.
+ */
+export async function poneglyphsAtChapter(
+  userId: string,
+  boundaryChapter: number,
+): Promise<PoneglyphWatch> {
+  const known = poneglyphsKnownAt(boundaryChapter)
+  const { roads, total } = poneglyphCountsAtChapter(boundaryChapter)
+  if (known.length === 0) return { stones: [], node: null, roads, total }
+
+  /*
+   * Places and the stones themselves, in one read.
+   *
+   * `place` for the links under each card and `object`/`concept` for the
+   * library's own node of the subject, which the heading points at. Both are
+   * labels rather than entities: an entity carries every name it has been given
+   * and the reader may only have been told one of them, so the match runs on the
+   * name and the boundary decides which names exist.
+   */
+  const rows = await withBoundary({ userId, boundaryChapter }, async (db) =>
+    db.execute<{ entity_id: string; label: string; node_type: string }>(sql`
+      SELECT DISTINCT l.entity_id, l.label, e.node_type
+      FROM entity_labels l
+      JOIN entities e ON e.id = l.entity_id
+      WHERE e.node_type IN ('place', 'object', 'concept')
+    `),
+  )
+
+  const places = rows.filter((row) => row.node_type === 'place')
+
+  const stones: KnownPoneglyph[] = known.map((stone) => {
+    /*
+     * The aliases are tried in order, and the order is the manifest's: the
+     * first is the most specific description the reader has reached. « Tombeau
+     * des Rois » before « Alubarna », because a card whose place says the tomb
+     * should link to the tomb when the library has it.
+     */
+    let place: GraphNode | null = null
+    for (const alias of stone.entities) {
+      const found = places.find((row) => labelNames(row.label, alias))
+      if (found) {
+        place = { entityId: found.entity_id, label: found.label }
+        break
+      }
+    }
+    return { ...stone, place }
+  })
+
+  /*
+   * The subject's own node, and the shortest name wins.
+   *
+   * A library holds « Ponéglyphe » as an object and may also hold « Ponéglyphe
+   * d'Alabasta » or « Plan de domination de Crocodile » beside it; the heading
+   * wants the general one, and among labels that all contain the word the
+   * shortest is it.
+   */
+  let node: GraphNode | null = null
+  for (const row of rows) {
+    if (row.node_type === 'place') continue
+    if (!PONEGLYPH_WORDS.some((word) => labelNames(row.label, word))) continue
+    if (!node || row.label.length < node.label.length) {
+      node = { entityId: row.entity_id, label: row.label }
+    }
+  }
+
+  return { stones, node, roads, total }
 }

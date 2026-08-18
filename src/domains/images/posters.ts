@@ -137,6 +137,21 @@ export async function postersFor(
       : null
     if (!bounty) continue
 
+    /*
+     * A picture drawn outside the manga is held, and not shown.
+     *
+     * The row can exist — it was fetched when the manifest still wanted it, and
+     * nothing deletes a stored picture behind the owner's back. What decides
+     * whether it reaches a page is the manifest, read here at every request, so
+     * marking a printing `rendering: 'anime'` empties it from every library at
+     * once instead of only from the ones enriched after the edit.
+     *
+     * Falling through rather than substituting: the caller finds no poster for
+     * this entity and shows the character with the figure, which is what the
+     * chapter gave the reader in the first place.
+     */
+    if (bounty.rendering) continue
+
     const url = signed.get(row.storage_key)
     if (!url) continue
 
@@ -163,37 +178,92 @@ export async function postersFor(
  */
 const WANTED = 60
 
+/** A bounty the reader knows, whether or not anybody has a picture of it. */
+export interface KnownBounty {
+  /** The manifest's name for them, so two labels of one person agree. */
+  canonical: string
+  /** The figure printed on the last poster they have read. */
+  amount: number
+  /** « 100 000 000 ฿ », ready to set. */
+  berries: string
+  /** The chapter that printed it. Never the reader's own. */
+  chapter: number
+}
+
 /**
- * Everyone the reader has seen a wanted poster of.
+ * Everyone the reader knows a bounty for, and what it says.
  *
- * The home page used to build its wall out of the sixty most connected
- * characters and then ask which of them had a poster, which is backwards, and
- * the bug it produced is worth keeping written down: Higuma is a mountain
- * bandit who appears in chapter 1, holds three relations, and carries the
- * earliest bounty in the story. He never entered a pool ranked by degree, so
- * the wall of a reader at chapter 100 showed Buggy, Krieg and Arlong and swore
- * that was all there was.
+ * Read from the manifest rather than from the pictures, and that inversion is
+ * the whole of this function. Two earlier versions each threw away most of the
+ * answer:
  *
- * Asking the pictures first inverts it. What comes back is small by nature —
- * posters exist for a handful of people and the boundary cuts even those — so
- * there is no ranking here and none is wanted: every row is somebody the reader
- * has genuinely seen a poster of, and choosing between them is the page's job.
+ *   **Ranking first** took the sixty best-connected characters and kept
+ *   whichever had a poster. Higuma is a mountain bandit with three relations
+ *   and the first bounty in the story, so a reader at chapter 100 saw Buggy,
+ *   Krieg and Arlong and no sign of him.
+ *
+ *   **Pictures first** fixed that and kept a quieter version of it. The wiki
+ *   has a file for about a quarter of the printings this manifest knows, so the
+ *   wall was silently the intersection of « wanted » and « photographed », and
+ *   Brogy — a hundred million on the page at chapter 118, no picture anywhere —
+ *   was simply never on it. The reader was told he was not wanted, which the
+ *   chapter they had just read said otherwise.
+ *
+ * So the question this asks is the reader's question: who, of the people in
+ * this library, has the reader seen a bounty for by now. The picture is a
+ * separate lookup and an optional one — `postersFor` answers it, and when it
+ * answers nothing the page shows the character and the figure.
+ *
+ * The boundary does the dating twice over, which is why nothing here reasons
+ * about chapters beyond `bountyAtChapter`: the labels are read inside it, so a
+ * name the reader has not been told cannot put anybody on the wall, and the
+ * printing chosen is the last one at or before their position.
  */
-export async function wantedEntityIds(
+export async function wantedAtChapter(
   userId: string,
   boundaryChapter: number,
   limit = WANTED,
-): Promise<string[]> {
+): Promise<Map<string, KnownBounty>> {
   const rows = await withBoundary({ userId, boundaryChapter }, async (db) =>
-    db.execute<{ entity_id: string }>(sql`
-      SELECT DISTINCT entity_id
-      FROM entity_images
-      WHERE kind = 'poster'
-      ORDER BY entity_id
-      LIMIT ${limit}
+    db.execute<{ entity_id: string; label: string }>(sql`
+      SELECT DISTINCT l.entity_id, l.label
+      FROM entity_labels l
+      JOIN entities e ON e.id = l.entity_id
+      WHERE e.node_type = 'character'
     `),
   )
-  return rows.map((row) => row.entity_id)
+
+  /*
+   * The longest matching label wins, for the reason `bountyCharacter` gives:
+   * an entity carrying both « Sanji » and « Vinsmoke Sanji » is one cook, and
+   * the fuller name is the one that settles which manifest entry this is.
+   */
+  const named = new Map<string, { label: string; character: BountyHistory }>()
+  for (const row of rows) {
+    const character = bountyCharacter(row.label)
+    if (!character) continue
+    const seen = named.get(row.entity_id)
+    if (!seen || row.label.length > seen.label.length) {
+      named.set(row.entity_id, { label: row.label, character })
+    }
+  }
+
+  const out = new Map<string, KnownBounty>()
+  for (const [entityId, { character }] of named) {
+    if (out.size >= limit) break
+    /* Null until the chapter that prints the first one, which is most of the
+       story for most people: nothing is rounded up to the nearest printing. */
+    const bounty = bountyAtChapter(character, boundaryChapter)
+    if (!bounty) continue
+    out.set(entityId, {
+      canonical: character.canonical,
+      amount: bounty.amount,
+      berries: formatBerries(bounty.amount),
+      chapter: bounty.chapter,
+    })
+  }
+
+  return out
 }
 
 export interface PosterReport {
@@ -220,6 +290,15 @@ export interface PosterReport {
   skipped: number
   /** Printings no file could be found for, named so the manifest can grow. */
   unresolved: string[]
+  /**
+   * Printings whose only picture was drawn outside the manga, and refused.
+   *
+   * Named rather than silently dropped, for the same reason `unresolved` is:
+   * a pass that quietly declines two of its printings and reports « 27 » looks
+   * like a pass that found everything. These are not missing — somebody found
+   * the picture, looked at it, and decided this site does not show it.
+   */
+  declined: string[]
   failures: Array<{ what: string; reason: string }>
 }
 
@@ -273,6 +352,7 @@ export async function enrichBountyPosters(
     stored: 0,
     skipped: 0,
     unresolved: [],
+    declined: [],
     failures: [],
   }
 
@@ -331,8 +411,26 @@ export async function enrichBountyPosters(
   const wanted: Array<{ target: Target; bounty: Bounty; title: string; pageUrl: string }> = []
   const judged = new Set<string>()
   const missing: string[] = []
+  const refused = new Set<string>()
   for (const target of targets) {
     for (const bounty of target.character.rows) {
+      const printing = `${target.character.canonical} · ${formatBerries(bounty.amount)} (ch. ${bounty.chapter})`
+
+      /*
+       * A picture drawn outside the manga is never fetched.
+       *
+       * Nothing downstream would show it — `postersFor` reads the same flag —
+       * so downloading it would be bytes stored to be ignored. Named in the
+       * report rather than skipped in silence: the pass declining a printing on
+       * purpose and the wiki not having one are different facts, and the panel
+       * that only knew the second was about to send somebody looking for a file
+       * that is already sitting on the line.
+       */
+      if (bounty.rendering) {
+        refused.add(printing)
+        continue
+      }
+
       /*
        * An automatic pass considers only what a person already decided.
        *
@@ -343,7 +441,6 @@ export async function enrichBountyPosters(
        */
       if (options.pinnedOnly && !bounty.file) continue
 
-      const printing = `${target.character.canonical} · ${formatBerries(bounty.amount)} (ch. ${bounty.chapter})`
       const first = !judged.has(printing)
       judged.add(printing)
 
@@ -369,6 +466,7 @@ export async function enrichBountyPosters(
     }
   }
   report.unresolved = missing
+  report.declined = [...refused]
 
   if (wanted.length === 0) return report
 

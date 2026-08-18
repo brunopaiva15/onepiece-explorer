@@ -373,6 +373,31 @@ export function EnrichPosters({ characters }: { characters: number }) {
             </details>
           )}
 
+          {/*
+            Declined, which is not the same thing as missing.
+            These printings have a picture and it was drawn for television. The
+            list is here so that nobody spends an evening looking for a file
+            that is already on the line, and so that the decision stays visible
+            instead of living only in a comment.
+          */}
+          {result.declined && result.declined.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-secondary hover:text-primary">
+                Tirages écartés, image hors manga ({result.declined.length})
+              </summary>
+              <ul className="mt-2 space-y-1 text-xs text-muted">
+                {result.declined.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-muted">
+                La prime est bien celle du manga ; la seule image qui existe a
+                été dessinée par l&apos;anime. Ces personnages apparaissent sur
+                le mur avec leur portrait et leur prime, sans affiche.
+              </p>
+            </details>
+          )}
+
           {result.failures && result.failures.length > 0 && (
             <ul className="mt-2 space-y-1 text-xs text-[var(--epi-contradicted)]">
               {result.failures.map((line) => (

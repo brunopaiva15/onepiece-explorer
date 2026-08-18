@@ -4,17 +4,21 @@ import { listChapters, type ChapterSummary } from '@/domains/chapters/queries.ts
 import {
   displayImages,
   postersFor,
-  wantedEntityIds,
+  wantedAtChapter,
   type DisplayImage,
+  type KnownBounty,
   type PosterView,
 } from '@/domains/images/index.ts'
 import { ARCS, arcOf, type Arc } from '@/domains/temporal/arcs.ts'
+import { labelNames } from '@/domains/temporal/poneglyphs.ts'
 import {
   castAtChapter,
   castOf,
   openQuestionsAtChapter,
+  poneglyphsAtChapter,
   type CastMember,
   type OpenQuestion,
+  type PoneglyphWatch,
 } from '@/domains/temporal/spotlight.ts'
 
 export const dynamic = 'force-dynamic'
@@ -89,8 +93,18 @@ export default async function HomePage({
     member: CastMember
     portrait: DisplayImage | null
     poster: PosterView | null
+    /** The figure the reader knows, when a chapter has printed one for them. */
+    bounty: KnownBounty | null
   }> = []
   let questions: OpenQuestion[] = []
+  /**
+   * Les pierres, et l'état vide qui est le bon avant le chapitre 193.
+   *
+   * Nothing to show is the honest answer for the first hundred and ninety-two
+   * chapters, and the section is absent rather than empty: a heading saying
+   * « aucun ponéglyphe connu » would raise a subject the work has not raised.
+   */
+  let poneglyphs: PoneglyphWatch = { stones: [], node: null, roads: null, total: null }
   /**
    * What the wall turned out to be.
    *
@@ -123,30 +137,39 @@ export default async function HomePage({
       .filter((chapter) => chapter.status === 'published' && chapter.number <= boundary)
       .sort((a, b) => b.number - a.number)
 
-    const [cast, open, wantedIds] = await Promise.all([
+    const [cast, open, bounties, stones] = await Promise.all([
       castAtChapter(session.userId, boundary, { nodeTypes: ['character'] }),
       openQuestionsAtChapter(session.userId, boundary),
-      wantedEntityIds(session.userId, boundary),
+      wantedAtChapter(session.userId, boundary),
+      poneglyphsAtChapter(session.userId, boundary),
     ])
+    poneglyphs = stones
 
     /*
-     * The posters first, and they decide what the wall is.
+     * The bounties first, and they decide who is on the wall.
      *
-     * Six characters dressed in a drawn poster frame was worse than the
-     * portraits it replaced: Laboon is a whale and Kaloo is a duck, and neither
-     * has ever been wanted for anything. A frame reading « avis de recherche »
-     * around a duck is the interface inventing the one thing this site does not
-     * invent. So the wall shows real posters, or it is not a wall of posters.
+     * Not the cast: the first version drew from `cast` — the sixty
+     * best-connected characters — and kept whichever of them happened to have a
+     * poster, which quietly cost the wall everybody wanted early and mentioned
+     * rarely. Higuma has the first bounty in the story and three relations to
+     * his name; a reader of chapter 100 saw Buggy, Krieg and Arlong and no sign
+     * that the bandit of chapter 1 was ever worth eight million.
      *
-     * Who those are is asked of the pictures, not of the cast. The first
-     * version drew from `cast` — the sixty best-connected characters — and kept
-     * whichever of them happened to have a poster, which quietly cost the wall
-     * everybody wanted early and mentioned rarely. Higuma has the first bounty
-     * in the story and three relations to his name; a reader of chapter 100 saw
-     * Buggy, Krieg and Arlong and no sign that the bandit of chapter 1 was ever
-     * worth eight million.
+     * And not the pictures either, which was the second version and a quieter
+     * form of the same loss. The wiki has a file for about a quarter of the
+     * printings the manifest knows, so « wanted » silently meant « wanted and
+     * photographed »: Brogy is worth a hundred million on the page at chapter
+     * 118 and no picture of that poster exists anywhere, so a reader who had
+     * just read it was shown a wall that did not include him.
+     *
+     * So the wall is who the reader knows a bounty for, and the picture is a
+     * second question asked of each of them. A poster when the manga printed
+     * one and somebody found it; the character and the figure otherwise. What
+     * never happens is the third thing: a face dressed in a drawn poster frame.
+     * Laboon is a whale and Kaloo is a duck, and « avis de recherche » printed
+     * around either is the interface asserting what no chapter did.
      */
-    const affiches = await castOf(session.userId, boundary, wantedIds)
+    const affiches = await castOf(session.userId, boundary, [...bounties.keys()])
     const posters = await postersFor(
       session.userId,
       boundary,
@@ -163,6 +186,25 @@ export default async function HomePage({
     }
 
     /*
+     * The figure for a card, read off the component rather than off one id.
+     *
+     * A merged character carries several entity ids and the manifest was
+     * matched against each of their labels, so the bounty can sit on the half
+     * that did not become the representative. They agree on the figure when
+     * they agree on the person; taking the latest printing is what makes the
+     * disagreement harmless — an entity labelled « Luffy » and one labelled
+     * « Mugiwara » resolve to the same manifest line anyway.
+     */
+    const bountyOf = (member: CastMember): KnownBounty | null => {
+      let known: KnownBounty | null = null
+      for (const id of member.memberIds) {
+        const found = bounties.get(id)
+        if (found && (!known || found.chapter > known.chapter)) known = found
+      }
+      return known
+    }
+
+    /*
      * One card per person, and « per person » is by name here.
      *
      * `castOf` folds what the reader knows to be one character, which is the
@@ -172,30 +214,68 @@ export default async function HomePage({
      * is the thing the visitor compares, so it is the thing deduplicated.
      */
     const seen = new Set<string>()
-    const wanted = tirage(affiches)
-      .filter((member) => posterOf(member) !== null)
+    const connus = tirage(affiches)
+      .filter((member) => bountyOf(member) !== null)
       .filter((member) => {
         const key = member.label.trim().toLowerCase()
         if (seen.has(key)) return false
         seen.add(key)
         return true
       })
-      .slice(0, MUR)
+
+    /*
+     * Six slots, and the real posters take them first.
+     *
+     * The draw is still a draw — everybody with a bounty is in it, and which of
+     * the portrait cards come up changes on every visit. What is not left to
+     * chance is a card showing the actual paper losing its place to one that
+     * cannot: the manifest knows three times as many printings as the wiki has
+     * pictures of, so an unordered draw would spend most of a wall of wanted
+     * posters on faces while a real poster sat out.
+     *
+     * Same shape as the ordering on the wall of faces below, for the same
+     * reason: the cap falls on the tail, so what is at the head has to be what
+     * the section is about.
+     */
+    const wanted = [
+      ...connus.filter((member) => posterOf(member) !== null),
+      ...connus.filter((member) => posterOf(member) === null),
+    ].slice(0, MUR)
 
     mur = wanted.length > 0 ? 'affiches' : 'visages'
 
     /*
-     * Nobody wanted yet, which is most of the story: the earliest poster the
-     * wiki can be pinned to is Higuma's in chapter 1, but a library that has
-     * not been enriched, or a reader before the first bounty they hold, has
-     * none at all. They get faces instead, under a heading that says faces.
-     * Same cards, no poster chrome and no pretending.
+     * Nobody wanted yet, which is most of the story: the earliest bounty is
+     * Higuma's on the first page of chapter 1, but a library that holds none of
+     * the manifest's characters, or a reader before the first poster their
+     * library knows, has nothing to put here. They get faces instead, under a
+     * heading that says faces. Same cards, no poster chrome and no pretending.
      *
-     * Portraits are signed only on that path. Each one is a round trip and a
-     * wall of real posters has no use for a single face.
+     * Portraits are signed on both paths now, and on this one only for the
+     * people whose poster is missing — which is the majority, because the
+     * gallery is a quarter of the manifest. Signing is one batched round trip
+     * whatever the length, so asking for the shortfall costs the page nothing
+     * it was not already paying.
      */
     if (wanted.length > 0) {
-      wall = wanted.map((member) => ({ member, portrait: null, poster: posterOf(member) }))
+      const facesNeeded = wanted.filter((member) => posterOf(member) === null)
+      const faces = await displayImages(
+        session.userId,
+        boundary,
+        facesNeeded.flatMap((member) => member.memberIds),
+      )
+
+      wall = wanted.map((member) => {
+        const poster = posterOf(member)
+        return {
+          member,
+          portrait: poster
+            ? null
+            : (member.memberIds.map((id) => faces.get(id)).find((face) => face) ?? null),
+          poster,
+          bounty: bountyOf(member),
+        }
+      })
     } else {
       const drawn = tirage(cast)
       const images = await displayImages(
@@ -218,7 +298,7 @@ export default async function HomePage({
         ...drawn.filter((member) => faceOf(member) === null),
       ]
         .slice(0, MUR)
-        .map((member) => ({ member, portrait: faceOf(member), poster: null }))
+        .map((member) => ({ member, portrait: faceOf(member), poster: null, bounty: null }))
     }
 
     questions = tirage(open).slice(0, 3)
@@ -289,13 +369,16 @@ export default async function HomePage({
             </h2>
             <p className="text-sm text-secondary">
               {mur === 'affiches'
-                ? "Les affiches que vous avez vues, avec la prime qui était dessus."
+                ? 'Les primes que vos chapitres vous ont apprises, avec l’affiche quand le manga l’a montrée.'
                 : 'Tirés au sort. Rechargez : les visages changent.'}
             </p>
           </div>
 
           <ul className={`mur mt-5 ${mur === 'affiches' ? 'mur-affiches' : ''}`}>
-            {wall.map(({ member, portrait, poster }) => (
+            {wall.map(({ member, portrait, poster, bounty }) => {
+              /* The number to print, and where it is allowed to come from. */
+              const prime = poster ?? bounty
+              return (
               <li key={member.entityId}>
                 <Link
                   href={`/entite/${member.entityId}?ch=${boundary}`}
@@ -308,9 +391,10 @@ export default async function HomePage({
                    * was a mistake worth writing down: Laboon is a whale, Kaloo
                    * is a duck, and « avis de recherche » printed around either
                    * is the interface asserting something no chapter ever did.
-                   * The wall now shows the real ones when the reader has
-                   * reached any, and plain faces under a plain heading when
-                   * they have not.
+                   * That rule survives the wall being built from bounties
+                   * rather than from pictures — a card whose poster is missing
+                   * is a portrait with a figure under it, and the paper chrome
+                   * stays on the cards that really are paper.
                    *
                    * `object-fit: contain` on the poster, because it is a
                    * document: cropping one throws away the half that says what
@@ -345,18 +429,25 @@ export default async function HomePage({
                   {/*
                    * The band under the name, and what may go on it.
                    *
-                   * A figure when it comes off a poster the reader has read,
-                   * dated by the printing rather than by their chapter.
-                   * Otherwise the chapter they met the character in, which is
-                   * also a fact. What never goes here is an invented berry
-                   * amount: on a page whose whole claim is that its numbers
-                   * come from chapters, that would be the one lie.
+                   * A figure whenever a chapter the reader has read printed
+                   * one, which is now most of this wall: the poster's own
+                   * number when there is a poster, and the last printing the
+                   * manifest knows at their position when there is not. Both
+                   * are dated by a chapter and neither is dated by the reader's
+                   * — a poster older than their position keeps the number on
+                   * the paper, stale and true.
+                   *
+                   * The chapter they met the character in is the fallback, and
+                   * it is only reached by the wall of faces. What never goes
+                   * here is an invented berry amount: on a page whose whole
+                   * claim is that its numbers come from chapters, that would be
+                   * the one lie.
                    */}
                   <span className="affiche-prime">
-                    {poster ? (
+                    {prime ? (
                       <>
                         <span className="affiche-prime-mot">Mort ou vif</span>
-                        <span className="chiffre affiche-prime-somme">{poster.berries}</span>
+                        <span className="chiffre affiche-prime-somme">{prime.berries}</span>
                       </>
                     ) : (
                       <>
@@ -367,7 +458,8 @@ export default async function HomePage({
                   </span>
                 </Link>
               </li>
-            ))}
+              )
+            })}
           </ul>
 
           {/*
@@ -385,10 +477,133 @@ export default async function HomePage({
               Illustrations : {sources.join(', ')}. Ce n&apos;est pas une preuve
               tirée de vos pages.
               {mur === 'affiches'
-                ? " La prime affichée est celle imprimée sur l'affiche, datée du chapitre qui la montre."
+                ? " La prime vient du chapitre qui l'imprime. Quand le manga a montré l'affiche et qu'on en a l'image, elle est là ; sinon vous voyez le personnage et sa prime."
                 : ' Les portraits sont rapprochés de chaque personnage par le nom.'}
             </p>
           )}
+        </section>
+      )}
+
+      {/* --- The stones ----------------------------------------------------
+       * Le même travail que le mur, sur l'autre objet daté de cette œuvre.
+       *
+       * A wanted poster and a poneglyph are the two things this work puts in
+       * front of a reader whose meaning changes completely with how far they
+       * have read, and they fail in opposite directions. A poster spoils by its
+       * number; a stone spoils by everything around it — that it is red, that
+       * three others exist, that the one under Alubarna is the reason a country
+       * hid a tomb, that what Robin said about it at 203 was not true.
+       *
+       * So the card carries dates and nothing else: the chapter that told the
+       * reader the stone exists, the chapter that showed it, the chapter in
+       * which they watched somebody read it, and where it stands as of the last
+       * chapter that said. Never what it says. A reader of 202 gets one stone in
+       * a royal tomb; the same page at 818 grows a red one and a count of four.
+       */}
+      {poneglyphs.stones.length > 0 && (
+        <section className="mt-14">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
+            <h2 className="font-display text-2xl uppercase text-primary">Ponéglyphes</h2>
+            {poneglyphs.node && (
+              <p className="text-sm">
+                <Link
+                  href={`/entite/${poneglyphs.node.entityId}?ch=${boundary}`}
+                  className="text-accent-strong hover:underline"
+                >
+                  {poneglyphs.node.label} dans votre graphe →
+                </Link>
+              </p>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-secondary">
+            Les pierres dont vos chapitres vous ont parlé, et rien de ce
+            qu&apos;elles disent : ça, c&apos;est à l&apos;histoire de vous
+            l&apos;apprendre.
+          </p>
+
+          <ul className="steles mt-5">
+            {poneglyphs.stones.map((stone) => (
+              <li key={stone.slug} className={`stele ${stone.road ? 'stele-route' : ''}`}>
+                <p className="stele-type">
+                  {stone.road ? 'Road ponéglyphe' : 'Ponéglyphe'}
+                </p>
+                <p className="stele-nom">{stone.name}</p>
+                {stone.where && (
+                  <p className="stele-lieu">
+                    {/*
+                     * The description, and the way into the graph folded into it
+                     * when they are the same place.
+                     *
+                     * « Tombeau des Rois, sous Alubarna · Tombeau des Rois → »
+                     * is one place named twice, which reads as two. When the
+                     * library's own label is already in the sentence the
+                     * sentence becomes the link; when it is not — the node is
+                     * called « Alubarna » and the line says the tomb — it is
+                     * added, because dropping it would hide the only door.
+                     */}
+                    {stone.place ? (
+                      labelNames(stone.where, stone.place.label) ? (
+                        <Link href={`/entite/${stone.place.entityId}?ch=${boundary}`}>
+                          {stone.where} →
+                        </Link>
+                      ) : (
+                        <>
+                          {stone.where}
+                          {' · '}
+                          <Link href={`/entite/${stone.place.entityId}?ch=${boundary}`}>
+                            {stone.place.label} →
+                          </Link>
+                        </>
+                      )
+                    ) : (
+                      stone.where
+                    )}
+                  </p>
+                )}
+                <p className="stele-dates">
+                  {/*
+                   * The chapter that told them it exists, unless it is also the
+                   * chapter that showed it — « connu ch. 967 · vu ch. 967 » is
+                   * one fact printed twice.
+                   */}
+                  {stone.seen !== stone.known && (
+                    <span className="stele-date">connu ch. {stone.known}</span>
+                  )}
+                  {stone.seen !== null ? (
+                    <span className="stele-date">vu ch. {stone.seen}</span>
+                  ) : (
+                    /*
+                     * « Jusqu'ici », and the word is load-bearing: « pas encore
+                     * montré » would be a promise that a later chapter shows it,
+                     * which is a fact about chapters the reader has not read.
+                     */
+                    <span className="stele-date stele-date-vide">pas montré jusqu&apos;ici</span>
+                  )}
+                  {stone.read !== null && (
+                    <span className="stele-date">lu ch. {stone.read}</span>
+                  )}
+                  {stone.lost && <span className="stele-date stele-perdu">disparu</span>}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          {/*
+           * Le compte, et il est daté comme les pierres.
+           *
+           * « Quatre » is Inuarashi's at 818 and « trente » is Tamago's at 846.
+           * Before those chapters the reader is told how many stones *they* know
+           * and nothing about how many there are, because a total is the loudest
+           * spoiler a tracker can print: told there are four of a kind and
+           * holding one, a reader knows exactly what the next arcs are for.
+           */}
+          <p className="mt-4 text-xs text-muted">
+            Vous en connaissez {poneglyphs.stones.length}.
+            {poneglyphs.roads !== null &&
+              ` Dont ${poneglyphs.stones.filter((stone) => stone.road).length} des ${poneglyphs.roads} qui mènent à la dernière île.`}
+            {poneglyphs.total !== null && ` On en compterait ${poneglyphs.total} dans le monde.`}{' '}
+            Les chapitres sont relevés à la main, page par page, comme les primes.
+          </p>
         </section>
       )}
 

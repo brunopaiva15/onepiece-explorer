@@ -81,6 +81,28 @@ export interface Bounty {
    * it a poster is the mistake this wall was rebuilt to stop making.
    */
   crop?: ImageCrop
+  /**
+   * Set when the only picture of this printing was drawn outside the manga.
+   *
+   * The bounty is canon and the chapter is canon; the drawing is the anime's.
+   * Higuma's eight million is on the first page of chapter 1 and the only
+   * rendering anybody has is « Episode of Luffy »'s; Luffy's thirty million is
+   * read on the Merry in chapter 96 and the only rendering is the anime's panel
+   * of it. Both were shown for a release, and both were pictures this site had
+   * no business presenting as pages of the work it is reading.
+   *
+   * So the line keeps its file — it is the truth about what exists, and the
+   * next person to ask « is there really no picture of this » deserves the
+   * answer — and nothing fetches it and nothing shows it. The reader gets the
+   * character and the figure instead, which is the whole of what the chapter
+   * told them anyway: a poster was printed, and it said this number.
+   *
+   * Reversing it is deleting one word, and that is deliberate. If the day comes
+   * when the site decides an anime rendering of a canonical poster is worth
+   * showing, it should be one edit in the manifest and not a rule rewritten in
+   * three modules.
+   */
+  rendering?: 'anime'
 }
 
 export interface BountyHistory {
@@ -129,6 +151,11 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
        * the anime's panel of Usopp and Luffy reading it on the Merry, and the
        * poster inside it is legible: WANTED, DEAD OR ALIVE, MONKEY·D·LUFFY,
        * ฿30,000,000-, MARINE. The box below is that poster and nothing else.
+       *
+       * Legible, verified, and drawn for television — so `rendering` keeps it
+       * off the wall. Between chapter 96 and chapter 601 Luffy is a face and a
+       * figure here rather than a picture of a poster, which is the honest
+       * version of what this library holds.
        */
       {
         chapter: 96,
@@ -136,6 +163,7 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
         edition: 1,
         file: 'Luffy Receives His First Bounty.png',
         crop: { box: [0.394, 0.12, 0.223, 0.415], ratio: 665 / 482 },
+        rendering: 'anime',
       },
       { chapter: 234, amount: 100_000_000, edition: 2 },
       { chapter: 435, amount: 300_000_000, edition: 3 },
@@ -281,12 +309,24 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     rows: [
       /*
        * The first poster the work ever shows, on the first page of chapter 1,
-       * and the first one a reader of this site can see. The picture is the one
-       * « Episode of Luffy » drew of it, which is why the line is pinned: the
-       * matcher refuses a file whose caption names a special, and cannot tell a
-       * non-canonical poster from a canonical poster drawn for television.
+       * and the first bounty a reader of this site can know. The picture is the
+       * one « Episode of Luffy » drew of it, which is why the line is pinned:
+       * the matcher refuses a file whose caption names a special, and cannot
+       * tell a non-canonical poster from a canonical poster drawn for
+       * television.
+       *
+       * It can tell, now, because this line says so — and having said it, the
+       * picture is not shown. Higuma is the character and the eight million on
+       * the wall, and the only thing the reader loses is a drawing no chapter
+       * of the manga ever printed.
        */
-      { chapter: 1, amount: 8_000_000, edition: 1, file: 'Higuma Bounty Poster.png' },
+      {
+        chapter: 1,
+        amount: 8_000_000,
+        edition: 1,
+        file: 'Higuma Bounty Poster.png',
+        rendering: 'anime',
+      },
     ],
   },
   {
@@ -314,6 +354,26 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Brogy',
     aliases: ['brogy', 'broggy'],
     rows: [
+      /*
+       * Le même cent millions que Dorry, et la même absence — sauf qu'ici un
+       * fichier a l'air de la combler.
+       *
+       * « Dorry & Brogy Bounty Poster.png » is in the gallery, under a
+       * canonical heading, captioned « Dorry and Brogy's first known wanted
+       * poster ». It matches on the name and then fails on the printing, twice
+       * over. The word « first » is in the caption and not in the file name,
+       * and ordinals are read from file names only — that rule is what keeps an
+       * eyecatcher off Luffy's thirty million, and it costs this row.
+       *
+       * Pinning it anyway would be the worse answer. The picture is an anime
+       * frame of the two posters overlapping, cropped so that no figure appears
+       * on it at all, and half of what it shows is Dorry: it fails the rule
+       * `file` is written under, which is that somebody opened the picture and
+       * read the number off it.
+       *
+       * So the row stays open, and « Brogy · 100 000 000 ฿ (ch. 118) » in the
+       * report is the refusal working rather than a poster going missing.
+       */
       { chapter: 118, amount: 100_000_000, edition: 1 },
       {
         chapter: 1130,

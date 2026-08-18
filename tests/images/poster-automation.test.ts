@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { BOUNTY_HISTORY } from '@/domains/images/bounties.ts'
+import { BOUNTY_HISTORY, formatBerries } from '@/domains/images/bounties.ts'
 import { enrichBountyPosters, postersQuietly } from '@/domains/images/posters.ts'
 import type { PosterFile } from '@/domains/images/sources/bounty-posters.ts'
 import {
@@ -44,6 +44,16 @@ afterAll(async () => {
 })
 
 const luffy = BOUNTY_HISTORY.find((c) => c.canonical === 'Monkey D. Luffy')!
+
+/**
+ * The printings a pass is expected to bring in.
+ *
+ * Pinned, and drawn by the manga. Luffy's thirty million is pinned to the
+ * anime's panel of it and marked as such, and a pass that fetched it would be
+ * storing bytes the read path refuses to show — so it is out of every count
+ * here, the same way it is out of the wall.
+ */
+const fetchable = luffy.rows.filter((row) => row.file && !row.rendering)
 
 /** A downloader and a resolver that answer without a network. */
 function stubs() {
@@ -128,13 +138,12 @@ describe('la passe automatique', () => {
 
     await enrichBountyPosters(world.userId, { pinnedOnly: true, resolve, download })
 
-    const pinned = luffy.rows.filter((row) => row.file)
     const chapters = await storedChapters()
-    expect(chapters).toEqual(pinned.map((row) => row.chapter).sort((a, b) => a - b))
+    expect(chapters).toEqual(fetchable.map((row) => row.chapter).sort((a, b) => a - b))
 
     // And nothing that was not pinned: the unpinned printings are the ones the
     // matcher would have had to judge from a file name.
-    expect(downloaded.length).toBe(pinned.length)
+    expect(downloaded.length).toBe(fetchable.length)
   })
 
   it('ne retélécharge rien la seconde fois', async () => {
@@ -183,7 +192,7 @@ describe('la passe automatique', () => {
      * would make the number look like a fact about the manifest when it is a
      * fact about the batch size.
      */
-    expect(report.resolved).toBe(luffy.rows.filter((row) => row.file).length)
+    expect(report.resolved).toBe(fetchable.length)
   })
 
   it('avale une panne du wiki plutôt que de la faire remonter', async () => {
@@ -245,5 +254,33 @@ describe('le bouton reste la passe complète', () => {
     const unpinned = luffy.rows.filter((row) => !row.file).length
     expect(report.unresolved.length).toBe(unpinned)
     expect(report.unresolved.some((line) => line.includes('Monkey D. Luffy'))).toBe(true)
+  })
+
+  /*
+   * Le tirage écarté, et pourquoi il n'est pas « manquant ».
+   *
+   * Luffy's thirty million has a file, somebody verified it, and it was drawn
+   * by the anime. Both halves of that are load-bearing: the pass must not fetch
+   * a picture the reader will never be shown, and it must not file the printing
+   * under « the wiki has nothing », which would send the next person looking
+   * for a file that is already written on the line.
+   */
+  it('écarte une image dessinée hors du manga sans la ranger dans les manquants', async () => {
+    await seedLuffy()
+    const { downloaded, resolve, download } = stubs()
+
+    const report = await enrichBountyPosters(world.userId, {
+      gallery: [],
+      resolve,
+      download,
+    })
+
+    const printing = `Monkey D. Luffy · ${formatBerries(30_000_000)} (ch. 96)`
+    expect(report.declined).toContain(printing)
+    expect(report.unresolved).not.toContain(printing)
+
+    // Nothing was fetched for it, and nothing was stored at its chapter.
+    expect(downloaded.some((ref) => ref.includes('Luffy Receives His First Bounty'))).toBe(false)
+    expect(await storedChapters()).not.toContain(96)
   })
 })
