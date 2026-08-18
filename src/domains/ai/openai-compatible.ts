@@ -8,10 +8,13 @@ import {
   extractionSystem,
   glossaryList,
   knownEntitiesList,
+  panelDescriptionList,
   parallelText,
+  proposedSoFarList,
   refList,
   resolutionSystem,
   summarySystem,
+  textBlockList,
   transcriptionSystem,
   untrusted,
   wikiPages,
@@ -53,6 +56,15 @@ import {
   type TranscribeRequest,
   type Usage,
 } from './provider.ts'
+import {
+  compactLocalExtraction,
+  extractionUnits,
+  localExtractionDiscipline,
+  localExtractionLimitsForUnits,
+  type LocalExtractionLimits,
+} from './local-extraction.ts'
+
+export { localExtractionLimitsForUnits } from './local-extraction.ts'
 
 /**
  * A model you host yourself, behind an OpenAI-compatible endpoint.
@@ -171,39 +183,10 @@ interface ChatResponse {
  * retried a perfectly small chapter, multiplying one short inference into
  * minutes of work.
  *
- * These ceilings scale with the material in the current slice. They are still
- * deliberately generous, but a five-passage summary no longer advertises the
- * capacity of a twenty-panel manga slice. The canonical schemas and downstream
- * validation remain unchanged, so this only changes what the local model is
- * allowed to emit in one call.
+ * The actual values live in `local-extraction.ts`, beside the local-only
+ * compaction rules. Keeping the schema construction here makes the transport
+ * contract visible where it is sent.
  */
-export interface LocalExtractionLimits {
-  units: number
-  entities: number
-  assertions: number
-  events: number
-  mysteries: number
-  maxTokens: number
-}
-
-export function localExtractionLimitsForUnits(rawUnits: number): LocalExtractionLimits {
-  const units = Math.max(1, Math.floor(rawUnits))
-
-  return {
-    units,
-    entities: Math.min(40, 8 + Math.ceil(units * 0.8)),
-    assertions: Math.min(80, 10 + units * 2),
-    events: Math.min(20, 4 + Math.ceil(units * 0.8)),
-    mysteries: Math.min(10, 2 + Math.ceil(units * 0.2)),
-    maxTokens: Math.min(14_000, Math.max(8_000, 6_000 + units * 400)),
-  }
-}
-
-function extractionUnits(request: ExtractRequest): number {
-  if (request.source === 'summary') return request.textBlocks.length
-  return request.descriptions.length > 0 ? request.descriptions.length : request.textBlocks.length
-}
-
 function localExtractionSchema(limits: LocalExtractionLimits) {
   return z.object({
     entities: z.array(candidateEntitySchema).max(limits.entities),
@@ -211,19 +194,6 @@ function localExtractionSchema(limits: LocalExtractionLimits) {
     events: z.array(candidateEventSchema).max(limits.events),
     mysteries: z.array(candidateMysterySchema).max(limits.mysteries),
   })
-}
-
-function localExtractionDiscipline(limits: LocalExtractionLimits): string {
-  return [
-    'LIMITES DE SORTIE POUR CE MODÈLE AUTO-HÉBERGÉ.',
-    'Les maxima ci-dessous sont des garde-fous, JAMAIS des objectifs à remplir.',
-    'Arrêtez chaque tableau dès que les éléments réellement présents dans cette tranche ont été extraits.',
-    'Ne créez pas une entité pour reformuler un fait, une action, un état ou la conclusion d’une scène :',
-    'un nœud « concept » est une notion durable du monde, pas un événement nominalisé.',
-    `Cette tranche contient ${limits.units} unité(s) de matière. Plafonds : ` +
-      `${limits.entities} entités, ${limits.assertions} relations, ` +
-      `${limits.events} événements, ${limits.mysteries} mystères.`,
-  ].join('\n')
 }
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -295,14 +265,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const known = knownEntitiesList(request.knownEntities, request.knownEntitiesTotal)
     const limits = localExtractionLimitsForUnits(extractionUnits(request))
     const schema = localExtractionSchema(limits)
-
-    const blocks = request.textBlocks
-      .map((b) =>
-        request.source === 'summary'
-          ? `[${b.ref}] ${b.text}`
-          : `[${b.ref}${b.panelRef ? ` dans ${b.panelRef}` : ' hors case'}] ${b.text}`,
-      )
-      .join('\n\n')
+    const blocks = textBlockList(request.textBlocks, request.source)
 
     console.log(
       `[local-ai] extraction ${limits.units} unité(s) : plafonds ` +
@@ -320,12 +283,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
       name: 'extraction',
       maxTokens: limits.maxTokens,
       content: [
+        // Qwen receives the same chapter material, in the same order and with
+        // the same renderers as Claude. The only extra block is this explicit
+        // selectivity discipline, because constrained decoding makes Qwen treat
+        // generous maxima as something to fill.
         { type: 'text', text: localExtractionDiscipline(limits) },
         { type: 'text', text: known },
         { type: 'text', text: glossaryList(request.glossary) },
+        ...(request.proposedSoFar && request.proposedSoFar.length > 0
+          ? [{ type: 'text' as const, text: proposedSoFarList(request.proposedSoFar) }]
+          : []),
         { type: 'text', text: refList(request.allowedRefs) },
         ...(request.descriptions.length > 0
-          ? [{ type: 'text' as const, text: describeForPrompt(request.descriptions) }]
+          ? [{ type: 'text' as const, text: panelDescriptionList(request.descriptions) }]
           : []),
         {
           type: 'text',
@@ -342,7 +312,22 @@ export class OpenAICompatibleProvider implements ModelProvider {
       ],
     })
 
-    return { ...result, value: clampExtraction(result.value) }
+    const compacted = compactLocalExtraction(clampExtraction(result.value), {
+      knownEntities: request.knownEntities,
+      proposedSoFar: request.proposedSoFar,
+    })
+    const removed = Object.values(compacted.stats).reduce((sum, value) => sum + value, 0)
+    if (removed > 0) {
+      console.log(
+        `[local-ai] compaction : ${compacted.stats.reusedEntities} entité(s) existante(s) réutilisée(s), ` +
+          `${compacted.stats.duplicateEntities} entité(s), ` +
+          `${compacted.stats.duplicateAssertions} relation(s), ` +
+          `${compacted.stats.duplicateEvents} événement(s) et ` +
+          `${compacted.stats.duplicateMysteries} mystère(s) en doublon retirés`,
+      )
+    }
+
+    return { ...result, value: compacted.value }
   }
 
   async resolve(request: ResolveRequest): Promise<ProviderResult<Resolution>> {
@@ -619,14 +604,6 @@ function imageParts(images: ImageInput[]): ContentPart[] {
     type: 'image_url' as const,
     image_url: { url: `data:${image.mediaType};base64,${image.data}` },
   }))
-}
-
-function describeForPrompt(descriptions: PanelDescription[]): string {
-  if (descriptions.length === 0) return 'Aucune description de case disponible.'
-  return [
-    'Descriptions des cases, produites par cette exécution :',
-    ...descriptions.map((d) => `  [${d.panel_ref}] ${d.description}`),
-  ].join('\n')
 }
 
 /**
