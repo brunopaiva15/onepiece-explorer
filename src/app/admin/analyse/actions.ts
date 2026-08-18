@@ -5,13 +5,13 @@ import { requireOwner } from '@/domains/auth/session.ts'
 import { consume } from '@/domains/observability/rate-limit.ts'
 import {
   applyFinding,
-  forgetReadings,
+  forgetPasses,
   ignoreFinding,
-  readStoryWithModel,
+  knownAnalysis,
   sweepStory,
-  type RelectureReport,
   type SweepReport,
 } from '@/domains/review/audit-run.ts'
+import { readWithModel, type AnalysisReport } from '@/domains/review/audit-passes.ts'
 
 /**
  * Ce que la page d'analyse a le droit de demander au serveur.
@@ -20,6 +20,10 @@ import {
  * atteignable sans passer par le bouton qui l'a offerte, et l'identifiant d'un
  * constat qui arrive du navigateur ne prouve rien — c'est `applyFinding` qui
  * relit le constat en base, et `requireOwner` qui dit à qui il appartient.
+ *
+ * Le nom d'une analyse arrive lui aussi du navigateur, et subit le même
+ * traitement : il est cherché dans la table des analyses connues, jamais
+ * interpolé. Ce qui n'y est pas est refusé.
  */
 
 export interface SweepActionResult {
@@ -31,10 +35,14 @@ export interface SweepActionResult {
 /**
  * Passer toute la bibliothèque sous les règles.
  *
- * Sans limite de débit, à la différence de la relecture : aucune ligne ne quitte
+ * Sans limite de débit, à la différence des lectures : aucune ligne ne quitte
  * la machine, rien n'est facturé, et le seul coût est quelques requêtes sur la
  * base du lecteur. Un bouton qu'on peut cliquer deux fois de suite est ce qu'il
  * faut ici — on corrige, on relance, et la liste raccourcit.
+ *
+ * C'est aussi pourquoi « Analyser l'histoire » ne déclenche que celui-ci :
+ * aucun crédit de modèle n'est dépensé au clic, jamais. Les lectures payantes
+ * ont leurs propres boutons, qui disent ce qu'elles vont lire.
  */
 export async function sweepStoryAction(): Promise<SweepActionResult> {
   try {
@@ -71,6 +79,7 @@ export async function applyFindingAction(findingId: string): Promise<FindingActi
       revalidatePath('/histoire')
       revalidatePath('/graph')
       revalidatePath('/chronologie')
+      revalidatePath('/mysteres')
     }
 
     return result.ok
@@ -100,40 +109,46 @@ export async function ignoreFindingAction(findingId: string): Promise<FindingAct
   }
 }
 
-export interface RelectureActionResult {
+export interface AnalyseActionResult {
   ok: boolean
-  report?: RelectureReport
+  report?: AnalysisReport
   error?: string
 }
 
 /**
- * Combien de chapitres une seule demande relit.
+ * Combien de sujets une seule demande lit.
  *
- * Un appel par chapitre, et une action de serveur a un plafond de durée : au-delà
+ * Un appel par sujet, et une action de serveur a un plafond de durée : au-delà
  * d'une poignée, la réponse meurt en emportant les appels déjà payés. Le
  * navigateur redemande, ce qui est aussi ce qui rend la progression visible et
  * l'arrêt possible entre deux paquets.
  */
 const MAX_BATCH = 8
 
-/** Et combien de chapitres ratés une passe peut mettre de côté avant de renoncer. */
+/** Et combien de sujets ratés une passe peut mettre de côté avant de renoncer. */
 const MAX_SKIPPED = 500
 
 /**
- * Relire un paquet de chapitres.
+ * Lire un paquet de sujets, pour une analyse.
  *
- * Limitée sous « ask » parce que c'est la même dépense : une question posée à un
- * modèle avec un contexte. Comptée par demande et non par chapitre — un paquet
+ * Limitée sous « ask » parce que c'est la même dépense : une question posée à
+ * un modèle avec un contexte. Comptée par demande et non par sujet — un paquet
  * est un geste, et ce que la limite doit arrêter est une boucle, pas une
- * relecture qui avance.
+ * lecture qui avance.
  */
-export async function relireAction(
+export async function analyserAction(
+  analysis: string,
   batch = 4,
-  /** Les chapitres que cette passe a déjà ratés. Voir `readStoryWithModel`. */
-  skip: number[] = [],
-): Promise<RelectureActionResult> {
+  /** Les sujets que cette passe a déjà ratés. Voir `readWithModel`. */
+  skip: string[] = [],
+): Promise<AnalyseActionResult> {
   try {
     const session = await requireOwner()
+
+    const kind = knownAnalysis(analysis)
+    if (kind === null || kind === 'regles') {
+      return { ok: false, error: 'Analyse inconnue.' }
+    }
 
     const allowance = await consume(session.userId, 'ask')
     if (!allowance.allowed) {
@@ -150,16 +165,16 @@ export async function relireAction(
     /*
      * Les arguments viennent du navigateur, y compris celui-ci.
      *
-     * Il ne sert qu'à *retirer* des chapitres de la passe, donc le pire qu'une
+     * Il ne sert qu'à *retirer* des sujets de la passe, donc le pire qu'une
      * valeur inventée puisse faire est d'en sauter — pas d'en lire un qui ne
      * serait pas à lire. Il est quand même filtré et borné : un tableau de
      * cinquante mille entrées traverserait le réseau et finirait dans un `IN`.
      */
     const setAside = (Array.isArray(skip) ? skip : [])
-      .filter((chapter) => Number.isInteger(chapter) && chapter > 0)
+      .filter((subject) => typeof subject === 'string' && subject.length > 0 && subject.length <= 64)
       .slice(0, MAX_SKIPPED)
 
-    const report = await readStoryWithModel(session.userId, session.workId, size, setAside)
+    const report = await readWithModel(session.userId, session.workId, kind, size, setAside)
 
     if (report.found > 0 || report.read > 0) revalidatePath('/admin/analyse')
 
@@ -167,7 +182,7 @@ export async function relireAction(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'Relecture impossible.',
+      error: error instanceof Error ? error.message : 'Lecture impossible.',
     }
   }
 }
@@ -178,11 +193,20 @@ export interface ForgetActionResult {
   error?: string
 }
 
-/** Tout relire à nouveau — et donc tout repayer. Le seul geste qui efface. */
-export async function forgetReadingsAction(): Promise<ForgetActionResult> {
+/**
+ * Tout relire à nouveau — et donc tout repayer —, une analyse à la fois.
+ *
+ * Le seul geste qui efface ce qui a été lu. Borné à une analyse : vouloir
+ * relire les questions n'est pas vouloir repayer cent cinquante chapitres.
+ */
+export async function forgetPassesAction(analysis: string): Promise<ForgetActionResult> {
   try {
     const session = await requireOwner()
-    const forgotten = await forgetReadings(session.userId, session.workId)
+
+    const kind = knownAnalysis(analysis)
+    if (kind === null || kind === 'regles') return { ok: false, error: 'Analyse inconnue.' }
+
+    const forgotten = await forgetPasses(session.userId, session.workId, kind)
     revalidatePath('/admin/analyse')
     return { ok: true, forgotten }
   } catch (error) {

@@ -118,3 +118,44 @@ export function sameBeat(a: string, b: string): boolean {
   const there = names(b)
   return only(here, there).length === 0 || only(there, here).length === 0
 }
+
+/**
+ * How close two summaries are, when the answer « pas la même scène » is not the
+ * end of the question.
+ *
+ * `sameBeat` is a verdict and has to stay one: it folds two nodes into one for
+ * free, so its threshold is set where a false fold is impossible rather than
+ * where a rephrasing is likely. Everything between « obviously the same » and
+ * « obviously not » is what it declines to judge — and that band is exactly
+ * where a second, paid reading has something to add.
+ *
+ * So this measures instead of deciding. It returns the same three quantities
+ * `sameBeat` weighs, computed by the same tokeniser, and leaves the threshold
+ * to the caller. Sharing the tokeniser is the whole point: a candidate selected
+ * by a looser count than the one that folds is a candidate the fold could have
+ * taken, and two tokenisers would make that relationship a coincidence.
+ */
+export interface BeatOverlap {
+  /** Content words both summaries carry. */
+  shared: number
+  /** Shared over the smaller vocabulary — the overlap coefficient. */
+  ratio: number
+  /** Capitalised words each side has that the other does not. */
+  exclusiveNames: { left: string[]; right: string[] }
+}
+
+export function beatOverlap(a: string, b: string): BeatOverlap {
+  const left = beatWords(a)
+  const right = beatWords(b)
+  const shared = [...left].filter((token) => right.has(token)).length
+  const smaller = Math.min(left.size, right.size)
+
+  const here = names(a)
+  const there = names(b)
+
+  return {
+    shared,
+    ratio: smaller === 0 ? 0 : shared / smaller,
+    exclusiveNames: { left: only(here, there), right: only(there, here) },
+  }
+}

@@ -32,6 +32,9 @@ const EMPTY: AuditSnapshot = {
   memberships: [],
   events: [],
   firstWritten: new Map(),
+  mysteries: [],
+  resolutions: [],
+  provenance: [],
 }
 
 function entity(input: Partial<AuditEntity> & { id: string }): AuditEntity {

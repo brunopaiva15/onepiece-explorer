@@ -1,12 +1,11 @@
 import 'server-only'
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { withIngest } from '@/db/boundary.ts'
-import { modelProvider } from '@/domains/ai/index.ts'
 import {
   assertions,
   auditFindings,
   auditLog,
-  auditReads,
+  auditPasses,
   entities,
   entityLabels,
   events,
@@ -16,13 +15,13 @@ import { renameEntityLabel } from '@/domains/knowledge/rename.ts'
 import {
   auditStorySnapshot,
   firstWrittenChapters,
-  parseRelecture,
-  relectureFinding,
   type AuditEntity,
   type AuditFinding,
   type AuditFix,
   type AuditSnapshot,
 } from './audit.ts'
+import { soundResolutions } from './mystery-audit.ts'
+import { ANALYSES, type AnalysisKind, type PassRecord, type SubjectKind } from './analyses.ts'
 
 /**
  * Le balayage de toute l'histoire : le charger, l'écrire, l'appliquer.
@@ -198,6 +197,108 @@ async function loadSnapshot(userId: string, workId: string): Promise<LoadedSnaps
        ORDER BY c.number
     `)) as unknown as Array<{ number: number; text: string | null }>
 
+    /*
+     * Ce que chaque identité cite, quand elle cite quelque chose.
+     *
+     * Une seule lecture pour toutes, et la plus longue citation gagne : une
+     * relation peut porter plusieurs preuves, et celle qui explique le mieux ce
+     * qu'elle affirme est celle qui en dit le plus. Une identité écrite à la
+     * main n'en a aucune, et le null se lit comme ce qu'il est — la parole du
+     * lecteur, qu'aucune règle d'ici ne conteste.
+     */
+    const excerptRows = (await db.execute(sql`
+      SELECT DISTINCT ON (a.id) a.id, ev.excerpt
+        FROM assertions a
+        JOIN evidence ev ON ev.assertion_id = a.id
+       WHERE a.user_id = ${userId} AND a.work_id = ${workId}
+         AND a.predicate = 'same_as' AND a.review_status = 'accepted'
+         AND ev.excerpt IS NOT NULL
+       ORDER BY a.id, length(ev.excerpt) DESC
+    `)) as unknown as Array<{ id: string; excerpt: string }>
+
+    const excerpts = new Map(excerptRows.map((row) => [row.id, row.excerpt]))
+
+    const mysteryRows = (await db.execute(sql`
+      SELECT m.entity_id, m.question, m.opened_in_chapter, m.state::text AS state,
+             m.resolved_in_chapter
+        FROM mysteries m
+        JOIN entities en ON en.id = m.entity_id
+       WHERE m.user_id = ${userId} AND m.work_id = ${workId}
+         AND en.review_status = 'accepted'
+       ORDER BY m.opened_in_chapter
+    `)) as unknown as Array<{
+      entity_id: string
+      question: string
+      opened_in_chapter: number
+      state: string
+      resolved_in_chapter: number | null
+    }>
+
+    /*
+     * Les réponses écrites, datées par la **scène** et non par la relation.
+     *
+     * `knowledge_from_chapter` est ce que le balayage a écrit, et c'est
+     * précisément ce qu'on soupçonne : une résolution datée du chapitre où la
+     * passe tournait plutôt que de celui où la scène se joue. La date qui fait
+     * foi est donc relue dans `events`, où elle vient du chapitre lui-même.
+     */
+    const resolutionRows = (await db.execute(sql`
+      SELECT a.id, a.subject_entity_id, a.object_entity_id,
+             COALESCE(e.shown_in_chapter, e.told_in_chapter, a.knowledge_from_chapter) AS chapter
+        FROM assertions a
+        LEFT JOIN events e ON e.entity_id = a.subject_entity_id
+       WHERE a.user_id = ${userId} AND a.work_id = ${workId}
+         AND a.predicate = 'resolves_mystery' AND a.review_status = 'accepted'
+         AND a.object_entity_id IS NOT NULL
+    `)) as unknown as Array<{
+      id: string
+      subject_entity_id: string
+      object_entity_id: string
+      chapter: number
+    }>
+
+    /*
+     * D'où vient la preuve de chaque scène.
+     *
+     * Les natures des pages citées et celles des preuves elles-mêmes, agrégées
+     * par scène — une scène dont *toutes* les preuves viennent d'une couverture
+     * n'appartient pas au fil principal. `structured` dit si le chapitre a des
+     * pages du tout : un chapitre importé en résumé n'a rien à lire, et la
+     * règle se tait plutôt que de conclure d'une absence.
+     *
+     * Les preuves sont cherchées des deux côtés de la relation : une scène est
+     * tantôt le sujet d'un fait — « le combat oppose X à Y » — tantôt son objet
+     * — « X prend part à la scène ».
+     */
+    const provenanceRows = (await db.execute(sql`
+      SELECT e.entity_id, e.summary,
+             COALESCE(e.told_in_chapter, e.shown_in_chapter, 0) AS chapter,
+             array_remove(array_agg(DISTINCT p.kind::text), NULL) AS page_kinds,
+             array_remove(array_agg(DISTINCT ev.kind::text), NULL) AS evidence_kinds,
+             EXISTS (SELECT 1 FROM pages pg
+                      WHERE pg.chapter_id = c.id AND pg.user_id = ${userId}) AS structured
+        FROM events e
+        JOIN entities en ON en.id = e.entity_id
+        JOIN chapters c ON c.user_id = e.user_id AND c.work_id = e.work_id
+         AND c.number = COALESCE(e.told_in_chapter, e.shown_in_chapter, 0)
+        LEFT JOIN assertions a ON a.user_id = e.user_id
+         AND a.review_status = 'accepted'
+         AND (a.subject_entity_id = e.entity_id OR a.object_entity_id = e.entity_id)
+        LEFT JOIN evidence ev ON ev.assertion_id = a.id
+        LEFT JOIN pages p ON p.id = ev.page_id
+       WHERE e.user_id = ${userId} AND e.work_id = ${workId}
+         AND en.review_status = 'accepted'
+         AND e.summary IS NOT NULL
+       GROUP BY e.entity_id, e.summary, chapter, c.id
+    `)) as unknown as Array<{
+      entity_id: string
+      summary: string
+      chapter: number
+      page_kinds: string[] | null
+      evidence_kinds: string[] | null
+      structured: boolean
+    }>
+
     const sources = sourceRows.map((row) => ({
       chapter: Number(row.number),
       normalizedText: row.text ?? '',
@@ -218,6 +319,7 @@ async function loadSnapshot(userId: string, workId: string): Promise<LoadedSnaps
           subjectEntityId: row.subjectEntityId,
           objectEntityId: row.objectEntityId!,
           knowledgeFromChapter: row.knowledgeFromChapter,
+          excerpt: excerpts.get(row.id) ?? null,
         })),
       memberships: relationRows
         .filter((row) => row.predicate !== 'same_as' && row.objectEntityId !== null)
@@ -233,6 +335,28 @@ async function loadSnapshot(userId: string, workId: string): Promise<LoadedSnaps
         createdAt: Number(row.created),
       })),
       firstWritten,
+      mysteries: mysteryRows.map((row) => ({
+        entityId: row.entity_id,
+        question: row.question,
+        openedInChapter: Number(row.opened_in_chapter),
+        state: row.state,
+        resolvedInChapter:
+          row.resolved_in_chapter === null ? null : Number(row.resolved_in_chapter),
+      })),
+      resolutions: resolutionRows.map((row) => ({
+        assertionId: row.id,
+        sceneEntityId: row.subject_entity_id,
+        mysteryEntityId: row.object_entity_id,
+        chapter: Number(row.chapter),
+      })),
+      provenance: provenanceRows.map((row) => ({
+        entityId: row.entity_id,
+        chapter: Number(row.chapter),
+        summary: row.summary,
+        pageKinds: row.page_kinds ?? [],
+        evidenceKinds: row.evidence_kinds ?? [],
+        structured: row.structured,
+      })),
       chapterCount: sources.length,
     }
   })
@@ -247,31 +371,45 @@ async function loadSnapshot(userId: string, workId: string): Promise<LoadedSnaps
  * constat encore ouvert, elle, est rafraîchie : les règles s'améliorent, et une
  * vieille phrase à côté d'une liste à jour se lit comme un bug.
  *
- * Le nettoyage ne vise que la source qui vient d'être rejouée. Les constats des
- * règles disparaissent quand le défaut disparaît, ce qui est vérifiable en les
- * recalculant ; ceux d'une relecture ont coûté un appel par chapitre et ne se
- * recalculent pas — les effacer parce qu'on a balayé les règles serait jeter ce
- * qui a été payé.
+ * Le nettoyage ne vise que **l'analyse et les sujets qui viennent d'être
+ * rejoués**, et c'est la borne la plus importante de ce fichier. Les constats
+ * des règles disparaissent quand le défaut disparaît, ce qui est vérifiable en
+ * les recalculant ; ceux d'une lecture ont coûté un appel chacun et ne se
+ * recalculent pas. Sans cette borne, relire une question effacerait ce que les
+ * cent quarante autres et les cent cinquante chapitres avaient trouvé,
+ * c'est-à-dire tout ce qui a été payé — et la page annoncerait fièrement
+ * « 0 constat » après une passe de dix secondes.
+ *
+ * Les règles n'ont pas de sujet : elles repassent sur toute la bibliothèque à
+ * chaque fois, donc leur périmètre est leur analyse entière. Une lecture en a
+ * toujours un, et ne touche qu'à lui.
  */
-async function writeFindings(
+export async function writeFindings(
   userId: string,
   workId: string,
   findings: AuditFinding[],
-  source: 'regles' | 'modele',
-  /** Ce que ce passage a examiné : hors de ce périmètre, rien n'est nettoyé. */
-  scope?: { chapters: number[] },
+  analysis: AnalysisKind,
+  /**
+   * Les sujets que ce passage a examinés : hors de ce périmètre, rien n'est
+   * nettoyé. Absent pour les règles, qui repassent sur tout.
+   */
+  subjects?: readonly string[],
 ): Promise<{ fresh: number; resolved: number }> {
+  const source = analysis === 'regles' ? 'regles' : 'modele'
+
   return withIngest(async (db) => {
+    const scope = and(
+      eq(auditFindings.userId, userId),
+      eq(auditFindings.workId, workId),
+      eq(auditFindings.analysis, analysis),
+      ...(subjects ? [inArray(auditFindings.subject, [...subjects])] : []),
+    )
+
     const before = await db
       .select({ fingerprint: auditFindings.fingerprint })
       .from(auditFindings)
-      .where(
-        and(
-          eq(auditFindings.userId, userId),
-          eq(auditFindings.workId, workId),
-          eq(auditFindings.source, source),
-        ),
-      )
+      .where(scope)
+
     const known = new Set(before.map((row) => row.fingerprint))
     const seen = new Set(findings.map((finding) => finding.fingerprint))
 
@@ -285,6 +423,8 @@ async function writeFindings(
             chapter: finding.chapter,
             kind: finding.kind,
             source,
+            analysis,
+            subject: finding.subject ?? null,
             title: finding.title,
             detail: finding.detail,
             subjectEntityId: finding.subjectEntityId,
@@ -300,6 +440,8 @@ async function writeFindings(
             title: sql`excluded.title`,
             detail: sql`excluded.detail`,
             fix: sql`excluded.fix`,
+            analysis: sql`excluded.analysis`,
+            subject: sql`excluded.subject`,
           },
           setWhere: eq(auditFindings.status, 'open'),
         })
@@ -311,14 +453,7 @@ async function writeFindings(
       const removed = await db
         .delete(auditFindings)
         .where(
-          and(
-            eq(auditFindings.userId, userId),
-            eq(auditFindings.workId, workId),
-            eq(auditFindings.source, source),
-            eq(auditFindings.status, 'open'),
-            inArray(auditFindings.fingerprint, stale),
-            ...(scope ? [inArray(auditFindings.chapter, scope.chapters)] : []),
-          ),
+          and(scope, eq(auditFindings.status, 'open'), inArray(auditFindings.fingerprint, stale)),
         )
         .returning({ id: auditFindings.id })
       resolved = removed.length
@@ -336,6 +471,8 @@ export interface FindingRow {
   chapter: number
   kind: string
   source: string
+  /** L'analyse qui l'a produit : ce que la page annonce au-dessus du panneau. */
+  analysis: string
   title: string
   detail: string | null
   subjectEntityId: string | null
@@ -356,6 +493,7 @@ export async function openFindings(
         chapter: auditFindings.chapter,
         kind: auditFindings.kind,
         source: auditFindings.source,
+        analysis: auditFindings.analysis,
         title: auditFindings.title,
         detail: auditFindings.detail,
         subjectEntityId: auditFindings.subjectEntityId,
@@ -377,14 +515,28 @@ export async function openFindings(
   return rows.map((row) => ({ ...row, fix: (row.fix as AuditFix | null) ?? null }))
 }
 
+/** Ce qu'une analyse a déjà lu, ce qu'elle a coûté, et ce qui a raté. */
+export interface AnalysisState {
+  analysis: AnalysisKind
+  read: number
+  failed: number
+  costCents: number
+  findings: number
+}
+
 export interface AuditState {
   open: number
   ignored: number
   applied: number
-  /** Chapitres publiés, et ceux que le modèle a déjà relus. */
+  /** Chapitres publiés : le dénominateur des analyses qui portent sur eux. */
   chapters: number
-  read: number
+  /** Identités acceptées et questions ouvertes : les deux autres dénominateurs. */
+  identities: number
+  mysteries: number
+  /** Ce que toutes les lectures ont coûté, ensemble. */
   costCents: number
+  /** Une ligne par analyse déjà lancée, pour que chaque panneau dise la sienne. */
+  analyses: AnalysisState[]
 }
 
 export async function auditState(userId: string, workId: string): Promise<AuditState> {
@@ -399,26 +551,60 @@ export async function auditState(userId: string, workId: string): Promise<AuditS
           WHERE user_id = ${userId} AND work_id = ${workId} AND status = 'applied')::int AS applied,
         (SELECT count(*) FROM chapters
           WHERE user_id = ${userId} AND work_id = ${workId} AND status = 'published')::int AS chapters,
-        (SELECT count(*) FROM audit_reads
-          WHERE user_id = ${userId} AND work_id = ${workId})::int AS read,
-        (SELECT COALESCE(sum(cost_cents), 0) FROM audit_reads
-          WHERE user_id = ${userId} AND work_id = ${workId}) AS cost
+        (SELECT count(*) FROM assertions a
+          WHERE a.user_id = ${userId} AND a.work_id = ${workId}
+            AND a.predicate = 'same_as' AND a.review_status = 'accepted'
+            AND NOT EXISTS (
+              SELECT 1 FROM audit_findings f
+               WHERE f.user_id = a.user_id AND f.work_id = a.work_id
+                 AND f.analysis = 'regles' AND f.status = 'open'
+                 AND f.fix->>'action' = 'retirer_identite'
+                 AND f.fix->>'assertionId' = a.id::text))::int AS identities,
+        (SELECT count(*) FROM mysteries
+          WHERE user_id = ${userId} AND work_id = ${workId})::int AS mysteries
     `)) as unknown as Array<{
       open: number
       ignored: number
       applied: number
       chapters: number
-      read: number
-      cost: string | number
+      identities: number
+      mysteries: number
     }>
+
+    const passRows = (await db.execute(sql`
+      SELECT analysis,
+             count(*) FILTER (WHERE ok)::int AS read,
+             count(*) FILTER (WHERE NOT ok)::int AS failed,
+             COALESCE(sum(cost_cents), 0) AS cost,
+             COALESCE(sum(findings), 0)::int AS findings
+        FROM audit_passes
+       WHERE user_id = ${userId} AND work_id = ${workId}
+       GROUP BY analysis
+    `)) as unknown as Array<{
+      analysis: string
+      read: number
+      failed: number
+      cost: string | number
+      findings: number
+    }>
+
+    const analyses = passRows.map((pass) => ({
+      analysis: pass.analysis as AnalysisKind,
+      read: Number(pass.read),
+      failed: Number(pass.failed),
+      costCents: Number(pass.cost),
+      findings: Number(pass.findings),
+    }))
 
     return {
       open: Number(row?.open ?? 0),
       ignored: Number(row?.ignored ?? 0),
       applied: Number(row?.applied ?? 0),
       chapters: Number(row?.chapters ?? 0),
-      read: Number(row?.read ?? 0),
-      costCents: Number(row?.cost ?? 0),
+      identities: Number(row?.identities ?? 0),
+      mysteries: Number(row?.mysteries ?? 0),
+      costCents: analyses.reduce((total, pass) => total + pass.costCents, 0),
+      analyses,
     }
   })
 }
@@ -499,7 +685,9 @@ export async function applyFinding(userId: string, findingId: string): Promise<A
   const message =
     fix.action === 'raccourcir_libelle'
       ? await shortenLabel(userId, findingId, fix)
-      : await writeFix(userId, findingId, fix)
+      : fix.action === 'proposer_identite'
+        ? await queueIdentityCard(userId, finding.workId, findingId, fix)
+        : await writeFix(userId, findingId, fix)
 
   if (message === null) {
     return {
@@ -532,7 +720,7 @@ export async function applyFinding(userId: string, findingId: string): Promise<A
 async function writeFix(
   userId: string,
   findingId: string,
-  fix: Exclude<AuditFix, { action: 'raccourcir_libelle' }>,
+  fix: Exclude<AuditFix, { action: 'raccourcir_libelle' } | { action: 'proposer_identite' }>,
 ): Promise<string | null> {
   return withIngest(async (db) => {
     switch (fix.action) {
@@ -649,7 +837,310 @@ async function writeFix(
         })
         return 'Phrase corrigée sur le fil.'
       }
+
+      /*
+       * La réponse d'une question, écrite puis recalculée.
+       *
+       * Deux moitiés, et l'ordre compte. La relation d'abord : c'est le fait,
+       * verrouillé et donné pour ce qu'il est — votre parole, `user_validated`,
+       * que la prochaine proposition d'un modèle ne pourra pas superséder.
+       * L'état ensuite, et **jamais à la main** : il est refait depuis les
+       * relations acceptées, ce qui est la seule façon dont la date reste vraie
+       * le jour où l'une d'elles est retirée.
+       *
+       * Idempotent par construction : la relation n'est écrite que si la même
+       * n'existe pas déjà, et le recalcul rend deux fois le même résultat. Un
+       * second clic, un second onglet, un lot rejoué finissent au même endroit.
+       */
+      case 'publier_resolution': {
+        const [scene] = await db
+          .select({ entityId: events.entityId, workId: events.workId })
+          .from(events)
+          .where(and(eq(events.entityId, fix.sceneEntityId), eq(events.userId, userId)))
+          .limit(1)
+        if (!scene) return null
+
+        const [already] = await db
+          .select({ id: assertions.id })
+          .from(assertions)
+          .where(
+            and(
+              eq(assertions.userId, userId),
+              eq(assertions.predicate, 'resolves_mystery'),
+              eq(assertions.subjectEntityId, fix.sceneEntityId),
+              eq(assertions.objectEntityId, fix.mysteryEntityId),
+              eq(assertions.reviewStatus, 'accepted'),
+            ),
+          )
+          .limit(1)
+
+        if (!already) {
+          await db.insert(assertions).values({
+            workId: scene.workId,
+            userId,
+            subjectEntityId: fix.sceneEntityId,
+            predicate: 'resolves_mystery',
+            objectEntityId: fix.mysteryEntityId,
+            knowledgeFromChapter: fix.chapter,
+            observedInChapter: fix.chapter,
+            confidence: 1,
+            epistemicStatus: 'user_validated',
+            reviewStatus: 'accepted',
+            proposedBy: 'user',
+            locked: true,
+          })
+        }
+
+        const state = await recomputeMystery(db, userId, fix.mysteryEntityId)
+        if (state === null) return null
+
+        await db.insert(auditLog).values({
+          userId,
+          action: 'audit_mystery_resolved',
+          subjectKind: 'mystery',
+          subjectId: fix.mysteryEntityId,
+          detail: {
+            finding: findingId,
+            sceneEntityId: fix.sceneEntityId,
+            chapter: fix.chapter,
+            resolvedInChapter: state.resolvedInChapter,
+            alreadyWritten: Boolean(already),
+          },
+        })
+
+        return state.resolvedInChapter === null
+          ? 'Réponse écrite. La question reste ouverte : aucune relation acceptée ne la referme.'
+          : `Réponse écrite, et la question refermée au chapitre ${state.resolvedInChapter}.`
+      }
+
+      /* Une réponse qui n'en est pas une. La relation passe à rejetée, et
+       * l'état repart des seules qui restent. */
+      case 'retirer_resolution': {
+        const updated = await db
+          .update(assertions)
+          .set({ reviewStatus: 'rejected' })
+          .where(
+            and(
+              eq(assertions.id, fix.assertionId),
+              eq(assertions.userId, userId),
+              eq(assertions.reviewStatus, 'accepted'),
+            ),
+          )
+          .returning({ id: assertions.id })
+        if (updated.length === 0) return null
+
+        const state = await recomputeMystery(db, userId, fix.mysteryEntityId)
+
+        await db.insert(auditLog).values({
+          userId,
+          action: 'audit_resolution_retracted',
+          subjectKind: 'assertion',
+          subjectId: fix.assertionId,
+          detail: {
+            finding: findingId,
+            mysteryEntityId: fix.mysteryEntityId,
+            resolvedInChapter: state?.resolvedInChapter ?? null,
+          },
+        })
+
+        return state?.resolvedInChapter === null || state === null
+          ? 'Réponse retirée. La question redevient sans réponse.'
+          : `Réponse retirée. La question reste refermée au chapitre ${state.resolvedInChapter}.`
+      }
+
+      /* L'état d'une question, refait depuis ses relations acceptées. Rien
+       * d'autre n'est touché : aucune relation n'est écrite ni retirée. */
+      case 'recalculer_mystere': {
+        const state = await recomputeMystery(db, userId, fix.mysteryEntityId)
+        if (state === null) return null
+
+        await db.insert(auditLog).values({
+          userId,
+          action: 'audit_mystery_recomputed',
+          subjectKind: 'mystery',
+          subjectId: fix.mysteryEntityId,
+          detail: {
+            finding: findingId,
+            from: state.previousChapter,
+            to: state.resolvedInChapter,
+          },
+        })
+
+        return state.resolvedInChapter === null
+          ? 'Question rendue à « sans réponse » : aucune relation acceptée ne la referme.'
+          : `Question refermée au chapitre ${state.resolvedInChapter}, celui de la première réponse acceptée.`
+      }
     }
+  })
+}
+
+/**
+ * L'état d'une question, refait depuis ses relations acceptées.
+ *
+ * Le seul endroit de ce fichier qui écrive `mysteries.state`, et il ne décide
+ * de rien : il lit les relations « résout le mystère » acceptées, écarte celles
+ * qui n'en sont pas — une scène qui est la question elle-même, une scène du
+ * chapitre qui l'a posée —, prend la plus ancienne, et recopie. Deux exécutions
+ * de suite rendent la même chose, ce qui est ce qu'on demande à une correction
+ * qu'un lecteur peut cliquer deux fois.
+ *
+ * La date vient de la **scène** et non de la relation : `knowledge_from_chapter`
+ * est ce qu'un balayage a écrit, et c'est justement ce qu'on soupçonne.
+ */
+async function recomputeMystery(
+  db: Parameters<Parameters<typeof withIngest>[0]>[0],
+  userId: string,
+  mysteryEntityId: string,
+): Promise<{ resolvedInChapter: number | null; previousChapter: number | null } | null> {
+  const [mystery] = (await db.execute(sql`
+    SELECT opened_in_chapter, resolved_in_chapter
+      FROM mysteries
+     WHERE entity_id = ${mysteryEntityId} AND user_id = ${userId}
+     LIMIT 1
+  `)) as unknown as Array<{ opened_in_chapter: number; resolved_in_chapter: number | null }>
+
+  if (!mystery) return null
+
+  const rows = (await db.execute(sql`
+    SELECT a.id, a.subject_entity_id,
+           COALESCE(e.shown_in_chapter, e.told_in_chapter, a.knowledge_from_chapter) AS chapter
+      FROM assertions a
+      LEFT JOIN events e ON e.entity_id = a.subject_entity_id
+     WHERE a.user_id = ${userId}
+       AND a.predicate = 'resolves_mystery'
+       AND a.object_entity_id = ${mysteryEntityId}
+       AND a.review_status = 'accepted'
+  `)) as unknown as Array<{ id: string; subject_entity_id: string; chapter: number }>
+
+  const opened = Number(mystery.opened_in_chapter)
+  const sound = soundResolutions({
+    entityId: mysteryEntityId,
+    question: '',
+    openedInChapter: opened,
+    state: 'open',
+    resolvedInChapter: null,
+    resolutions: rows.map((row) => ({
+      assertionId: row.id,
+      sceneEntityId: row.subject_entity_id,
+      chapter: Number(row.chapter),
+    })),
+  })
+
+  const resolvedInChapter =
+    sound.length === 0 ? null : Math.min(...sound.map((resolution) => resolution.chapter))
+
+  await db.execute(sql`
+    UPDATE mysteries
+       SET state = ${resolvedInChapter === null ? 'open' : 'resolved'}::mystery_state,
+           resolved_in_chapter = ${resolvedInChapter}
+     WHERE entity_id = ${mysteryEntityId} AND user_id = ${userId}
+  `)
+
+  return {
+    resolvedInChapter,
+    previousChapter:
+      mystery.resolved_in_chapter === null ? null : Number(mystery.resolved_in_chapter),
+  }
+}
+
+/**
+ * Une identité proposée à la revue, jamais publiée.
+ *
+ * Ce que le balayage d'identités écrit depuis un script, écrit ici depuis un
+ * clic, et pour la même raison : une identité est le seul jugement que
+ * l'ontologie place en revue humaine obligatoire, parce qu'une fusion fausse
+ * détruit la chronologie des révélations que tout ce système existe pour tenir.
+ * Le bouton de cette page ne l'affirme donc pas — il la met dans la file, avec
+ * sa citation, et la carte montre les deux fiches et la phrase.
+ *
+ * Rattachée à un run du chapitre qui révèle : le centre de revue est organisé
+ * par run, et une carte sans run n'a pas de page où s'afficher. Idempotent —
+ * une carte déjà en attente pour la même paire n'en fait pas naître une
+ * seconde.
+ */
+async function queueIdentityCard(
+  userId: string,
+  workId: string,
+  findingId: string,
+  fix: Extract<AuditFix, { action: 'proposer_identite' }>,
+): Promise<string | null> {
+  return withIngest(async (db) => {
+    const [chapter] = (await db.execute(sql`
+      SELECT id FROM chapters
+       WHERE work_id = ${workId} AND user_id = ${userId} AND number = ${fix.chapter}
+       LIMIT 1
+    `)) as unknown as Array<{ id: string }>
+    if (!chapter) return null
+
+    const [existing] = (await db.execute(sql`
+      SELECT id FROM review_items
+       WHERE user_id = ${userId} AND status = 'proposed' AND category = 'assertion'
+         AND payload->>'subject' = ${fix.subjectEntityId}
+         AND payload->>'object' = ${fix.objectEntityId}
+       LIMIT 1
+    `)) as unknown as Array<{ id: string }>
+
+    if (existing) {
+      return 'Une carte attend déjà cette identité dans le centre de revue.'
+    }
+
+    const [run] = (await db.execute(sql`
+      SELECT id FROM ingestion_runs
+       WHERE chapter_id = ${chapter.id} AND user_id = ${userId}
+       ORDER BY created_at DESC
+       LIMIT 1
+    `)) as unknown as Array<{ id: string }>
+
+    let runId = run?.id
+    if (!runId) {
+      const [fresh] = (await db.execute(sql`
+        INSERT INTO ingestion_runs (chapter_id, user_id, status, pipeline_version, provider)
+        VALUES (${chapter.id}, ${userId}, 'succeeded', 'audit-identities', 'anthropic')
+        RETURNING id
+      `)) as unknown as Array<{ id: string }>
+      runId = fresh?.id
+    }
+    if (!runId) return null
+
+    const payload = {
+      subject: fix.subjectEntityId,
+      predicate: 'same_as',
+      object: fix.objectEntityId,
+      object_value: null,
+      epistemic_status: 'explicit',
+      confidence: 0.9,
+      evidence: [{ kind: 'text', ref: fix.ref, excerpt: fix.excerpt }],
+      note: fix.note,
+    }
+
+    await db.execute(sql`
+      INSERT INTO review_items (
+        run_id, chapter_id, user_id, category, priority, payload,
+        proposal_fingerprint, requires_explicit_review, confidence, status
+      ) VALUES (
+        ${runId}, ${chapter.id}, ${userId}, 'assertion', 90,
+        ${JSON.stringify(payload)}::jsonb,
+        ${`audit|${findingId}`}, true, 0.9, 'proposed'
+      )
+    `)
+
+    await db.insert(auditLog).values({
+      userId,
+      action: 'audit_identity_proposed',
+      subjectKind: 'entity',
+      subjectId: fix.subjectEntityId,
+      detail: {
+        finding: findingId,
+        objectEntityId: fix.objectEntityId,
+        chapter: fix.chapter,
+        excerpt: fix.excerpt,
+      },
+    })
+
+    return (
+      'Carte écrite dans le centre de revue, avec sa citation. Rien n’est ' +
+      'affirmé tant que vous ne l’avez pas acceptée.'
+    )
   })
 }
 
@@ -701,354 +1192,112 @@ async function shortenLabel(
 }
 
 /**
- * Combien de passages un chapitre offre à sa relecture.
+ * Ce qu'une analyse a déjà lu, indexé par sujet.
  *
- * Un chapitre écrit à la main en porte une vingtaine, un chapitre de pages
- * dessinées peut en porter deux cents — et au-delà d'un certain volume l'appel
- * coûte plus que ce qu'il rapporte, sans mieux lire. La coupe est dite dans le
- * rapport plutôt qu'appliquée en silence : un chapitre relu sur un texte tronqué
- * et déclaré propre n'est pas la même affirmation qu'un chapitre relu en entier.
+ * Une lecture pour toute l'analyse plutôt qu'une par sujet : la question posée
+ * cent cinquante fois est « ai-je déjà lu celui-ci, et avec quoi », et cent
+ * cinquante requêtes pour y répondre coûtent plus que la passe qu'elles
+ * évitent.
  */
-const PASSAGES_PER_CHAPTER = 120
-
-/** Et combien de scènes lui sont soumises. Au-delà, le fil n'est plus lisible. */
-const SCENES_PER_CHAPTER = 40
-
-export interface RelectureReport {
-  read: number
-  found: number
-  costCents: number
-  remaining: number
-  /** Les chapitres dont l'appel a échoué, avec leur raison. */
-  failures: Array<{ chapter: number; reason: string }>
-  /** Chapitres dont le texte a été tronqué avant d'être lu. */
-  truncated: number[]
-  error?: string
-}
-
-/**
- * Relire les chapitres que le modèle n'a pas encore lus, quelques-uns à la fois.
- *
- * Ce que les règles ne peuvent pas trouver : une phrase fausse. « Usopp devient
- * capitaine de l'équipage » est bien datée, bien reliée, bien formée — et le
- * chapitre dit le contraire. Aucune règle sur des dates ne voit ça ; il faut
- * relire le chapitre, ce qui coûte un appel.
- *
- * Par petits paquets, et repris là où il s'est arrêté : `audit_reads` retient ce
- * qui a été lu, donc une interruption — un plafond de durée, un onglet fermé, un
- * modèle surchargé — ne coûte que le paquet en cours. C'est la même discipline
- * que les points de reprise du pipeline, pour la même raison : ce qui se paye au
- * chapitre doit se perdre au chapitre.
- *
- * Un fournisseur qui ne lit pas est refusé plutôt que subi. Les modes synthétique
- * et rejeu répondent en comparant des mots ; ils reprocheraient des phrases avec
- * l'aplomb d'une vraie lecture, et une correction proposée par eux serait pire
- * que pas de relecture du tout.
- */
-export async function readStoryWithModel(
+export async function passesFor(
   userId: string,
   workId: string,
-  batch = 4,
-  /**
-   * Les chapitres à laisser de côté pour cette passe.
-   *
-   * Un chapitre en échec n'est pas marqué comme lu — c'est ce qui permet de le
-   * reprendre — mais il reste alors le premier de la liste, donc le paquet
-   * suivant le redemande, échoue pareil, et la relecture tourne en rond sans
-   * jamais atteindre le chapitre 8. La liste vient de l'appelant parce que c'est
-   * lui qui traverse la passe : ce qui a échoué *cette fois* est mis de côté
-   * jusqu'à la fin, et redevient à lire dès la prochaine.
-   */
-  skip: readonly number[] = [],
-): Promise<RelectureReport> {
-  const provider = modelProvider()
-  if (provider.name === 'replay' || provider.name === 'synthetic') {
-    return {
-      read: 0,
-      found: 0,
-      costCents: 0,
-      remaining: 0,
-      failures: [],
-      truncated: [],
-      error:
-        `Fournisseur « ${provider.name} » : il ne lit pas les chapitres, il compare ` +
-        `des mots. Configurez CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, ou un ` +
-        `modèle local.`,
-    }
-  }
-
-  const setAside = new Set(skip)
-  const pending = (await unreadChapters(userId, workId)).filter(
-    (chapter) => !setAside.has(chapter),
-  )
-  const selected = pending.slice(0, Math.max(1, batch))
-
-  const report: RelectureReport = {
-    read: 0,
-    found: 0,
-    costCents: 0,
-    remaining: pending.length,
-    failures: [],
-    truncated: [],
-  }
-
-  for (const chapter of selected) {
-    const material = await chapterMaterial(userId, workId, chapter)
-
-    if (material.truncated) report.truncated.push(chapter)
-
-    // Un chapitre sans scène ou sans texte n'a rien à se faire reprocher, et
-    // marquer sa lecture évite de le reproposer à chaque paquet.
-    if (material.scenes.length === 0 || material.passages.length === 0) {
-      await markRead(userId, workId, chapter, { modelId: null, costCents: 0, findings: 0 })
-      report.read += 1
-      report.remaining -= 1
-      continue
-    }
-
-    const attempt = await askWithRetry(provider, {
-      question: relectureQuestion(chapter),
-      context: [
-        ...material.scenes.map((scene) => ({
-          assertionId: scene.entityId,
-          chapter,
-          statement: `scène ${scene.entityId} : ${scene.summary}`,
-          excerpt: null,
-        })),
-        ...material.passages.map((passage, index) => ({
-          assertionId: `p${index + 1}`,
-          chapter,
-          statement: passage,
-          excerpt: null,
-        })),
-      ],
-      boundaryChapter: chapter,
-    })
-
-    if ('reason' in attempt) {
-      report.failures.push({ chapter, reason: attempt.reason })
-      continue
-    }
-    const answer = attempt.answer
-
-    report.costCents += answer.usage.costCents
-
-    const read = answer.refusal ? null : answer.value
-    const rows = read
-      ? parseRelecture(
-          read.answer,
-          material.scenes.map((scene) => scene.entityId),
-        )
-      : []
-
-    /*
-     * La citation, quand la ligne n'en portait pas.
-     *
-     * Le format demande la phrase en quatrième champ, et un modèle la met
-     * parfois là où l'appel a un endroit pour les citations. Les deux valent :
-     * ce qui est refusé plus bas n'est pas l'endroit d'où vient la phrase, c'est
-     * qu'elle ne soit pas dans le chapitre.
-     */
-    const citations = new Map(
-      (read?.citations ?? []).map((citation) => [citation.assertion_id, citation.excerpt]),
-    )
-
-    const findings = rows
-      .map((row) => {
-        const scene = material.scenes.find((candidate) => candidate.entityId === row.entityId)
-        if (!scene) return null
-        return relectureFinding({
-          chapter,
-          entityId: row.entityId,
-          summary: scene.summary,
-          objection: row.objection,
-          excerpt: row.excerpt.length > 0 ? row.excerpt : (citations.get(row.entityId) ?? ''),
-          passages: material.passages,
-          correction: row.correction,
-        })
+  analysis: AnalysisKind,
+): Promise<Map<string, PassRecord>> {
+  const rows = await withIngest(async (db) =>
+    db
+      .select({
+        subjectKind: auditPasses.subjectKind,
+        subject: auditPasses.subject,
+        inputFingerprint: auditPasses.inputFingerprint,
+        promptVersion: auditPasses.promptVersion,
       })
-      .filter((finding): finding is AuditFinding => finding !== null)
+      .from(auditPasses)
+      .where(
+        and(
+          eq(auditPasses.userId, userId),
+          eq(auditPasses.workId, workId),
+          eq(auditPasses.analysis, analysis),
+        ),
+      ),
+  )
 
-    /*
-     * Bornée à ce chapitre, et c'est vital.
-     *
-     * Le nettoyage retire les constats que le passage courant n'a pas retrouvés
-     * — juste pour les règles, qui repassent sur toute la bibliothèque. Une
-     * relecture ne lit que quatre chapitres : sans cette borne, relire le 12
-     * effacerait tout ce que les cent quarante autres avaient trouvé, c'est-à-
-     * dire tout ce qui a été payé.
-     */
-    await writeFindings(userId, workId, findings, 'modele', { chapters: [chapter] })
-
-    await markRead(userId, workId, chapter, {
-      modelId: answer.usage.modelId,
-      costCents: answer.usage.costCents,
-      findings: findings.length,
-    })
-
-    report.read += 1
-    report.found += findings.length
-    report.remaining -= 1
-  }
-
-  return report
-}
-
-/**
- * L'appel, avec le droit d'échouer deux fois.
- *
- * « Claude Code process exited with code 1 » sur le chapitre 4, puis sur le 7,
- * pendant que le 1, le 2 et le 3 passaient : ce sont des accidents de transport,
- * pas des réponses. Les redemander est la bonne conduite, et trois tentatives
- * espacées suffisent à traverser une minute chargée — le balayage d'identités a
- * exactement la même boucle, née du même « Overloaded » à la trente-septième
- * figure.
- *
- * Aucune distinction entre les sortes d'erreurs, sauf une. Le message d'une API
- * se reformule, et une boucle qui n'aurait retenté que sur un mot précis
- * recommencerait à mourir le jour où ce mot change ; une erreur non transitoire
- * coûte deux attentes et finit là où elle aurait fini tout de suite. L'exception
- * est le refus d'identifiant : un jeton révoqué le sera autant dans cinq
- * secondes, et réessayer ne fait que retarder la seule phrase utile.
- */
-async function askWithRetry(
-  provider: ReturnType<typeof modelProvider>,
-  request: Parameters<ReturnType<typeof modelProvider>['answer']>[0],
-): Promise<
-  { answer: Awaited<ReturnType<ReturnType<typeof modelProvider>['answer']>> } | { reason: string }
-> {
-  let last = 'appel impossible'
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      return { answer: await provider.answer(request) }
-    } catch (error) {
-      last = error instanceof Error ? error.message.split('\n')[0]! : String(error)
-      const kind = (error as { kind?: string } | null)?.kind
-      if (kind === 'auth') return { reason: last }
-      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 4000))
-    }
-  }
-
-  return { reason: last }
-}
-
-/**
- * La consigne, écrite pour être refusable.
- *
- * Le défaut d'un modèle à qui l'on demande « qu'est-ce qui cloche » est de
- * trouver quelque chose : il reformulera une phrase juste pour avoir répondu. La
- * consigne dit donc, dans cet ordre, que ne rien trouver est la réponse
- * attendue, que le savoir extérieur ne compte pas, et que la seule preuve
- * admise est une phrase recopiée du chapitre.
- *
- * Et jamais un chapitre suivant. Le modèle connaît One Piece ; si on le laisse
- * corriger une scène du chapitre 41 avec ce qu'il sait du 100, il écrit dans le
- * fil un savoir que le lecteur n'a pas — c'est-à-dire exactement le défaut que
- * ce produit existe pour ne pas commettre.
- */
-function relectureQuestion(chapter: number): string {
-  return (
-    `Voici les scènes que la bibliothèque raconte du chapitre ${chapter}, puis les ` +
-    `passages de ce chapitre. Pour chaque scène, la question est : les passages ` +
-    `disent-ils bien cela ?\n\n` +
-    `Ne signalez qu'une scène que les passages **contredisent** ou qui affirme ce ` +
-    `qu'aucun d'eux ne dit. Une scène juste mais moins détaillée que le chapitre ` +
-    `n'est pas une erreur. Ne vous servez jamais de ce que vous savez de la suite : ` +
-    `seuls ces passages comptent, et une correction tirée d'un chapitre ultérieur ` +
-    `serait un spoiler écrit dans le fil.\n\n` +
-    `Répondez une ligne par scène fautive, exactement dans cette forme :\n` +
-    `identifiant de la scène | ce que les passages contredisent | la phrase corrigée | la phrase du chapitre qui le prouve\n\n` +
-    `La phrase du chapitre doit être recopiée mot pour mot depuis un passage. ` +
-    `Mettez « - » à la place de la phrase corrigée si vous n'en proposez pas. ` +
-    `Si aucune scène n'est fautive, répondez « insufficient_data » et rien d'autre : ` +
-    `c'est la réponse la plus fréquente et la plus utile.`
+  return new Map(
+    rows.map((row) => [
+      row.subject,
+      {
+        analysis,
+        subjectKind: row.subjectKind as SubjectKind,
+        subject: row.subject,
+        inputFingerprint: row.inputFingerprint,
+        promptVersion: row.promptVersion,
+      },
+    ]),
   )
 }
 
-async function unreadChapters(userId: string, workId: string): Promise<number[]> {
-  const rows = (await withIngest(async (db) =>
-    db.execute(sql`
-      SELECT c.number
-        FROM chapters c
-       WHERE c.user_id = ${userId} AND c.work_id = ${workId}
-         AND c.status = 'published'
-         AND NOT EXISTS (
-           SELECT 1 FROM audit_reads r
-            WHERE r.user_id = c.user_id AND r.work_id = c.work_id
-              AND r.chapter = c.number)
-       ORDER BY c.number
-    `),
-  )) as unknown as Array<{ number: number }>
-
-  return rows.map((row) => Number(row.number))
-}
-
-interface ChapterMaterial {
-  scenes: Array<{ entityId: string; summary: string }>
-  passages: string[]
-  truncated: boolean
-}
-
-async function chapterMaterial(
+/**
+ * Retenir qu'un sujet a été lu, ou qu'il a raté.
+ *
+ * Une ligne par couple (analyse, sujet), réécrite à chaque passe : ce qui
+ * compte n'est pas l'historique mais l'état courant — ce sujet a-t-il été lu,
+ * avec quelle matière, sous quelle consigne.
+ *
+ * Un échec écrit une empreinte **vide**, et c'est le détail qui rend la reprise
+ * honnête : la ligne existe, donc la page peut dire ce qui a raté ; l'empreinte
+ * ne correspond à rien, donc le sujet reste à lire. Écrire l'empreinte réelle
+ * enterrerait le chapitre sur un accident de transport, et il ne reviendrait
+ * qu'au prochain changement de consigne.
+ */
+export async function recordPass(
   userId: string,
   workId: string,
-  chapter: number,
-): Promise<ChapterMaterial> {
-  return withIngest(async (db) => {
-    const sceneRows = (await db.execute(sql`
-      SELECT e.entity_id, e.summary
-        FROM events e
-        JOIN entities en ON en.id = e.entity_id
-       WHERE e.user_id = ${userId} AND e.work_id = ${workId}
-         AND en.review_status = 'accepted'
-         AND e.summary IS NOT NULL
-         AND COALESCE(e.told_in_chapter, e.shown_in_chapter, 0) = ${chapter}
-       ORDER BY e.created_at
-       LIMIT ${SCENES_PER_CHAPTER}
-    `)) as unknown as Array<{ entity_id: string; summary: string }>
-
-    const passageRows = (await db.execute(sql`
-      SELECT t.text
-        FROM text_blocks t
-        JOIN chapters c ON c.id = t.chapter_id
-       WHERE c.user_id = ${userId} AND c.work_id = ${workId}
-         AND c.number = ${chapter} AND c.status = 'published'
-       ORDER BY t.reading_order
-       LIMIT ${PASSAGES_PER_CHAPTER + 1}
-    `)) as unknown as Array<{ text: string }>
-
-    return {
-      scenes: sceneRows.map((row) => ({ entityId: row.entity_id, summary: row.summary })),
-      passages: passageRows.slice(0, PASSAGES_PER_CHAPTER).map((row) => row.text),
-      truncated: passageRows.length > PASSAGES_PER_CHAPTER,
-    }
-  })
-}
-
-async function markRead(
-  userId: string,
-  workId: string,
-  chapter: number,
-  input: { modelId: string | null; costCents: number; findings: number },
+  pass: {
+    analysis: AnalysisKind
+    subjectKind: SubjectKind
+    subject: string
+    inputFingerprint: string
+    promptVersion: string
+    modelId: string | null
+    costCents: number
+    findings: number
+    ok: boolean
+    failure?: string | null
+  },
 ): Promise<void> {
   await withIngest(async (db) => {
     await db
-      .insert(auditReads)
+      .insert(auditPasses)
       .values({
         userId,
         workId,
-        chapter,
-        modelId: input.modelId,
-        costCents: input.costCents,
-        findings: input.findings,
+        analysis: pass.analysis,
+        subjectKind: pass.subjectKind,
+        subject: pass.subject,
+        inputFingerprint: pass.ok ? pass.inputFingerprint : '',
+        promptVersion: pass.promptVersion,
+        modelId: pass.modelId,
+        costCents: pass.costCents,
+        findings: pass.findings,
+        ok: pass.ok,
+        failure: pass.failure ?? null,
       })
       .onConflictDoUpdate({
-        target: [auditReads.userId, auditReads.workId, auditReads.chapter],
+        target: [
+          auditPasses.userId,
+          auditPasses.workId,
+          auditPasses.analysis,
+          auditPasses.subject,
+        ],
         set: {
-          modelId: input.modelId,
-          costCents: input.costCents,
-          findings: input.findings,
+          subjectKind: sql`excluded.subject_kind`,
+          inputFingerprint: sql`excluded.input_fingerprint`,
+          promptVersion: sql`excluded.prompt_version`,
+          modelId: sql`excluded.model_id`,
+          costCents: sql`excluded.cost_cents`,
+          findings: sql`excluded.findings`,
+          ok: sql`excluded.ok`,
+          failure: sql`excluded.failure`,
           readAt: new Date(),
         },
       })
@@ -1056,18 +1305,39 @@ async function markRead(
 }
 
 /**
- * Tout relire à nouveau, en repayant.
+ * Tout relire à nouveau, en repayant — une analyse à la fois.
  *
- * Le seul geste qui efface `audit_reads`, et il existe parce que la consigne
- * évolue : une relecture faite avec une question moins précise a laissé passer
- * ce qu'une meilleure trouverait, et rien d'autre ne permet de la refaire.
+ * Le seul geste qui efface ce qui a été lu, et il est borné à une analyse :
+ * vouloir relire les mystères n'est pas vouloir repayer cent cinquante
+ * chapitres. Sans argument, il efface tout, ce qui reste le geste de dernière
+ * instance qu'il a toujours été.
+ *
+ * Il existe moins qu'avant. Changer la version d'une consigne rend déjà périmée
+ * l'analyse concernée, sans rien effacer et sans clic — c'est le chemin normal
+ * quand la question s'améliore. Celui-ci reste pour le cas où l'on doute de la
+ * lecture elle-même.
  */
-export async function forgetReadings(userId: string, workId: string): Promise<number> {
+export async function forgetPasses(
+  userId: string,
+  workId: string,
+  analysis?: AnalysisKind,
+): Promise<number> {
   return withIngest(async (db) => {
     const removed = await db
-      .delete(auditReads)
-      .where(and(eq(auditReads.userId, userId), eq(auditReads.workId, workId)))
-      .returning({ chapter: auditReads.chapter })
+      .delete(auditPasses)
+      .where(
+        and(
+          eq(auditPasses.userId, userId),
+          eq(auditPasses.workId, workId),
+          ...(analysis ? [eq(auditPasses.analysis, analysis)] : []),
+        ),
+      )
+      .returning({ id: auditPasses.id })
     return removed.length
   })
+}
+
+/** Les analyses connues, pour qu'une action de serveur refuse un nom inventé. */
+export function knownAnalysis(value: string): AnalysisKind | null {
+  return ANALYSES.find((analysis) => analysis === value) ?? null
 }
