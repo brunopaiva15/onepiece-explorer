@@ -5,14 +5,20 @@ import { ClaudeAgentProvider } from './claude-agent/provider.ts'
 import { localModelConfig, OpenAICompatibleProvider } from './openai-compatible.ts'
 import type { ModelProvider } from './provider.ts'
 import { ReplayProvider } from './replay.ts'
-import { localTiers, ROUTED_TIERS, RoutingProvider, type RoutedTier } from './routing.ts'
+import {
+  defaultLocalTiers,
+  localTiers,
+  ROUTED_TIERS,
+  RoutingProvider,
+  type RoutedTier,
+} from './routing.ts'
 import { SyntheticProvider } from './synthetic.ts'
 
 export * from './provider.ts'
 export * from './schemas.ts'
 export * from './anchoring.ts'
 export { localModelConfig } from './openai-compatible.ts'
-export { localTiers, ROUTED_TIERS, type RoutedTier } from './routing.ts'
+export { defaultLocalTiers, localTiers, ROUTED_TIERS, type RoutedTier } from './routing.ts'
 export { PROMPT_VERSION } from './prompts.ts'
 
 /**
@@ -54,6 +60,14 @@ export function providerOptions(): ProviderOption[] {
       ? 'Anthropic'
       : 'extraction synthétique'
 
+  /*
+   * What the default split leaves to the hosted provider — normally the
+   * extraction tier, nothing at all when there is no hosted provider to leave
+   * it to. Read from `defaultLocalTiers()` rather than written out here, so the
+   * sentence cannot claim a split the router does not make.
+   */
+  const remoteByDefault = ROUTED_TIERS.filter((tier) => !defaultLocalTiers().includes(tier))
+
   return [
     {
       id: 'auto',
@@ -61,7 +75,9 @@ export function providerOptions(): ProviderOption[] {
       note: local
         ? tiers
           ? `Mon modèle pour : ${tiers}. ${fallbackNote} pour le reste.`
-          : 'Mon modèle pour tout.'
+          : remoteByDefault.length > 0
+            ? `Mon modèle, sauf : ${remoteByDefault.join(', ')}. ${fallbackNote} pour ceux-là.`
+            : 'Mon modèle pour tout.'
         : hasSubscription
           ? 'Claude Max, via le Claude Agent SDK.'
           : hasAnthropic
@@ -173,8 +189,9 @@ function build(choice: ProviderChoice): ModelProvider {
    * 'auto': the routing table.
    *
    * A self-hosted endpoint takes the tiers it was given; whatever is not routed
-   * locally falls through. Naming no tiers means all of them — configuring an
-   * endpoint at all is the decision to use it.
+   * locally falls through. Naming no tiers takes the default split — everything
+   * but extraction, which stays with the hosted provider. See
+   * `defaultLocalTiers()`.
    */
   if (local) {
     const localProvider = new OpenAICompatibleProvider(local)

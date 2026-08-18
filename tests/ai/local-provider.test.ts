@@ -1,12 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { localModelConfig } from '@/domains/ai/openai-compatible.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ClaudeAgentProvider } from '@/domains/ai/claude-agent/provider.ts'
+import { localModelConfig, OpenAICompatibleProvider } from '@/domains/ai/openai-compatible.ts'
 import {
   isProviderChoice,
   modelProvider,
   providerOptions,
   resetModelProvider,
 } from '@/domains/ai/index.ts'
-import { localTiers, ROUTED_TIERS, TIER_OF } from '@/domains/ai/routing.ts'
+import { defaultLocalTiers, localTiers, ROUTED_TIERS, TIER_OF } from '@/domains/ai/routing.ts'
 
 /**
  * Routing is configuration, and configuration is where this project has lost
@@ -18,6 +19,7 @@ const original = { ...process.env }
 
 afterEach(() => {
   process.env = { ...original }
+  vi.restoreAllMocks()
 })
 
 function setEnv(values: Record<string, string | undefined>): void {
@@ -52,9 +54,33 @@ describe('localModelConfig', () => {
 })
 
 describe('localTiers', () => {
-  it('takes every tier when none is named', () => {
-    setEnv({ LOCAL_AI_TIERS: undefined })
+  it('leaves extraction to the hosted provider when no tier is named', () => {
+    // The default this project settled on: a smaller model takes the bulk —
+    // describing panels, a hundred times a chapter — and extraction stays on
+    // Claude Max, because a weaker model there finds less rather than finding
+    // something wrong, and a thin graph looks exactly like a thin chapter.
+    setEnv({ LOCAL_AI_TIERS: undefined, CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-test' })
+    expect([...localTiers()].sort()).toEqual(['classify', 'describe', 'embed', 'escalate'])
+    expect(localTiers().has('extract')).toBe(false)
+  })
+
+  it('still takes extraction back when it is named', () => {
+    setEnv({ LOCAL_AI_TIERS: 'describe,extract', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-test' })
+    expect(localTiers().has('extract')).toBe(true)
+  })
+
+  it('keeps every tier local when there is no hosted provider to hand extraction to', () => {
+    // Without a subscription or a key the fallback is the synthetic provider.
+    // Moving extraction there would replace an answer read from the pages with
+    // a fabricated one — the one outcome this pipeline must not have.
+    setEnv({
+      LOCAL_AI_TIERS: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      MODEL_PROVIDER: undefined,
+    })
     expect(localTiers()).toEqual(new Set(ROUTED_TIERS))
+    expect(defaultLocalTiers()).toEqual(ROUTED_TIERS)
   })
 
   it('takes only what is named', () => {
@@ -149,6 +175,50 @@ describe('choosing a provider per run', () => {
     expect(modelProvider('anthropic').name).toBe('anthropic')
     expect(modelProvider('local')).toBe(modelProvider('local'))
     expect(modelProvider('anthropic')).not.toBe(modelProvider('local'))
+  })
+
+  it('routes extraction to Claude Max and the bulk to the local model', async () => {
+    // The default split, end to end: 'auto' with an endpoint configured and no
+    // LOCAL_AI_TIERS must not send extraction to the self-hosted model just
+    // because describing panels goes there.
+    setEnv({
+      LOCAL_AI_BASE_URL: 'http://127.0.0.1:1234/v1',
+      LOCAL_AI_MODEL: 'qwen-hermes',
+      LOCAL_AI_TIERS: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-test',
+      ANTHROPIC_API_KEY: undefined,
+      MODEL_PROVIDER: undefined,
+    })
+    resetModelProvider()
+
+    const onLocal = vi.spyOn(OpenAICompatibleProvider.prototype, 'estimate')
+    const onMax = vi.spyOn(ClaudeAgentProvider.prototype, 'estimate')
+
+    const provider = modelProvider('auto')
+    await provider.estimate('extract', {})
+    expect(onMax).toHaveBeenCalledTimes(1)
+    expect(onLocal).not.toHaveBeenCalled()
+
+    await provider.estimate('describe', {})
+    expect(onLocal).toHaveBeenCalledTimes(1)
+
+    // Still reported as the local model: description is most of the work and
+    // most of the calls, so it stays the honest label for a run.
+    expect(provider.name).toBe('local')
+  })
+
+  it('says on the launch screen which step leaves the local model', () => {
+    setEnv({
+      ANTHROPIC_API_KEY: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-test',
+      LOCAL_AI_BASE_URL: 'http://127.0.0.1:1234/v1',
+      LOCAL_AI_MODEL: 'qwen-hermes',
+      LOCAL_AI_TIERS: undefined,
+      MODEL_PROVIDER: undefined,
+    })
+    const note = providerOptions().find((o) => o.id === 'auto')?.note ?? ''
+    expect(note).toContain('extract')
+    expect(note).toContain('Claude Max')
   })
 
   it('refuses a local run on a machine that cannot reach the model', () => {
