@@ -10,12 +10,15 @@ import {
   type PosterView,
 } from '@/domains/images/index.ts'
 import { ARCS, arcOf, type Arc } from '@/domains/temporal/arcs.ts'
+import { labelNames } from '@/domains/temporal/poneglyphs.ts'
 import {
   castAtChapter,
   castOf,
   openQuestionsAtChapter,
+  poneglyphsAtChapter,
   type CastMember,
   type OpenQuestion,
+  type PoneglyphWatch,
 } from '@/domains/temporal/spotlight.ts'
 
 export const dynamic = 'force-dynamic'
@@ -95,6 +98,14 @@ export default async function HomePage({
   }> = []
   let questions: OpenQuestion[] = []
   /**
+   * Les pierres, et l'état vide qui est le bon avant le chapitre 193.
+   *
+   * Nothing to show is the honest answer for the first hundred and ninety-two
+   * chapters, and the section is absent rather than empty: a heading saying
+   * « aucun ponéglyphe connu » would raise a subject the work has not raised.
+   */
+  let poneglyphs: PoneglyphWatch = { stones: [], node: null, roads: null, total: null }
+  /**
    * What the wall turned out to be.
    *
    * `affiches` when the reader has reached at least one real wanted poster,
@@ -126,11 +137,13 @@ export default async function HomePage({
       .filter((chapter) => chapter.status === 'published' && chapter.number <= boundary)
       .sort((a, b) => b.number - a.number)
 
-    const [cast, open, bounties] = await Promise.all([
+    const [cast, open, bounties, stones] = await Promise.all([
       castAtChapter(session.userId, boundary, { nodeTypes: ['character'] }),
       openQuestionsAtChapter(session.userId, boundary),
       wantedAtChapter(session.userId, boundary),
+      poneglyphsAtChapter(session.userId, boundary),
     ])
+    poneglyphs = stones
 
     /*
      * The bounties first, and they decide who is on the wall.
@@ -468,6 +481,129 @@ export default async function HomePage({
                 : ' Les portraits sont rapprochés de chaque personnage par le nom.'}
             </p>
           )}
+        </section>
+      )}
+
+      {/* --- The stones ----------------------------------------------------
+       * Le même travail que le mur, sur l'autre objet daté de cette œuvre.
+       *
+       * A wanted poster and a poneglyph are the two things this work puts in
+       * front of a reader whose meaning changes completely with how far they
+       * have read, and they fail in opposite directions. A poster spoils by its
+       * number; a stone spoils by everything around it — that it is red, that
+       * three others exist, that the one under Alubarna is the reason a country
+       * hid a tomb, that what Robin said about it at 203 was not true.
+       *
+       * So the card carries dates and nothing else: the chapter that told the
+       * reader the stone exists, the chapter that showed it, the chapter in
+       * which they watched somebody read it, and where it stands as of the last
+       * chapter that said. Never what it says. A reader of 202 gets one stone in
+       * a royal tomb; the same page at 818 grows a red one and a count of four.
+       */}
+      {poneglyphs.stones.length > 0 && (
+        <section className="mt-14">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
+            <h2 className="font-display text-2xl uppercase text-primary">Ponéglyphes</h2>
+            {poneglyphs.node && (
+              <p className="text-sm">
+                <Link
+                  href={`/entite/${poneglyphs.node.entityId}?ch=${boundary}`}
+                  className="text-accent-strong hover:underline"
+                >
+                  {poneglyphs.node.label} dans votre graphe →
+                </Link>
+              </p>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-secondary">
+            Les pierres dont vos chapitres vous ont parlé, et rien de ce
+            qu&apos;elles disent : ça, c&apos;est à l&apos;histoire de vous
+            l&apos;apprendre.
+          </p>
+
+          <ul className="steles mt-5">
+            {poneglyphs.stones.map((stone) => (
+              <li key={stone.slug} className={`stele ${stone.road ? 'stele-route' : ''}`}>
+                <p className="stele-type">
+                  {stone.road ? 'Road ponéglyphe' : 'Ponéglyphe'}
+                </p>
+                <p className="stele-nom">{stone.name}</p>
+                {stone.where && (
+                  <p className="stele-lieu">
+                    {/*
+                     * The description, and the way into the graph folded into it
+                     * when they are the same place.
+                     *
+                     * « Tombeau des Rois, sous Alubarna · Tombeau des Rois → »
+                     * is one place named twice, which reads as two. When the
+                     * library's own label is already in the sentence the
+                     * sentence becomes the link; when it is not — the node is
+                     * called « Alubarna » and the line says the tomb — it is
+                     * added, because dropping it would hide the only door.
+                     */}
+                    {stone.place ? (
+                      labelNames(stone.where, stone.place.label) ? (
+                        <Link href={`/entite/${stone.place.entityId}?ch=${boundary}`}>
+                          {stone.where} →
+                        </Link>
+                      ) : (
+                        <>
+                          {stone.where}
+                          {' · '}
+                          <Link href={`/entite/${stone.place.entityId}?ch=${boundary}`}>
+                            {stone.place.label} →
+                          </Link>
+                        </>
+                      )
+                    ) : (
+                      stone.where
+                    )}
+                  </p>
+                )}
+                <p className="stele-dates">
+                  {/*
+                   * The chapter that told them it exists, unless it is also the
+                   * chapter that showed it — « connu ch. 967 · vu ch. 967 » is
+                   * one fact printed twice.
+                   */}
+                  {stone.seen !== stone.known && (
+                    <span className="stele-date">connu ch. {stone.known}</span>
+                  )}
+                  {stone.seen !== null ? (
+                    <span className="stele-date">vu ch. {stone.seen}</span>
+                  ) : (
+                    /*
+                     * « Jusqu'ici », and the word is load-bearing: « pas encore
+                     * montré » would be a promise that a later chapter shows it,
+                     * which is a fact about chapters the reader has not read.
+                     */
+                    <span className="stele-date stele-date-vide">pas montré jusqu&apos;ici</span>
+                  )}
+                  {stone.read !== null && (
+                    <span className="stele-date">lu ch. {stone.read}</span>
+                  )}
+                  {stone.lost && <span className="stele-date stele-perdu">disparu</span>}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          {/*
+           * Le compte, et il est daté comme les pierres.
+           *
+           * « Quatre » is Inuarashi's at 818 and « trente » is Tamago's at 846.
+           * Before those chapters the reader is told how many stones *they* know
+           * and nothing about how many there are, because a total is the loudest
+           * spoiler a tracker can print: told there are four of a kind and
+           * holding one, a reader knows exactly what the next arcs are for.
+           */}
+          <p className="mt-4 text-xs text-muted">
+            Vous en connaissez {poneglyphs.stones.length}.
+            {poneglyphs.roads !== null &&
+              ` Dont ${poneglyphs.stones.filter((stone) => stone.road).length} des ${poneglyphs.roads} qui mènent à la dernière île.`}
+            {poneglyphs.total !== null && ` On en compterait ${poneglyphs.total} dans le monde.`}{' '}
+            Les chapitres sont relevés à la main, page par page, comme les primes.
+          </p>
         </section>
       )}
 

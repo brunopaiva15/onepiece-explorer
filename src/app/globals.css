@@ -829,6 +829,127 @@ hr.regle {
   container-type: inline-size;
 }
 
+/* --- The stones ----------------------------------------------------------
+   Ponéglyphes, drawn as what they are: cubes of indestructible stone with a
+   script carved into one face.
+
+   The colours are fixed rather than themed, for the reason the wanted poster's
+   parchment is fixed — the stone's own colour is part of the drawing, and a
+   poneglyph that turned straw yellow in light mode would be a different object.
+   Two of them: the ordinary stones are the blue-black of the ones in Alabasta
+   and Skypiea, and a road poneglyph is deep red. That is the manga's own
+   distinction and the only reason the interface is allowed to draw it is that a
+   chapter the reader has read told them which is which.
+   -------------------------------------------------------------------------- */
+
+.steles {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stele {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  height: 100%;
+  border: 3px solid var(--ink);
+  background: #1b2a33;
+  color: #e7eeeb;
+  box-shadow: var(--shadow-hard-sm);
+  padding: 0.75rem 0.9rem 0.7rem;
+}
+
+/* The carving: faint horizontal rules, as the glyphs read on the page. Behind
+   the text, at an opacity that survives neither being noticed nor being
+   mistaken for a border. */
+.stele::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.055) 0 2px,
+    transparent 2px 9px
+  );
+  pointer-events: none;
+}
+
+.stele-route {
+  background: #4a1417;
+}
+
+.stele-type {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.stele-nom {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.stele-lieu {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.stele-lieu a {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The dates, which are the whole of what this card asserts. */
+.stele-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: auto;
+  padding-top: 0.15rem;
+}
+
+.stele-date {
+  border: 2px solid rgba(255, 255, 255, 0.34);
+  padding: 0.05rem 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* Nothing the reader has read has shown this one. Dimmer than a date, because
+   it is the absence of one. */
+.stele-date-vide {
+  border-style: dashed;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Straw, on both stones: the one thing on the card that is a state rather than
+   a date, and it has to be the loudest. */
+.stele-perdu {
+  border-color: var(--ink);
+  background: var(--accent);
+  color: #111111;
+}
+
 /* --------------------------------------------------------------------------
    Story mode — the thread.
 
