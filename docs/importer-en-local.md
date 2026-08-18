@@ -219,6 +219,17 @@ C'est la seule façon honnête de savoir si un modèle plus petit suffit à une
 propositions à revoir, propositions en quarantaine, raison de quarantaine
 dominante.
 
+**« Par défaut » ne veut pas dire « tout sur le même modèle ».** Avec un modèle
+auto-hébergé configuré, il prend la masse du travail — classification,
+description des cases, embeddings, escalade — et **l'extraction reste sur Claude
+Max** (ou sur le fournisseur distant configuré). C'est l'étape où un modèle plus
+faible ne raconte pas n'importe quoi, il trouve simplement moins, et un graphe
+maigre ressemble exactement à un chapitre maigre. Pour la lui rendre :
+`LOCAL_AI_TIERS=classify,describe,extract,escalate,embed`. Sans aucun
+fournisseur distant configuré, le modèle local garde tous les paliers — envoyer
+l'extraction au fournisseur synthétique fabriquerait ce qu'elle était censée
+lire.
+
 
 **Lancez le traitement** depuis la fiche du chapitre. Suivez-le sur `/admin/runs/[id]`,
 étape par étape, avec la durée et le coût réel de chacune.

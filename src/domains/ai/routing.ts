@@ -1,4 +1,5 @@
 import 'server-only'
+import { remoteModelProvider } from '@/lib/env.ts'
 import type {
   AnswerRequest,
   ArbitrateRequest,
@@ -138,19 +139,40 @@ export class RoutingProvider implements ModelProvider {
 }
 
 /**
+ * Which tiers the self-hosted model takes when `LOCAL_AI_TIERS` names none.
+ *
+ * Everything except extraction. Describing panels is bulk work a smaller model
+ * does well; extraction reads those descriptions against the ontology and is
+ * where a weaker model quietly finds less — and "finds less" is the failure
+ * nobody notices, because a thinner graph looks exactly like a thin chapter.
+ * So the default sends that tier to Claude Max (or whatever hosted provider is
+ * configured) and leaves the rest local. `LOCAL_AI_TIERS=extract` still moves
+ * it back, deliberately, which is the whole point of the variable.
+ *
+ * One exception: with no hosted provider configured, `baseProvider()` resolves
+ * to the synthetic one, and routing extraction there would replace a real
+ * answer from a real model with a fabricated one. Nothing configured to fall
+ * back to means the local model keeps every tier, as before.
+ */
+export function defaultLocalTiers(): readonly RoutedTier[] {
+  if (remoteModelProvider() === 'synthetic') return ROUTED_TIERS
+  return ROUTED_TIERS.filter((tier) => tier !== 'extract')
+}
+
+/**
  * Which tiers go to the self-hosted model.
  *
- * Absent means all of them: configuring a local endpoint at all is the decision
- * to use it. Naming a subset — `LOCAL_AI_TIERS=describe` — is how you move one
- * step at a time and compare, which is the only honest way to find out whether
- * a smaller model is good enough at a given job.
+ * Absent means the default split above. Naming a subset —
+ * `LOCAL_AI_TIERS=describe` — is how you move one step at a time and compare,
+ * which is the only honest way to find out whether a smaller model is good
+ * enough at a given job.
  *
  * An unknown name is an error rather than a silent omission: a typo that
  * quietly sent everything to the paid provider would be discovered on a bill.
  */
 export function localTiers(): Set<RoutedTier> {
   const raw = process.env.LOCAL_AI_TIERS?.trim()
-  if (!raw) return new Set(ROUTED_TIERS)
+  if (!raw) return new Set(defaultLocalTiers())
 
   const names = raw
     .split(',')

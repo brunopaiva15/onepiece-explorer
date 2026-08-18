@@ -498,10 +498,26 @@ async function checkLocalModel(): Promise<boolean> {
   console.log('\n\x1b[1mModèle auto-hébergé\x1b[0m')
 
   const tiers = process.env.LOCAL_AI_TIERS?.trim()
+
+  /*
+   * Mirrors `defaultLocalTiers()` in src/domains/ai/routing.ts, which this
+   * script cannot import — the domain modules are server-only. Naming no tier
+   * leaves extraction to the hosted provider, unless there is none, in which
+   * case the local model keeps every tier rather than handing that step to the
+   * synthetic provider.
+   */
+  const hostedProvider =
+    process.env.MODEL_PROVIDER !== 'synthetic' &&
+    Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim() || process.env.ANTHROPIC_API_KEY)
+
   record({
     level: 'ok',
     label: 'Paliers routés localement',
-    detail: tiers ? tiers : 'tous (classify, describe, extract, escalate, embed)',
+    detail: tiers
+      ? tiers
+      : hostedProvider
+        ? 'classify, describe, escalate, embed — extract reste sur le fournisseur distant'
+        : 'tous (classify, describe, extract, escalate, embed)',
   })
 
   try {
