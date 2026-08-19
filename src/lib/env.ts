@@ -171,7 +171,13 @@ export function hasModelCredentials(): boolean {
   if (hasLocalModel()) return true
   const provider = process.env.MODEL_PROVIDER
   if (provider === 'synthetic' || provider === 'replay') return true
-  return hasClaudeSubscription() || Boolean(process.env.ANTHROPIC_API_KEY)
+  /*
+   * The resolution, not the credentials, for the same reason as
+   * `syntheticByFallback`: `MODEL_PROVIDER=anthropic` with the key removed
+   * resolves to synthetic, and reading the subscription token here would hide
+   * the banner over extraction that was never read from the pages.
+   */
+  return remoteModelProvider() !== 'synthetic'
 }
 
 /**
@@ -286,9 +292,21 @@ export function remoteModelProvider(): 'claude-max' | 'anthropic' | 'replay' | '
  * credential is missing instead of producing a library of empty chapters.
  */
 export function syntheticByFallback(): boolean {
-  if (process.env.MODEL_PROVIDER?.trim()) return false
+  /*
+   * Asked for means asked for *this* provider, not "named some provider".
+   *
+   * `MODEL_PROVIDER=synthetic` is the deliberate choice this exempts, and
+   * `replay` is its hermetic cousin. `claude-max` and `anthropic` are not:
+   * either of them with its credential missing degrades to synthetic a few
+   * lines up, silently, and treating that as a choice reopened exactly the hole
+   * this predicate was written to close — a variable left over from an earlier
+   * setup, the key since removed, and every run succeeding in four hundred
+   * milliseconds with nothing extracted and no token spent.
+   */
+  const requested = process.env.MODEL_PROVIDER?.trim()
+  if (requested === 'synthetic' || requested === 'replay') return false
   if (hasLocalModel()) return false
-  return !hasClaudeSubscription() && !process.env.ANTHROPIC_API_KEY?.trim()
+  return remoteModelProvider() === 'synthetic'
 }
 
 /**
