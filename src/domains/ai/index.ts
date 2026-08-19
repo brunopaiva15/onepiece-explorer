@@ -54,11 +54,42 @@ export function providerOptions(): ProviderOption[] {
   const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY)
   const tiers = process.env.LOCAL_AI_TIERS?.trim()
 
-  const fallbackNote = hasSubscription
-    ? 'Claude Max'
-    : hasAnthropic
-      ? 'Anthropic'
-      : 'extraction synthétique'
+  /*
+   * Named from what will actually answer, not from which variable is present.
+   *
+   * `remoteModelProvider()` degrades an explicit MODEL_PROVIDER whose credential
+   * is missing down to 'synthetic'. Reading the token instead of the resolution
+   * let this line promise « Claude Max pour le reste » on a deployment that was
+   * about to extract nothing: the subscription token was there, MODEL_PROVIDER
+   * still said `anthropic` from an earlier setup, and the key it needed was
+   * gone. The screen said Claude Max, the run said nothing, and the two were
+   * read hours apart.
+   */
+  const remote = remoteModelProvider()
+  const requested = process.env.MODEL_PROVIDER?.trim()
+
+  const fallbackNote =
+    remote === 'claude-max'
+      ? 'Claude Max'
+      : remote === 'anthropic'
+        ? 'Anthropic'
+        : remote === 'replay'
+          ? 'les réponses enregistrées'
+          : 'extraction synthétique'
+
+  /** The same answer as a full sentence, with the cause when there is one. */
+  const remoteNote =
+    remote === 'claude-max'
+      ? 'Claude Max, via le Claude Agent SDK.'
+      : remote === 'anthropic'
+        ? 'Anthropic.'
+        : remote === 'replay'
+          ? 'Réponses enregistrées (MODEL_PROVIDER=replay).'
+          : requested === 'claude-max' || requested === 'anthropic'
+            ? `MODEL_PROVIDER=${requested} mais l’identifiant correspondant est absent : ` +
+              `extraction synthétique, qui ne lit rien. Retirez la variable ou renseignez ` +
+              `${requested === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN'}.`
+            : 'Aucun fournisseur configuré : extraction synthétique.'
 
   /*
    * What the default split leaves to the hosted provider — normally the
@@ -78,11 +109,7 @@ export function providerOptions(): ProviderOption[] {
           : remoteByDefault.length > 0
             ? `Mon modèle, sauf : ${remoteByDefault.join(', ')}. ${fallbackNote} pour ceux-là.`
             : 'Mon modèle pour tout.'
-        : hasSubscription
-          ? 'Claude Max, via le Claude Agent SDK.'
-          : hasAnthropic
-            ? 'Anthropic.'
-            : 'Aucun fournisseur configuré : extraction synthétique.',
+        : remoteNote,
       available: true,
     },
     {
