@@ -21,29 +21,29 @@ afterEach(() => {
 })
 
 describe('local extraction ceilings', () => {
-  it('uses the measured five-passage budget instead of the global emergency ceiling', () => {
+  it('keeps a five-passage Qwen slice close to Claude-like density', () => {
     expect(localExtractionLimitsForUnits(5)).toEqual({
       units: 5,
-      entities: 12,
-      assertions: 20,
-      events: 8,
-      mysteries: 3,
-      maxTokens: 8_000,
+      entities: 8,
+      assertions: 14,
+      events: 7,
+      mysteries: 2,
+      maxTokens: 6_500,
     })
   })
 
-  it('grows with a full summary slice without returning to 40/80/20/10', () => {
+  it('grows for a full summary slice without advertising the generic emergency ceiling', () => {
     expect(localExtractionLimitsForUnits(15)).toEqual({
       units: 15,
-      entities: 20,
-      assertions: 40,
-      events: 16,
-      mysteries: 5,
-      maxTokens: 12_000,
+      entities: 16,
+      assertions: 30,
+      events: 15,
+      mysteries: 4,
+      maxTokens: 10_500,
     })
   })
 
-  it('emits those ceilings in the actual LM Studio request', async () => {
+  it('sends Claude-equivalent slice context plus the local selectivity discipline', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -68,11 +68,16 @@ describe('local extraction ceilings', () => {
 
     const provider = new OpenAICompatibleProvider(config)
     await provider.extract({
-      chapterNumber: 211,
+      chapterNumber: 212,
       source: 'summary',
       ontology: 'ontology de test',
-      knownEntities: [],
-      knownEntitiesTotal: 0,
+      knownEntities: [
+        { id: 'known-smoker', label: 'Smoker', nodeType: 'character', group: 'other' },
+      ],
+      knownEntitiesTotal: 1,
+      proposedSoFar: [
+        { id: 'previous-hina', label: 'Hina', nodeType: 'character' },
+      ],
       glossary: [],
       descriptions: [],
       textBlocks: Array.from({ length: 5 }, (_, index) => ({
@@ -97,17 +102,21 @@ describe('local extraction ceilings', () => {
       }
     }
 
-    expect(payload.max_tokens).toBe(8_000)
+    expect(payload.max_tokens).toBe(6_500)
     const properties = payload.response_format.json_schema.schema.properties
-    expect(properties.entities?.maxItems).toBe(12)
-    expect(properties.assertions?.maxItems).toBe(20)
-    expect(properties.events?.maxItems).toBe(8)
-    expect(properties.mysteries?.maxItems).toBe(3)
+    expect(properties.entities?.maxItems).toBe(8)
+    expect(properties.assertions?.maxItems).toBe(14)
+    expect(properties.events?.maxItems).toBe(7)
+    expect(properties.mysteries?.maxItems).toBe(2)
 
     const userText = payload.messages[1]?.content
       .map((part) => part.text ?? '')
       .join('\n')
     expect(userText).toContain('JAMAIS des objectifs à remplir')
-    expect(userText).toContain('un nœud « concept » est une notion durable du monde')
+    expect(userText).toContain('UNE SCÈNE = UN ÉVÉNEMENT')
+    expect(userText).toContain('LE TEXTE PARALLÈLE EST LE MÊME CHAPITRE')
+    expect(userText).toContain('UN MYSTÈRE EST UNE QUESTION NARRATIVE RÉELLEMENT LAISSÉE OUVERTE')
+    expect(userText).toContain('previous-hina · character · « Hina »')
+    expect(userText).toContain('[b1] Passage 1')
   })
 })
