@@ -8,6 +8,7 @@ import {
   resetModelProvider,
 } from '@/domains/ai/index.ts'
 import { defaultLocalTiers, localTiers, ROUTED_TIERS, TIER_OF } from '@/domains/ai/routing.ts'
+import { syntheticByFallback } from '@/lib/env.ts'
 
 /**
  * Routing is configuration, and configuration is where this project has lost
@@ -228,5 +229,56 @@ describe('choosing a provider per run', () => {
     setEnv({ LOCAL_AI_BASE_URL: undefined, LOCAL_AI_MODEL: undefined })
     resetModelProvider()
     expect(() => modelProvider('local')).toThrow(/LOCAL_AI_BASE_URL/)
+  })
+})
+
+/**
+ * The failure this whole file exists for, in its most expensive form: a run
+ * that succeeds in four hundred milliseconds, spends no token, extracts
+ * nothing, and says « aucune proposition ». Two ways in, both closed here.
+ */
+describe('a run that would be answered by nobody', () => {
+  it('counts a MODEL_PROVIDER whose credential is gone as a fallback, not a choice', () => {
+    // The real one: MODEL_PROVIDER left over from before the migration to the
+    // subscription, ANTHROPIC_API_KEY since removed. The variable is set, so
+    // this used to read as "synthetic was asked for" and let the run through.
+    setEnv({
+      MODEL_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-test',
+      LOCAL_AI_BASE_URL: undefined,
+      LOCAL_AI_MODEL: undefined,
+    })
+    expect(syntheticByFallback()).toBe(true)
+  })
+
+  it('leaves an explicitly synthetic deployment alone', () => {
+    // Asked for, it is an honest choice: the interface says the extraction is
+    // generated, and the walkthrough runs without a key.
+    setEnv({
+      MODEL_PROVIDER: 'synthetic',
+      ANTHROPIC_API_KEY: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: undefined,
+      LOCAL_AI_BASE_URL: undefined,
+      LOCAL_AI_MODEL: undefined,
+    })
+    expect(syntheticByFallback()).toBe(false)
+  })
+
+  it('names the missing credential on the launch screen instead of promising Claude Max', () => {
+    // The screen and the run disagreed for hours: a subscription token was
+    // present, so the note said Claude Max, while MODEL_PROVIDER sent every
+    // call to the synthetic provider.
+    setEnv({
+      MODEL_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-test',
+      LOCAL_AI_BASE_URL: undefined,
+      LOCAL_AI_MODEL: undefined,
+    })
+    const note = providerOptions().find((o) => o.id === 'auto')?.note ?? ''
+    expect(note).toContain('MODEL_PROVIDER=anthropic')
+    expect(note).toContain('ANTHROPIC_API_KEY')
+    expect(note).not.toContain('Claude Max, via le Claude Agent SDK')
   })
 })
