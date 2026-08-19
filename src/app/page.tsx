@@ -14,6 +14,7 @@ import { labelNames } from '@/domains/temporal/poneglyphs.ts'
 import {
   castAtChapter,
   castOf,
+  foldByPerson,
   openQuestionsAtChapter,
   poneglyphsAtChapter,
   type CastMember,
@@ -205,23 +206,23 @@ export default async function HomePage({
     }
 
     /*
-     * One card per person, and « per person » is by name here.
+     * One card per person, and « per person » is not « per row ».
      *
      * `castOf` folds what the reader knows to be one character, which is the
-     * right rule and only covers merges the library has actually made. Six
-     * unmerged entities called Sanji are six components and one cook, and a
-     * wall showing him six times is wrong whatever the graph believes. The name
-     * is the thing the visitor compares, so it is the thing deduplicated.
+     * right rule and only covers merges the library has actually made. Two
+     * unmerged entities called Luffy are two components and one boy, and a wall
+     * showing him twice — the second time as an empty card, because only one of
+     * the two was ever given a picture — is wrong whatever the graph believes.
+     * `foldByPerson` folds them by who they are and keeps both ids, so the
+     * picture and the figure are found wherever they happen to sit.
      */
-    const seen = new Set<string>()
-    const connus = tirage(affiches)
-      .filter((member) => bountyOf(member) !== null)
-      .filter((member) => {
-        const key = member.label.trim().toLowerCase()
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
+    const connus = tirage(
+      foldByPerson(
+        affiches.filter((member) => bountyOf(member) !== null),
+        bounties,
+        posters,
+      ),
+    )
 
     /*
      * Six slots, and the real posters take them first.
@@ -277,7 +278,10 @@ export default async function HomePage({
         }
       })
     } else {
-      const drawn = tirage(cast)
+      /* Folded first, for the reason the wall of posters is: two unmerged
+         appearances of one character are one face, whatever the graph believes,
+         and the second card would be the one with no picture. */
+      const drawn = tirage(foldByPerson(cast, bounties))
       const images = await displayImages(
         session.userId,
         boundary,

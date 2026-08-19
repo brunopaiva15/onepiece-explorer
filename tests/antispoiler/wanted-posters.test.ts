@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { postersFor, wantedAtChapter } from '@/domains/images/posters.ts'
 import { displayImages } from '@/domains/images/index.ts'
-import { castAtChapter, castOf } from '@/domains/temporal/spotlight.ts'
+import { castAtChapter, castOf, foldByPerson } from '@/domains/temporal/spotlight.ts'
 import {
   addAssertion,
   addLabel,
@@ -362,5 +362,100 @@ describe('le mur part des primes connues, pas du classement ni des images', () =
     // The page falls through to faces, and the pool for those is unchanged.
     expect(await castOf(world.userId, 1100, [])).toEqual([])
     expect((await castAtChapter(world.userId, 1100)).length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * Une personne, une carte, même quand la bibliothèque en tient deux.
+ *
+ * Le bug tel qu'il a été signalé : le mur affichait Luffy deux fois, « MONKEY
+ * D. LUFFY » avec son illustration et « LUFFY » avec une carte vide portant un
+ * L, toutes deux à trente millions.
+ *
+ * Nothing in the graph was wrong about it. The library holds two entities the
+ * extraction never merged, the enrichment had found a picture for one of them,
+ * and the wall drew one card per component. The card the visitor compares is a
+ * person, so the fold is by person: the manifest already knows that « Luffy »
+ * and « Monkey D. Luffy » are one line, and folding on it keeps both ids so the
+ * picture is found wherever it happens to sit.
+ */
+describe('le mur ne montre jamais deux fois la même personne', () => {
+  it('replie « Luffy » et « Monkey D. Luffy » sur une seule affiche', async () => {
+    const nomComplet = await createEntity(world, 'character', 1)
+    await addLabel(world, nomComplet, 'Monkey D. Luffy', 'true_name', 1, 100)
+    await addPoster(nomComplet, 'Monkey D. Luffy', 601, 'Luffy Wanted Poster.png')
+    /* Something to rank on, so the fold is not choosing between two zeroes. */
+    const autre = await createEntity(world, 'character', 1)
+    await addLabel(world, autre, 'Arlong', 'true_name', 1, 100)
+    await addAssertion(world, {
+      subject: nomComplet,
+      predicate: 'enemy_of',
+      object: autre,
+      knowledgeFrom: 1,
+    })
+
+    /* The other half: same boy, no merge, no picture, and the name chapter 1
+       gives him. */
+    const nomCourt = await createEntity(world, 'character', 1)
+    await addLabel(world, nomCourt, 'Luffy', 'alias', 1, 50)
+
+    const bounties = await wantedAtChapter(world.userId, 700)
+    /* The library really does hold two of him, and nothing has merged them. */
+    expect(bounties.has(nomComplet)).toBe(true)
+    expect(bounties.has(nomCourt)).toBe(true)
+    const cast = await castOf(world.userId, 700, [...bounties.keys()])
+    expect(cast.filter((member) => member.memberIds.includes(nomCourt)).length).toBe(1)
+    expect(cast.length).toBe(3)
+
+    const posters = await postersFor(
+      world.userId,
+      700,
+      cast.flatMap((member) => member.memberIds),
+      new Map(cast.flatMap((member) => member.memberIds.map((id) => [id, member.label]))),
+    )
+
+    const folded = foldByPerson(cast, bounties, posters)
+    /* Two people on the wall — the boy and the sawshark — not three cards. */
+    expect(folded.length).toBe(2)
+    const luffy = folded.find((member) => member.memberIds.includes(nomCourt))!
+    expect([...luffy.memberIds].sort()).toEqual([nomComplet, nomCourt].sort())
+    /* Named and linked by the half that carries the poster, so the card is not
+       the empty one and the click lands on the page showing the paper. */
+    expect(luffy.entityId).toBe(nomComplet)
+    expect(luffy.label).toBe('Monkey D. Luffy')
+    /* And the poster is reachable from the folded card, which is the whole
+       point of keeping both ids. */
+    expect(luffy.memberIds.some((id) => posters.has(id))).toBe(true)
+  })
+
+  it('ne replie pas deux personnes que le manifeste ne connaît pas', async () => {
+    const makino = await createEntity(world, 'character', 1)
+    await addLabel(world, makino, 'Makino', 'true_name', 1, 100)
+    const woop = await createEntity(world, 'character', 1)
+    await addLabel(world, woop, 'Woop Slap', 'true_name', 1, 100)
+
+    const cast = await castAtChapter(world.userId, 1100)
+    const folded = foldByPerson(cast, new Map())
+    expect(folded.length).toBe(cast.length)
+  })
+
+  /*
+   * Deux inconnus restent deux inconnus.
+   *
+   * The fold falls back to the label, and « entité sans nom révélé » is not a
+   * label: it is the absence of one. Folding on it would merge strangers and
+   * put one of them's picture on the other's card, which is the mistake this
+   * whole wall exists to avoid.
+   */
+  it('ne replie pas deux entités qu’aucun chapitre lu n’a nommées', async () => {
+    for (const nom of ['Higuma', 'Woop Slap']) {
+      const id = await createEntity(world, 'character', 1)
+      await addLabel(world, id, nom, 'true_name', 96, 100)
+    }
+
+    const cast = await castAtChapter(world.userId, 10)
+    expect(cast.length).toBe(2)
+    expect(new Set(cast.map((member) => member.label)).size).toBe(1)
+    expect(foldByPerson(cast, new Map()).length).toBe(2)
   })
 })
