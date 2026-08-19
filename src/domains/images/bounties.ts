@@ -165,7 +165,22 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
         crop: { box: [0.394, 0.12, 0.223, 0.415], ratio: 665 / 482 },
         rendering: 'anime',
       },
-      { chapter: 234, amount: 100_000_000, edition: 2 },
+      /*
+       * Cent millions, et le chapitre qui le montre est 213, pas 234.
+       *
+       * Both of these lines said 234 for a release, and it dated the two
+       * posters four chapters after the arc that earned them: the reader meets
+       * them at the end of « VIP », where Igaram and Chaka open the envelope
+       * and the two sheets are on the page — Luffy raised to a hundred million,
+       * Zoro wanted for the first time at sixty. Chapter 234 is a Warlords
+       * meeting at Marineford and prints neither.
+       *
+       * The cost was not cosmetic. A reader anywhere in the two hundred and
+       * twenties had read both posters and was shown Luffy's thirty million
+       * with no sign of Zoro at all, on the one page whose claim is that its
+       * figures come from the chapters they have read.
+       */
+      { chapter: 213, amount: 100_000_000, edition: 2 },
       { chapter: 435, amount: 300_000_000, edition: 3 },
       { chapter: 601, amount: 400_000_000, edition: 4, file: 'Luffy Wanted Poster.png' },
       { chapter: 801, amount: 500_000_000, edition: 5 },
@@ -177,7 +192,9 @@ export const BOUNTY_HISTORY: readonly BountyHistory[] = [
     canonical: 'Roronoa Zoro',
     aliases: ['roronoa zoro', 'zoro', 'zorro', 'pirate hunter zoro'],
     rows: [
-      { chapter: 234, amount: 60_000_000, edition: 1 },
+      /* La première prime de Zoro, lue en même temps que les cent millions de
+         Luffy et dans le même chapitre : 213, « VIP ». */
+      { chapter: 213, amount: 60_000_000, edition: 1 },
       {
         chapter: 435,
         amount: 120_000_000,

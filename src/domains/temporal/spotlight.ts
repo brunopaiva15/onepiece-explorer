@@ -9,6 +9,8 @@ import {
   type PoneglyphView,
 } from './poneglyphs.ts'
 import { identityComponents } from './projection.ts'
+import { nameWords } from '../images/bounties.ts'
+import type { KnownBounty, PosterView } from '../images/posters.ts'
 
 /**
  * What the front door can put on show at one chapter.
@@ -33,6 +35,15 @@ import { identityComponents } from './projection.ts'
  * path here that widens what a reader can see, and a spoiler on the home page
  * would be the worst place in the site to put one.
  */
+
+/**
+ * Le nom d'une entité que rien n'a encore nommée.
+ *
+ * Named here rather than written twice: a caller that folds cards by name has
+ * to be able to tell « the same person under two labels » from « two people the
+ * reader has no name for yet », and the second must never fold.
+ */
+export const SANS_NOM = 'entité sans nom révélé'
 
 export interface CastMember {
   /** The identity component's representative, and the id `/entite` expects. */
@@ -227,7 +238,7 @@ async function assemble(
     cast.push({
       entityId: root,
       memberIds: group,
-      label: best?.label ?? 'entité sans nom révélé',
+      label: best?.label ?? SANS_NOM,
       nodeType,
       firstSeenChapter: Math.min(
         ...rows.map((row) => row.first_seen_chapter),
@@ -238,6 +249,105 @@ async function assemble(
   }
 
   return cast
+}
+
+/**
+ * Plusieurs entités, une personne, une carte.
+ *
+ * `assemble` above already folds what the *library* knows to be one character,
+ * and that is the only fold it is allowed to make: it follows the merges
+ * somebody accepted, so a click from a card lands on the node the graph would
+ * show. What it cannot do is fold two appearances nobody has merged yet, and a
+ * wall of wanted posters is exactly where that shows. « Luffy » from chapter 1
+ * and « Monkey D. Luffy » from chapter 100 are two entities, one boy and one
+ * bounty, and the wall printed him twice — once with his picture, once as an
+ * empty card with a letter in it, because the enrichment had only ever found a
+ * portrait for one of the two.
+ *
+ * So the cards are folded a second time, by who they are rather than by which
+ * row they came from, and the fold keeps every id: the picture, the poster and
+ * the figure are then looked up across the whole person instead of across
+ * whichever half won the draw. That is what turns the empty second card into no
+ * card at all.
+ *
+ * Who counts as the same person is asked of the bounty manifest first, because
+ * on this wall it is the better answer: the manifest already holds every name a
+ * chapter or a wiki gives somebody, so « Luffy », « Monkey D. Luffy » and
+ * « Mugiwara » are one line in it and therefore one card here. Comparing the
+ * printed labels was the earlier rule and it is the one that kept the
+ * protagonist on the wall twice.
+ *
+ * The label is the fallback, folded the way the manifest folds names — accents
+ * dropped, punctuation dropped — so « Baggy » and « baggy » are one clown. An
+ * entity nobody has named yet is never folded: several strangers under one
+ * placeholder are still several strangers, and merging them would put one of
+ * them's picture on another's card.
+ *
+ * Order is preserved and nothing is drawn here: a caller that shuffles does it
+ * after, so the fold is the same on every visit and only the order changes.
+ */
+export function foldByPerson(
+  members: readonly CastMember[],
+  bounties: ReadonlyMap<string, KnownBounty>,
+  posters: ReadonlyMap<string, PosterView> = new Map(),
+): CastMember[] {
+  /* Read across the whole component, for the reason the fold exists: a bounty
+     or a poster can sit on the half that did not become the representative. */
+  const bountyOf = (member: CastMember): KnownBounty | null => {
+    let known: KnownBounty | null = null
+    for (const id of member.memberIds) {
+      const found = bounties.get(id)
+      if (found && (!known || found.chapter > known.chapter)) known = found
+    }
+    return known
+  }
+
+  const hasPoster = (member: CastMember): boolean =>
+    member.memberIds.some((id) => posters.has(id))
+
+  const keyOf = (member: CastMember): string => {
+    const bounty = bountyOf(member)
+    if (bounty) return `prime:${bounty.canonical}`
+    const name = nameWords(member.label).trim()
+    if (name === '' || member.label === SANS_NOM) return `entite:${member.entityId}`
+    return `nom:${name}`
+  }
+
+  /*
+   * Which half a folded person is named and linked by.
+   *
+   * The one that has the poster, above everything else: it is the page a reader
+   * clicking a wanted poster expects to land on, and the card is showing its
+   * picture. Then the better-connected half, which is the one the graph treats
+   * as the character, and then the fuller name — « Monkey D. Luffy » over
+   * « Luffy », because a reader who has been told the longer one has been told
+   * the shorter.
+   */
+  const better = (candidate: CastMember, held: CastMember): boolean => {
+    if (hasPoster(candidate) !== hasPoster(held)) return hasPoster(candidate)
+    if (candidate.factCount !== held.factCount) return candidate.factCount > held.factCount
+    return candidate.label.length > held.label.length
+  }
+
+  const order: string[] = []
+  const folded = new Map<string, { held: CastMember; ids: string[] }>()
+
+  for (const member of members) {
+    const key = keyOf(member)
+    const group = folded.get(key)
+    if (!group) {
+      order.push(key)
+      folded.set(key, { held: member, ids: [...member.memberIds] })
+      continue
+    }
+    group.ids.push(...member.memberIds)
+    if (better(member, group.held)) group.held = member
+  }
+
+  return order.map((key) => {
+    const { held, ids } = folded.get(key)!
+    return { ...held, memberIds: [...new Set(ids)] }
+  })
 }
 
 export interface OpenQuestion {

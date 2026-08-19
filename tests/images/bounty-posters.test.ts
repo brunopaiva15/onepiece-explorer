@@ -257,6 +257,26 @@ describe('la prime que le lecteur connaît', () => {
 })
 
 describe('le manifeste', () => {
+  /*
+   * Le chapitre 213, tel qu'il a été signalé.
+   *
+   * Les deux lignes disaient 234, et le lecteur d'Arabasta y perdait la moitié
+   * de ce qu'il venait de lire : c'est à la fin de « VIP » qu'Igaram et Chaka
+   * ouvrent l'enveloppe, que la prime de Luffy passe à cent millions et que
+   * Zoro est recherché pour la première fois, soixante millions. Le chapitre
+   * 234 est une réunion de Grands Corsaires à Marineford et n'imprime ni l'un
+   * ni l'autre.
+   */
+  it('date les deux affiches d’Arabasta sur le chapitre qui les montre', () => {
+    expect(bountyAtChapter(luffy, 213)?.amount).toBe(100_000_000)
+    expect(bountyAtChapter(zoro, 213)?.amount).toBe(60_000_000)
+
+    // Et pas une page plus tôt : la veille, Luffy en est encore à trente
+    // millions et Zoro n'est recherché pour rien du tout.
+    expect(bountyAtChapter(luffy, 212)?.amount).toBe(30_000_000)
+    expect(bountyAtChapter(zoro, 212)).toBeNull()
+  })
+
   it('garde les chapitres et les tirages croissants', () => {
     for (const character of BOUNTY_HISTORY) {
       const chapters = character.rows.map((row) => row.chapter)
